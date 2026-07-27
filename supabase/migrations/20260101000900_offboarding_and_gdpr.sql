@@ -81,6 +81,19 @@ declare
   cols     text;
   fk       record;
 begin
+  -- Defence in depth. This is SECURITY DEFINER and takes a user id, so anyone
+  -- who acquires EXECUTE on it could otherwise fork a space into a third
+  -- party's personal space. The membership check below validates p_user_id's
+  -- membership, not the caller's, so it is not sufficient on its own.
+  -- session_user, not current_user: inside a definer function current_user is
+  -- always the owner.
+  if p_user_id is not null
+     and p_user_id is distinct from (select auth.uid())
+     and session_user not in ('postgres', 'service_role') then
+    raise exception 'Cannot fork a space on behalf of another user'
+      using errcode = 'insufficient_privilege';
+  end if;
+
   if not exists (select 1 from space_members
                  where space_id = p_space_id and user_id = v_user and status = 'active') then
     raise exception 'Not a member of this space' using errcode = 'insufficient_privilege';
