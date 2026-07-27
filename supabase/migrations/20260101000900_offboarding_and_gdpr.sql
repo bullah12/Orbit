@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0009 — Leaving, forking, erasure, export
 --
@@ -17,25 +19,36 @@
 -- ============================================================================
 
 -- Order matters: parents before children, so FK rewrites always find their map.
-create table app_cloneable_tables (
-  ord        int primary key,
-  table_name text not null unique
+create table app.cloneable_tables (
+  ord         int primary key,
+  table_name  text not null unique,
+  -- Extra predicate for rows that span two spaces. A link from a shared event
+  -- to my partner's private note lives in the shared space, but forking it
+  -- would hand the leaver an edge pointing at a row they must never see — so
+  -- edges are cloned only when BOTH endpoints are inside the forked space.
+  extra_where text
 );
-insert into app_cloneable_tables (ord, table_name) values
-  (10,'tags'), (20,'projects'), (30,'categories'), (40,'places'), (50,'people'),
-  (60,'groups'), (70,'calendars'), (80,'events'), (90,'tasks'), (100,'notes'),
-  (110,'person_fields'), (120,'person_dates'), (130,'person_relations'),
-  (140,'addresses'), (150,'group_members'), (160,'event_attendees'),
-  (170,'event_occurrences'), (180,'category_rules'), (190,'task_contexts'),
-  (200,'attachments'), (210,'taggings'), (220,'links'), (230,'saved_filters');
+insert into app.cloneable_tables (ord, table_name, extra_where) values
+  (10,'tags',null), (20,'projects',null), (30,'categories',null), (40,'places',null),
+  (50,'people',null), (60,'groups',null), (70,'calendars',null), (80,'events',null),
+  (90,'tasks',null), (100,'notes',null),
+  (110,'person_fields',null), (120,'person_dates',null), (130,'person_relations',null),
+  (140,'addresses',null),
+  (150,'group_members','person_space_id = $1 and group_space_id = $1'),
+  (160,'event_attendees','event_space_id = $1 and (person_space_id is null or person_space_id = $1)'),
+  (170,'event_occurrences',null), (180,'category_rules',null), (190,'task_contexts',null),
+  (200,'attachments',null),
+  (210,'taggings','entity_space_id = $1 and tag_space_id = $1'),
+  (220,'links','source_space_id = $1 and target_space_id = $1'),
+  (230,'saved_filters',null);
 
 -- (table, column) pairs that reference a cloned id and must be remapped.
-create table app_clone_fk_map (
+create table app.clone_fk_map (
   table_name  text not null,
   column_name text not null,
   primary key (table_name, column_name)
 );
-insert into app_clone_fk_map values
+insert into app.clone_fk_map (table_name, column_name) values
   ('people','same_as_person_id'),
   ('person_fields','person_id'), ('person_dates','person_id'),
   ('person_relations','person_a'), ('person_relations','person_b'),
@@ -80,10 +93,11 @@ begin
   create temp table id_map (old_id uuid primary key, new_id uuid not null) on commit drop;
 
   -- Pass 1: allocate new ids and copy rows verbatim (FKs still point at originals).
-  for r in select table_name from app_cloneable_tables order by ord loop
+  for r in select table_name, extra_where from app.cloneable_tables order by ord loop
     execute format(
-      'insert into id_map (old_id, new_id) select id, gen_random_uuid() from %I where space_id = $1',
-      r.table_name) using p_space_id;
+      'insert into id_map (old_id, new_id) select id, gen_random_uuid()
+       from %I where space_id = $1 and %s',
+      r.table_name, coalesce(r.extra_where, 'true')) using p_space_id;
 
     select string_agg(quote_ident(a.attname), ', ' order by a.attnum) into cols
     from pg_attribute a
@@ -99,26 +113,59 @@ begin
       r.table_name, cols) using p_space_id, v_target, v_user;
   end loop;
 
-  -- Pass 2: rewrite intra-space FKs onto the cloned ids. Anything pointing
-  -- outside the forked space (it should not exist) is left null rather than
-  -- dangling.
-  for fk in select * from app_clone_fk_map loop
+  -- Pass 2: rewrite intra-space FKs onto the cloned ids.
+  --
+  -- Scoped by id_map membership, NOT by space_id: the insert triggers on
+  -- links/taggings/group_members set space_id from the entity they pointed at,
+  -- which during pass 1 is still the original in the OLD space. Keying on
+  -- space_id here silently matched nothing.
+  for fk in select * from app.clone_fk_map loop
     execute format(
       'update %1$I t set %2$I = m.new_id from id_map m
-       where t.space_id = $1 and t.%2$I = m.old_id', fk.table_name, fk.column_name)
-      using v_target;
+       where t.id in (select new_id from id_map) and t.%2$I = m.old_id',
+      fk.table_name, fk.column_name);
   end loop;
 
-  -- Denormalised space columns must be recomputed, not copied.
-  update links         set source_space_id = v_target, target_space_id = v_target where space_id = v_target;
-  update taggings      set entity_space_id = v_target, tag_space_id   = v_target where space_id = v_target;
-  update group_members set person_space_id = v_target, group_space_id = v_target where space_id = v_target;
-  update event_attendees set event_space_id = v_target,
+  -- Denormalised space columns are recomputed, never copied. Everything cloned
+  -- is now in v_target by definition, so this is unconditional.
+  update links set source_space_id = v_target, target_space_id = v_target, space_id = v_target
+   where id in (select new_id from id_map);
+  update taggings set entity_space_id = v_target, tag_space_id = v_target, space_id = v_target
+   where id in (select new_id from id_map);
+  update group_members set person_space_id = v_target, group_space_id = v_target, space_id = v_target
+   where id in (select new_id from id_map);
+  update event_attendees set event_space_id = v_target, space_id = v_target,
          person_space_id = case when person_id is null then null else v_target end
-   where space_id = v_target;
+   where id in (select new_id from id_map);
   update tasks set waiting_on_person_space_id =
          case when waiting_on_person_id is null then null else v_target end
-   where space_id = v_target;
+   where id in (select new_id from id_map);
+
+  -- Any nullable reference that escaped the forked space is severed rather than
+  -- left dangling at a row the leaver cannot see.
+  for fk in
+    select m.table_name, m.column_name from app.clone_fk_map m
+    join information_schema.columns c
+      on c.table_schema = 'public' and c.table_name = m.table_name
+     and c.column_name = m.column_name and c.is_nullable = 'YES'
+  loop
+    execute format(
+      'update %1$I t set %2$I = null
+       where t.id in (select new_id from id_map)
+         and t.%2$I is not null
+         and t.%2$I not in (select new_id from id_map)',
+      fk.table_name, fk.column_name);
+  end loop;
+
+  -- My private read on a shared person must follow that person into the fork,
+  -- or leaving would orphan every cadence, talking point and interaction I ever
+  -- recorded about people we knew together.
+  update person_state ps   set person_id = m.new_id from id_map m
+   where ps.user_id = v_user and ps.person_id = m.old_id;
+  update interactions i    set person_id = m.new_id from id_map m
+   where i.owner_id = v_user and i.person_id = m.old_id;
+  update talking_points tp set person_id = m.new_id from id_map m
+   where tp.owner_id = v_user and tp.person_id = m.old_id;
 
   insert into activity_log (space_id, actor_id, entity_type, entity_id, action, summary)
   values (p_space_id, v_user, 'note', p_space_id, 'forked_space',
@@ -253,7 +300,7 @@ begin
   if not (p_space_id = any(app.readable_space_ids())) then
     raise exception 'Space not found' using errcode = 'insufficient_privilege';
   end if;
-  for r in select table_name from app_cloneable_tables order by ord loop
+  for r in select table_name from app.cloneable_tables order by ord loop
     execute format('select coalesce(jsonb_agg(to_jsonb(t)), ''[]''::jsonb) from %I t where space_id = $1',
                    r.table_name)
       into chunk using p_space_id;

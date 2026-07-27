@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0004 — Groups (manual + smart) and Places
 -- ============================================================================
@@ -36,7 +38,7 @@ create table group_members (
   updated_at timestamptz not null default now(),
   updated_by uuid references auth.users(id),
   deleted_at timestamptz,
-  unique (group_id, person_id)
+  unique (space_id, group_id, person_id)
 );
 create index group_members_by_group  on group_members (group_space_id, group_id) where deleted_at is null;
 create index group_members_by_person on group_members (person_space_id, person_id) where deleted_at is null;
@@ -59,7 +61,7 @@ create table places (
   recommended_by_person_id uuid references people(id) on delete set null,
   external_ref           text,                  -- OSM/Mapbox id for dedupe
   search_tsv             tsvector generated always as (
-                           to_tsvector('english',
+                           to_tsvector('english'::regconfig,
                              coalesce(name,'') || ' ' || coalesce(category,'') || ' ' ||
                              coalesce(city,'') || ' ' || coalesce(address_text,''))
                          ) stored,

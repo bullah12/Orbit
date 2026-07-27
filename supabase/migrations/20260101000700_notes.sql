@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0007 — Notes, daily notes, CRDT state, integrations
 --
@@ -29,7 +31,7 @@ create table notes (
   is_sensitive boolean not null default false,
   import_batch_id uuid,                    -- set by importers; makes imports reversible
   search_tsv   tsvector generated always as (
-                 to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body_md,''))
+                 to_tsvector('english'::regconfig, coalesce(title,'') || ' ' || coalesce(body_md,''))
                ) stored,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
@@ -83,7 +85,7 @@ create table note_embeddings (
   updated_at timestamptz not null default now(),
   updated_by uuid references auth.users(id),
   deleted_at timestamptz,
-  unique (note_id, chunk_index)
+  unique (space_id, note_id, chunk_index)
 );
 create index note_embeddings_ann on note_embeddings
   using hnsw (embedding vector_cosine_ops);

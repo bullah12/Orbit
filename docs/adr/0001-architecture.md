@@ -245,4 +245,13 @@ notification. Same for cadence nudges: one place, once, never a badge count.
   `app_cloneable_tables`. A test asserts all four exist for every enum value.
 - Any new table must be added to `20260101000800_rls.sql`. A test asserts no table in
   `public` has RLS disabled — this is how the uniform policy stays uniform.
+- **Every unique constraint must lead with `space_id`.** Found the hard way: forking a
+  space clones rows before their foreign keys are rewritten, so any uniqueness not scoped
+  to the space collides the copy with the original. It is also the correct semantics
+  independently — two spaces may legitimately hold the same tag name or the same imported
+  calendar event.
+- **Graph edges are cloned only when both endpoints are inside the space being forked.**
+  A link from a shared event to the *other* member's private note lives in the shared
+  space, and copying it would hand the leaver an edge pointing at a row they must never
+  see. Nullable references that escape the fork are severed, not left dangling.
 - Sync rules and RLS must be diffed in CI on every change to either.

@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0005 — Calendar
 --
@@ -51,7 +53,7 @@ create table calendars (
   updated_at          timestamptz not null default now(),
   updated_by          uuid references auth.users(id),
   deleted_at          timestamptz,
-  unique (integration_id, external_id)
+  unique (space_id, integration_id, external_id)
 );
 
 create table events (
@@ -85,7 +87,7 @@ create table events (
   -- A task dragged onto the calendar renders as an event but remains a task.
   source_task_id      uuid,                      -- FK added in 0006
   search_tsv          tsvector generated always as (
-                        to_tsvector('english',
+                        to_tsvector('english'::regconfig,
                           coalesce(title,'') || ' ' || coalesce(description,'') || ' ' ||
                           coalesce(location_text,''))
                       ) stored,
@@ -100,7 +102,7 @@ create table events (
     (all_day and (end_date is null or end_date >= start_date)) or
     (not all_day and (end_at is null or end_at >= start_at))
   ),
-  unique (calendar_id, external_id, recurrence_instance_start)
+  unique (space_id, calendar_id, external_id, recurrence_instance_start)
 );
 create index events_range   on events (space_id, start_at) where deleted_at is null;
 create index events_search  on events using gin (search_tsv);
@@ -121,7 +123,7 @@ create table event_occurrences (
   updated_at  timestamptz not null default now(),
   updated_by  uuid references auth.users(id),
   deleted_at  timestamptz,
-  unique (event_id, start_at)
+  unique (space_id, event_id, start_at)
 );
 create index occurrences_range on event_occurrences (space_id, start_at, end_at) where deleted_at is null;
 -- Conflict detection ("double-booked") is a range overlap query, so index it as one.

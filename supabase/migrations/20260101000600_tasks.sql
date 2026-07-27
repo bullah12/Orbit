@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0006 — Tasks
 --
@@ -40,7 +42,7 @@ create table tasks (
   -- Time-blocking: the task appears on the calendar but stays a task.
   scheduled_event_id uuid references events(id) on delete set null,
   search_tsv        tsvector generated always as (
-                      to_tsvector('english', coalesce(title,'') || ' ' || coalesce(notes_md,''))
+                      to_tsvector('english'::regconfig, coalesce(title,'') || ' ' || coalesce(notes_md,''))
                     ) stored,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now(),
@@ -77,7 +79,7 @@ create table task_contexts (
   updated_at timestamptz not null default now(),
   updated_by uuid references auth.users(id),
   deleted_at timestamptz,
-  unique (task_id, context)
+  unique (space_id, task_id, context)
 );
 create index task_contexts_lookup on task_contexts (space_id, context) where deleted_at is null;
 

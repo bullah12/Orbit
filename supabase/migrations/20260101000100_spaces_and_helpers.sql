@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0001 — spaces, membership, ad-hoc shares, and the access-control core
 -- ============================================================================

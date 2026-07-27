@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0075 — entity-space resolution, link/tagging integrity, move guards
 --
@@ -48,17 +50,17 @@ begin
   new.source_space_id := app.entity_space(new.source_type, new.source_id);
   new.target_space_id := app.entity_space(new.target_type, new.target_id);
 
-  if new.source_space_id is null or new.target_space_id is null then
+  -- "Does not exist" and "exists but you cannot write it" are raised from the
+  -- SAME statement, deliberately. Two separate RAISEs would differ in errcode
+  -- and in the line number PL/pgSQL reports in CONTEXT, and either is enough to
+  -- turn a failed insert into an existence oracle.
+  if new.source_space_id is null
+     or new.target_space_id is null
+     or not (new.source_space_id = any(app.writable_space_ids()))
+     or not (new.target_space_id = any(app.writable_space_ids()))
+  then
     raise exception 'Cannot link: one or both entities do not exist'
       using errcode = 'foreign_key_violation';
-  end if;
-
-  -- You may only author a link if you can write BOTH ends. Without this, a
-  -- shared-space editor could attach a shared note to my private person record.
-  if not (new.source_space_id = any(app.writable_space_ids())
-          and new.target_space_id = any(app.writable_space_ids())) then
-    raise exception 'Cannot link: one or both entities do not exist'
-      using errcode = 'insufficient_privilege';
   end if;
 
   new.space_id := new.source_space_id;

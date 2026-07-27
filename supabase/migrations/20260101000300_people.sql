@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0003 — People: the shared-facts / private-notes split
 --
@@ -19,6 +21,21 @@
 -- one visibility rule, applied uniformly.
 -- ============================================================================
 
+-- array_to_string() is only STABLE, so it cannot appear directly in a generated
+-- column. With a constant delimiter over text[] it is in fact deterministic,
+-- so we assert that once here rather than dropping nicknames from search.
+create or replace function app.people_search_tsv(
+  p_display_name text, p_nicknames text[], p_relationship_type text)
+returns tsvector
+language sql
+immutable
+as $$
+  select to_tsvector('english'::regconfig,
+           coalesce(p_display_name, '') || ' ' ||
+           coalesce(array_to_string(p_nicknames, ' '), '') || ' ' ||
+           coalesce(p_relationship_type, ''));
+$$;
+
 create table people (
   id                uuid primary key default gen_random_uuid(),
   space_id          uuid not null references spaces(id) on delete cascade,
@@ -38,10 +55,7 @@ create table people (
   -- same human. Never populated automatically on import.
   same_as_person_id uuid references people(id) on delete set null,
   search_tsv        tsvector generated always as (
-                      to_tsvector('english',
-                        coalesce(display_name,'') || ' ' ||
-                        coalesce(array_to_string(nicknames,' '),'') || ' ' ||
-                        coalesce(relationship_type,''))
+                      app.people_search_tsv(display_name, nicknames, relationship_type)
                     ) stored,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now(),
@@ -111,7 +125,7 @@ create table person_state (
   updated_at          timestamptz not null default now(),
   updated_by          uuid references auth.users(id),
   deleted_at          timestamptz,
-  unique (person_id, user_id),
+  unique (space_id, person_id, user_id),
   constraint locked_notes_are_encrypted
     check (not is_locked or (notes_md is null and notes_cipher is not null)),
   constraint custom_cadence_has_days
@@ -135,7 +149,7 @@ create table person_relations (
   updated_by    uuid references auth.users(id),
   deleted_at    timestamptz,
   constraint no_self_relation check (person_a <> person_b),
-  unique (person_a, person_b, relation_type)
+  unique (space_id, person_a, person_b, relation_type)
 );
 create index person_relations_a on person_relations (space_id, person_a);
 create index person_relations_b on person_relations (space_id, person_b);

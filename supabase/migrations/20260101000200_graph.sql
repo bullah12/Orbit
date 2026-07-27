@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0002 — the spine: tags, taggings, links, attachments
 --
@@ -49,7 +51,7 @@ create table taggings (
   updated_at      timestamptz not null default now(),
   updated_by      uuid references auth.users(id),
   deleted_at      timestamptz,
-  unique (tag_id, entity_type, entity_id)
+  unique (space_id, tag_id, entity_type, entity_id)
 );
 
 create table links (
@@ -71,7 +73,7 @@ create table links (
   updated_by      uuid references auth.users(id),
   deleted_at      timestamptz,
   constraint no_self_link check (not (source_type = target_type and source_id = target_id)),
-  unique (source_type, source_id, target_type, target_id, link_type)
+  unique (space_id, source_type, source_id, target_type, target_id, link_type)
 );
 
 -- Indexed in both directions, each led by the space column that gates it.

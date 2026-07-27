@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- ============================================================================
 -- Orbit 0008 — apply RLS uniformly, then override only where the uniform rule
 -- is not strict enough. There is no table where it is loosened.
