@@ -67,6 +67,11 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'orbit_app') then
     create role orbit_app login password 'orbit_dev_password' noinherit;
   end if;
+  -- Seeding only. BYPASSRLS is exactly why this is a separate role from the one
+  -- the application uses: the app must never be able to opt out of a policy.
+  if not exists (select 1 from pg_roles where rolname = 'orbit_seed') then
+    create role orbit_seed login password 'orbit_dev_password' bypassrls;
+  end if;
 end \$\$;
 SQL
 
@@ -91,6 +96,11 @@ su postgres -c "psql -q -v ON_ERROR_STOP=1 -d '$DB_NAME'" <<SQL
 grant connect on database "$DB_NAME" to orbit_app;
 grant usage on schema public, app, auth to orbit_app;
 grant authenticated, anon to orbit_app;
+
+grant connect on database "$DB_NAME" to orbit_seed;
+grant usage on schema public, app, auth to orbit_seed;
+grant all on all tables in schema public to orbit_seed;
+grant execute on all functions in schema app to orbit_seed;
 SQL
 
 # spatial_ref_sys is PostGIS's own read-only reference data (EPSG definitions).

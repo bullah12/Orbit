@@ -333,9 +333,13 @@ select is(
 -- ===========================================================================
 select tests.as_owner();
 
+-- Scoped to the fixture space on purpose: these tests run against a seeded
+-- database, and the seed has its own boiler task. A global count here would
+-- pass or fail depending on the seed, which is not what is being tested.
 select is(
   (select count(*)::int from public.tasks
-   where not is_locked
+   where space_id = 'aaaaaaaa-0000-0000-0000-000000000002'
+     and not is_locked
      and to_tsvector('english', title || ' ' || body_md) @@ plainto_tsquery('english', 'boiler')),
   1,
   'unlocked tasks are searchable');
