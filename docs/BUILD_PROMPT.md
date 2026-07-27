@@ -1,147 +1,161 @@
-# Autonomous build prompt — Orbit
+# Build prompt — Orbit
 
-Paste everything below the line into a fresh agent session on this repository.
+Paste everything below the line into a fresh session on this repository. Use the same
+prompt every session — it is written to be re-entered, not run once.
 
 ---
 
-Build Orbit. Work autonomously for the next four hours. **Do not ask me anything** — every
-question you might have is already answered below or in `docs/`. If you hit something
-genuinely undecided, pick the option that is easiest to reverse, write it into
-`docs/decisions-log.md` with one line of reasoning, and keep going.
+Build Orbit. Work autonomously. **Do not ask me anything** — every question you might have
+is already answered below or in `docs/`. If you hit something genuinely undecided, pick the
+option that is easiest to reverse, write one line into `docs/decisions-log.md`, and keep
+going.
 
-## Start here
+This is a **multi-session build**. You will not finish in one sitting and you are not
+expected to. Your job this session is to move the ball down the field and leave the next
+session able to pick up in under five minutes.
 
-Read, in this order, before writing code:
+## Every session starts the same way
 
-1. `docs/adr/0001-architecture.md` — the stack and the four load-bearing decisions
-2. `docs/phase-plan.md` — what is in and out of each phase
-3. `supabase/migrations/` — the schema already exists and has been applied successfully
-4. `supabase/tests/rls_isolation_test.sql` and `supabase/tests/README.md`
+1. Read `docs/STATUS.md` if it exists. **It is the handoff contract and it takes precedence
+   over your own assumptions about what is done.** If it doesn't exist yet, you are the
+   first session.
+2. Read `docs/decisions-log.md` for judgement calls already made. Don't relitigate them.
+3. Skim `docs/adr/0001-architecture.md` and `docs/phase-plan.md`.
+4. Get the database up: `./scripts/db-reset.sh`. It needs PostGIS and pgvector for
+   postgresql-16 — install them via apt if the container is fresh, then re-run. The schema
+   must apply cleanly before you build anything.
+5. Pick the next unstarted item from STATUS.md's "next three things" and start.
 
-The schema is done and correct. Do not redesign it. Extend it only when a feature
-genuinely needs a column that isn't there, and when you do: add a new migration, never
-edit an applied one, put `space_id` and `owner_id` on any new table, add it to
-`20260101000800_rls.sql`'s coverage, and lead every unique constraint with `space_id`.
+First session only: read `docs/adr/0001-architecture.md` in full, and
+`supabase/tests/README.md`.
 
-## Decisions — these are settled, do not revisit
+## Every session ends the same way
 
-The design doc lists ten open questions. They are now answered:
+**Stop building while you still have room to finish cleanly** — when you're maybe
+three-quarters through your context, not when you hit the wall. Then:
 
-1. **Encryption.** End-to-end (device-held key, server stores ciphertext) for items flagged
-   `is_locked` only. Everything else is server-side at rest. Locked items are excluded from
-   server-side search and from all AI features — that exclusion is already structural in
-   the schema; keep it that way.
+1. Get the working tree to a state that runs. Not mid-refactor.
+2. Update `docs/STATUS.md` (format below).
+3. Commit and push: `git push -u origin claude/orbit-life-os-g18nsk`.
+
+**The container is ephemeral. Anything not pushed is gone.** Push at least hourly during
+the session too, not only at the end.
+
+Running out of context mid-slice and leaving the branch broken is the single worst outcome
+available to you — worse than building nothing. A session that adds one working feature and
+a clean handoff is a good session.
+
+## `docs/STATUS.md` — the handoff contract
+
+Rewrite it fully each session. Be honest; I would rather read "week view is broken" than
+find out myself. Do not oversell.
+
+```markdown
+# Status — <date>, session N
+
+## Works (verified by running it)
+## Stubbed / fixture-backed (what would need real credentials)
+## Not started
+## Known bugs and rough edges   <- including ones you introduced and didn't fix
+## How to run   <- exact commands, env vars
+## Next three things, in order
+```
+
+"Works" means you ran it and watched it work. Not "implemented". If you didn't verify it,
+it goes under rough edges.
+
+## The schema is done
+
+`supabase/migrations/` is finished, verified against Postgres 16 with real PostGIS and
+pgvector, and 39/39 tables have RLS. **Do not redesign it.** Extend only when a feature
+genuinely needs a column that isn't there, and when you do: new migration, never edit an
+applied one, `space_id` and `owner_id` on any new table, add it to the RLS coverage in
+`20260101000800_rls.sql`, and lead every unique constraint with `space_id`.
+
+## Decisions — settled, do not revisit
+
+1. **Encryption.** End-to-end (device-held key) for `is_locked` items only; server-side at
+   rest for everything else. Locked items stay excluded from server-side search and from
+   all AI features — that exclusion is structural in the schema; keep it that way.
 2. **Partner is a light participant.** Build the full N-member model as designed, but
-   optimise the shared-space UI for one power user and one occasional viewer. Shared
-   surfaces that matter: joint events, want-to-go list, a shared task list. Do not build
-   collaborative flourishes.
-3. **`free_busy`.** Role and policies stay. The only UI is anonymous busy blocks inside the
-   merged calendar view — which you need anyway. No dedicated screens.
+   optimise the shared UI for one power user and one occasional viewer. Shared surfaces
+   that matter: joint events, want-to-go list, a shared task list.
+3. **`free_busy`.** Role and policies stay. Only UI is anonymous busy blocks in the merged
+   calendar, which you need anyway. No dedicated screens.
 4. **Same-person linking.** Two records, linked permanently via `people.same_as_person_id`.
    Never collapse to one. Never auto-merge on import.
-5. **Travel Mode detection.** Manual entry plus calendar-derived (flight/train/hotel event)
-   only. **No background location, no geofencing.** Do not request the permission.
+5. **Travel Mode detection.** Manual plus calendar-derived (flight/train/hotel event) only.
+   **No background location, no geofencing.** Do not request the permission.
 6. **Desktop is the web app in a browser.** No Tauri, no Electron, no global hotkey.
-7. **Email-in capture: not built.** Share sheet and in-app capture only.
-8. **AI: off by default**, per-feature opt-in, with a settings page stating exactly which
-   fields leave the device for each feature. Natural-language capture parsing is
-   **local-only** — `chrono-node` for the date substring plus hand-written tokenising for
-   `@context`, `!priority`, `#tag`, `@Person`, `[[note]]`. It must never call the network.
-9. **iCloud/CalDAV: not built.** Google + `.ics` only.
-10. **No post-event push prompt.** Today shows a quiet row — "3 events yesterday, no notes"
-    — and that is the whole feature. No pgvector, no semantic search; leave
-    `note_embeddings` empty.
+7. **No email-in capture.** Share sheet and in-app capture only.
+8. **AI off by default**, per-feature opt-in, settings stating exactly what leaves the
+   device. Natural-language capture parsing is **local-only** — `chrono-node` for the date
+   substring plus hand-written tokenising for `@context`, `!priority`, `#tag`, `@Person`,
+   `[[note]]`. It must never touch the network.
+9. **No iCloud/CalDAV.** Google + `.ics` only.
+10. **No post-event push prompt.** Today shows a quiet "3 events yesterday, no notes" row
+    and that is the whole feature. No pgvector, no semantic search.
 
-Two more standing rules, from the brief and non-negotiable: **no streaks, no badges, no
-gamification, no guilt**, and **no "who viewed what" tracking, ever**.
+Standing rules from the brief, non-negotiable: **no streaks, badges, gamification or
+guilt**, and **no "who viewed what" tracking, ever**.
 
-## Environment reality — handle this without asking
+## Environment reality — handle it, don't ask
 
-You are in an ephemeral container. Assume you have **no Supabase cloud project, no Google
-OAuth credentials, and no API keys.** Do not block on any of them.
+Assume **no Supabase cloud project, no Google OAuth credentials, no API keys.** Never block
+on one.
 
-- Try `supabase start` (Docker is available). If the CLI is missing, install it; if it
-  cannot run, fall back to a local Postgres 16 (`pg_ctlcluster 16 main start`) and apply
-  the migrations directly. PostGIS and pgvector may be unavailable locally — if so, shim
-  them exactly as `supabase/tests/README.md` describes and note it. The schema must apply
-  cleanly somewhere before you build against it.
-- Put **every external integration behind an interface** with two implementations: the
-  real one, and a fixture-backed fake selected by env var. Google Calendar, ICS fetch,
-  geocoding, travel time, push notifications, Anthropic. The app must run end to end,
-  fully seeded and demoable, with zero credentials.
-- Write a `pnpm seed` script that creates two users, a household space, and realistic
-  Birmingham-flavoured data: ~40 people, ~200 events across categories, ~80 tasks across
-  every smart list, ~30 notes with real links between them, ~15 places. The seed is how
-  you and I both check the app actually works. Build it early, in Phase 0.
-- If a dependency will not install after two honest attempts, choose a different library
-  and record it in the decisions log. Do not stall.
+- Put **every external integration behind an interface** with two implementations: real,
+  and a fixture-backed fake selected by env var. Google Calendar, ICS fetch, geocoding,
+  travel time, push, Anthropic. The app must run end to end and be demoable with zero
+  credentials.
+- Build `pnpm seed` early, in Phase 0 — it is how the work gets verified, by you and by me.
+  Two users, a household space, and realistic Birmingham data: ~40 people, ~200 events
+  across categories, ~80 tasks spanning every smart list, ~30 notes with real links,
+  ~15 places.
+- If a dependency won't install after two honest attempts, choose another and log it.
 
-## What to build, in this order
+## Order of work
 
-Work strictly in phase order from `docs/phase-plan.md`. **Each phase must be shippable
-before you start the next.** Shippable means: it runs, the seed data exercises it, the
-tests pass, and the branch is pushed.
+Strict phase order from `docs/phase-plan.md`. **Each phase shippable before the next
+starts** — it runs, the seed exercises it, tests pass, branch pushed.
 
-Suggested budget — treat as guidance, not a deadline to hit by cutting corners:
+Phase 0 is the priority and is not negotiable. It is genuinely usable on its own; if the
+build stops after Phase 0 I have a private task and note app with sharing already real,
+which is a good outcome. Everything after it is upside.
 
-- **~0:00–0:20** Scaffold: Expo + React Native Web + NativeWind + TypeScript, strict mode,
-  Vitest, lint, and the app shell with bottom nav. Get `pnpm test` and `pnpm web` green.
-- **~0:20–2:00** Phase 0, complete. This is the priority and it is not negotiable.
-- **~2:00–3:00** Phase 1 (calendar), against the ICS fake and seeded events.
-- **~3:00–3:40** Phase 2 (people) as far as it goes.
-- **~3:40–4:00** Stop building. Write `docs/STATUS.md`, make sure everything is pushed.
-
-**When you run out of time, ship a smaller thing that works rather than a bigger thing
-that is half-wired.** A complete Phase 0 plus a note saying calendar is unstarted is a
-good outcome. Four half-built phases is a bad one. Cut scope from the *end*, never quality
-from the middle.
+Work in **vertical slices that run**, not layers. "Tasks list renders real seeded data from
+the database with the space indicator on every row" beats "all the data-access code for
+every entity, wired to nothing."
 
 ## Non-negotiables while you build
 
-**The RLS tests are the point.** Get `supabase/tests/rls_isolation_test.sql` running
-(install pgTAP; it has not been executed yet, so expect to fix the plan count and any
-helper signatures). It must be green before Phase 0 is called done, and it must stay green.
-Add a case to it whenever you add a table. A bug in the sync engine loses data; a bug here
-is a privacy breach.
+**The RLS tests are the point.** Install pgTAP and get
+`supabase/tests/rls_isolation_test.sql` green (it has never been executed — expect to fix
+the plan count and some helper signatures). Green before Phase 0 is called done, and it
+stays green. Add a case whenever you add a table. A bug in the sync engine loses data; a
+bug here is a privacy breach.
 
-**Never let the client be the arbiter of visibility.** No filtering by space in application
-code as the only defence. If a query returns rows the user shouldn't see, the fix is a
-policy, not a `.filter()`.
+**Never let the client be the arbiter of visibility.** If a query returns rows the user
+shouldn't see, the fix is a policy, not a `.filter()`.
 
-**The space indicator is a hard requirement, not a nicety.** Personal vs Shared must be
-legible at a glance on every list row and every compose surface — a consistent visual
-treatment, not a small icon in a corner. Before any item moves between spaces, show the
-confirmation backed by `app.space_move_preview()`, naming exactly what becomes visible.
-Get this right before you build anything pretty.
+**The space indicator is a hard requirement, not a nicety.** Personal vs Shared legible at
+a glance on every list row and every compose surface — consistent visual treatment, not a
+small icon in a corner. Every move between spaces goes through a confirmation backed by
+`app.space_move_preview()`, naming exactly what becomes visible. Get this right before
+anything pretty.
 
 **Calm and dense, not playful and sparse.** Neutral chrome; category colour is the only
-strong colour on screen. Every category carries an icon and a label as well as a colour —
-never colour alone. Full dark mode. UK conventions throughout: Europe/London with correct
-DST, Monday week start, DD/MM/YYYY, 24h option, GBP, metric with miles for road distance.
+strong colour on screen. Every category carries icon and label as well as colour — never
+colour alone. Full dark mode. UK conventions throughout: Europe/London with correct DST,
+Monday week start, DD/MM/YYYY, 24h option, GBP, metric with miles for road distance.
 
-**Tests where the bugs hide:** RLS policies, the sync engine, and the category rules
-engine. Table-driven where possible. Don't chase coverage elsewhere.
+**Test where the bugs hide:** RLS policies, the sync engine, the category rules engine.
+Table-driven where you can. Don't chase coverage elsewhere.
 
 ## Working rhythm
 
-- Commit after each vertical slice that runs — roughly every 20–30 minutes. Never leave the
-  branch broken between commits. Push at least every hour.
-- Branch: `claude/orbit-life-os-g18nsk`. Do not open a pull request.
-- Keep `docs/decisions-log.md` current as you go: every judgement call, one line each. This
-  is what I will read first.
-- If you discover the design is wrong about something, fix it and write down what and why.
-  The design is a starting point, not scripture — but say when you depart from it.
-
-## Finish with `docs/STATUS.md`
-
-Written last, honestly, covering:
-
-- what actually works, verified by running it — not what you intended to build
-- what is stubbed, faked, or wired to fixtures rather than a real service
-- what is not started
-- every known bug and rough edge, including ones you introduced and didn't get back to
-- exactly what I need to do to run it: commands, env vars, what needs real credentials
-- the three things you would do next, in order
-
-Do not oversell it. I would rather read "Phase 0 done, calendar half-built and the week
-view is broken" than discover it myself.
+- Commit every vertical slice that runs. Never leave the branch broken between commits.
+- Branch `claude/orbit-life-os-g18nsk`. **Do not open a pull request.**
+- Keep `docs/decisions-log.md` current — every judgement call, one line each.
+- If you find the design is wrong about something, fix it and write down what and why. The
+  design is a starting point, not scripture — but say when you depart from it.
