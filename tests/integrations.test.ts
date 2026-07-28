@@ -5,6 +5,8 @@ import {
 import { FakeIcsProvider } from '@/lib/integrations/ics/fake';
 import { HttpIcsProvider } from '@/lib/integrations/ics/http';
 import { GoogleCalendarProvider } from '@/lib/integrations/calendar/google';
+import { NominatimGeocodingProvider } from '@/lib/integrations/geocoding/nominatim';
+import { OpenRouteServiceTravelTimeProvider } from '@/lib/integrations/travel/openrouteservice';
 import { parseIcs, parseIcsDuration } from '@/lib/integrations/ics/parse';
 import {
   IntegrationError,
@@ -42,13 +44,19 @@ describe('provider selection', () => {
   it('the env var actually selects a different implementation', () => {
     expect(selectCalendarProvider({ CALENDAR_PROVIDER: 'google' }).name).toBe('calendar:google');
     expect(selectIcsProvider({ ICS_PROVIDER: 'http' }).name).toBe('ics:http');
+    expect(selectGeocodingProvider({ GEOCODING_PROVIDER: 'nominatim' }).name)
+      .toBe('geocoding:nominatim');
+    expect(selectTravelTimeProvider({ TRAVEL_TIME_PROVIDER: 'openrouteservice' }).name)
+      .toBe('travel:openrouteservice');
   });
 
   it('refuses an unknown provider instead of quietly serving fixtures', () => {
     // Serving made-up data to somebody who asked for Google is the exact
     // failure this pattern exists to prevent.
     expect(() => selectCalendarProvider({ CALENDAR_PROVIDER: 'outlook' })).toThrow(UnknownProviderError);
-    expect(() => selectGeocodingProvider({ GEOCODING_PROVIDER: 'nominatim' })).toThrow(UnknownProviderError);
+    expect(() => selectGeocodingProvider({ GEOCODING_PROVIDER: 'google' })).toThrow(UnknownProviderError);
+    expect(() => selectTravelTimeProvider({ TRAVEL_TIME_PROVIDER: 'google' })).toThrow(UnknownProviderError);
+    expect(() => selectPushProvider({ PUSH_PROVIDER: 'webpush' })).toThrow(UnknownProviderError);
   });
 
   it('constructing a real provider without credentials does not throw', () => {
@@ -65,6 +73,40 @@ describe('provider selection', () => {
       name: 'IntegrationError',
       kind: 'missing_credential',
     });
+  });
+
+  it('the real geocoder and travel provider construct bare and refuse when called', async () => {
+    // Phase 3's two real implementations. Written, never run: what is provable
+    // here is that they boot without a credential and refuse to act without
+    // one, which is the property the whole app depends on.
+    expect(() => new NominatimGeocodingProvider({})).not.toThrow();
+    expect(() => new OpenRouteServiceTravelTimeProvider({})).not.toThrow();
+
+    await expect(new NominatimGeocodingProvider({}).geocode('Kings Heath')).rejects.toMatchObject({
+      name: 'IntegrationError',
+      kind: 'missing_credential',
+    });
+    await expect(
+      new OpenRouteServiceTravelTimeProvider({}).estimate(
+        { lat: 52.4, lon: -1.9 }, { lat: 52.5, lon: -1.8 }, 'drive',
+      ),
+    ).rejects.toMatchObject({ name: 'IntegrationError', kind: 'missing_credential' });
+  });
+
+  it('an empty geocode query is answered without a request or a credential', async () => {
+    // Nothing to look up is not an error, and it must not become a network
+    // call — or, here, a credential complaint about a request nobody made.
+    await expect(new NominatimGeocodingProvider({}).geocode('   ')).resolves.toEqual([]);
+  });
+
+  it('the real travel provider refuses public transport rather than answering with a car', async () => {
+    // ORS has no transit profile. A driving number labelled "bus" is a lie
+    // with a plausible number attached.
+    await expect(
+      new OpenRouteServiceTravelTimeProvider({ ORS_API_KEY: 'not-a-real-key' }).estimate(
+        { lat: 52.4, lon: -1.9 }, { lat: 52.5, lon: -1.8 }, 'transit',
+      ),
+    ).rejects.toMatchObject({ name: 'IntegrationError', kind: 'not_found' });
   });
 
   it('the real ICS provider refuses a non-http scheme before any fetch', async () => {
