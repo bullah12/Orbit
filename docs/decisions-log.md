@@ -237,3 +237,93 @@ tracking, ever.
   only full against a fresh database, so the checks assert the *sequence* — a
   pull, then an incremental one — rather than the absolute state. A check that
   passes once and then fails forever is worse than no check.
+
+## Session 4 — 2026-07-28
+
+- **The branch is `claude/orbit-phase-3-places-7x37yk`**, not
+  `claude/orbit-build-phase-2-vu20kw`. The task description named session 3's
+  branch, which is already merged into `main` via PR #4; the session's
+  designated branch is the former. Same thing happened in sessions 1, 2 and 3 —
+  the designated branch wins every time.
+- **A place's "people" are derived from event attendees, not from a new table.**
+  The brief asks for linked people on a place. There is no person↔place table
+  and adding one would be a schema change for something the schema already
+  answers: the honest association is "people who were at an event here". The
+  page says it is derived rather than implying somebody recorded it. If a
+  future phase needs "Sadia's dentist is here" as a fact rather than a
+  coincidence, *that* is when the table earns its place.
+- **A place is archived, never deleted.** Same rule as people, and for a
+  stronger reason: events, visits and travel legs point at it, and the FKs are
+  `on delete set null` — deleting a place silently empties a field on every one
+  of them. Archiving keeps the visits and is reversible.
+- **Moving a place cuts loose what is left behind, rather than moving it.**
+  Visits are the place's own history and travel with it. Events and travel legs
+  in the *old* space stop naming the place, because a reference to something
+  its readers can no longer see is worse than no reference. Stated in the
+  confirmation before the write, like every other move.
+- **Typed-in coordinates are not a geocode.** Editing latitude and longitude by
+  hand leaves `geocode_source` alone and never sets `geocoded_at`, so a place
+  always says where its point actually came from. A place with no point at all
+  is a normal steady state, not an error.
+- **Nominatim's contact string is treated as a credential.** It has no API key,
+  but the usage policy requires a genuine identifying contact and treats an
+  anonymous client as abuse. `NOMINATIM_CONTACT` is therefore required and its
+  absence fails when the provider is *called*, exactly like Google's refresh
+  token. The one-request-a-second limit is encoded as a serialising gate rather
+  than described in a comment.
+- **OpenRouteService refuses public transport instead of answering with a car.**
+  ORS has no transit profile. A driving number labelled "bus" is a lie with a
+  plausible number attached, so `travel:openrouteservice` throws for `transit`,
+  and `estimateLegMinutes()` — clearly labelled a guess — is what fills the gap.
+  `plane` and `other` map to no profile at all for the same reason.
+- **Travel maths is a pure module, tested before any UI was wired to it.** The
+  brief called travel a bug farm the way recurrence was, and it is: buffers,
+  midnight, missing coordinates and the two clock changes. 46 cases in
+  `tests/travel.test.ts`, all the clock ones on the real 2026 boundaries, all
+  through `zonedInstant` / `londonDayMinutes` rather than `getDate()`.
+- **A gap is measured between instants, not on the wall clock.** 00:30 to 03:00
+  on 29 March looks like 150 minutes and is 90; 00:30 BST to 02:00 GMT on 25
+  October looks like 90 and is 150. Both are asserted. This is the case that
+  makes somebody late, and the arithmetic never has to know which side of a
+  boundary it is on because it never leaves instants.
+- **Derivation is deliberately narrow.** All-day events are ignored — being
+  somewhere all Tuesday is a trip, not a journey. An event with no place is
+  skipped without breaking the chain. Two events at the same place imply
+  nothing. The first journey of the day only exists if you say where you
+  started. A wrong journey in a list is worse than a missing one.
+- **A multi-day event is a trip; a gig that runs past midnight is a late
+  night.** `sessionFromEvent()` counts London days rather than hours, so the
+  23- and 25-hour days behave like every other day, and a timed event ending
+  before 06:00 the next morning is explicitly not a trip.
+- **Derived journeys are estimated crudely on the page and properly on save.**
+  Asking a routing provider for every derived leg on every render is a request
+  per render, which with a real provider is somebody's rate limit. The page
+  shows the distance-based guess; the provider is asked once, at the moment a
+  journey is saved or re-estimated.
+- **`EventRow` gained `placeId`, `placeLat` and `placeLon`** so travel
+  derivation could reuse `listCalendarItems()` rather than growing a second
+  query that expands recurrence its own way. One implementation of what a
+  repeat means, still.
+- **The free/busy blocks are dropped before derivation, not filtered after.**
+  A `BusyBlock` has no id and no place, so it cannot be an endpoint — and
+  reaching past the policy to find out where somebody actually is would be
+  precisely the disclosure the free/busy model exists to prevent.
+- **The seed writes a fixed travel day, 29 July 2026.** Three placed Home
+  events arranged so the first hop has room and the second does not, so
+  `/travel` demonstrates both verdicts on a cold container and the smoke suite
+  can navigate straight to it. A date computed from "today" would drift.
+- **One place is seeded into Work.** Everything else is in Home, which meant
+  "the partner sees Home travel and not Work travel" had nothing on the Work
+  side to fail on. There are now 16 places, not 15.
+- **`place_visits`, `travel_legs` and `travel_sessions` left the pgTAP
+  known-empty ledger**, with eight new assertions: the partner sees the shared
+  place, visit, journey and trip and not the ones in Priya's own space; a
+  free/busy participant sees none of the four. Where somebody went, and when
+  they left to get there, is content — it is strictly more than "busy".
+  plan(55) → plan(63).
+- **An uncontrolled `<select>` keyed on its own stored value.** After
+  re-estimating a journey in another mode the control went on showing the old
+  mode: `defaultValue` only applies when the DOM node mounts. Keying the select
+  on the stored mode forces the remount. Recorded because it looked like the
+  action had failed when it had not, and the smoke check that caught it now
+  asserts the stored value and the visible one separately.
