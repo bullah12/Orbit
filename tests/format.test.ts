@@ -8,10 +8,16 @@ import {
   formatDuration,
   formatTime,
   londonDayISO,
+  londonDayMinutes,
+  londonInstant,
   londonMidnight,
+  londonTimeHHMM,
+  minutesIntoLondonDay,
   plural,
   startOfWeekISO,
   todayISO,
+  zonedInstant,
+  zonedWallClock,
 } from '@/lib/format';
 
 /**
@@ -220,5 +226,72 @@ describe('the small prose helpers', () => {
     expect(formatDuration(45)).toBe('45 min');
     expect(formatDuration(60)).toBe('1 hr');
     expect(formatDuration(90)).toBe('1 hr 30 min');
+  });
+});
+
+/**
+ * The helpers the calendar grid and recurrence expansion are built on. These
+ * exist because "what time is it there" and "how long is this day" are the two
+ * questions a week view gets wrong twice a year.
+ */
+describe('zonedInstant and londonInstant', () => {
+  it('reads a wall clock as GMT in winter and BST in summer', () => {
+    expect(londonInstant('2026-01-15', '09:00').toISOString()).toBe('2026-01-15T09:00:00.000Z');
+    expect(londonInstant('2026-07-15', '09:00').toISOString()).toBe('2026-07-15T08:00:00.000Z');
+  });
+
+  it('round-trips every hour of the two boundary days', () => {
+    for (const day of ['2026-03-29', '2026-10-25']) {
+      for (let h = 3; h < 24; h++) {
+        const hhmm = `${String(h).padStart(2, '0')}:00`;
+        expect(londonTimeHHMM(londonInstant(day, hhmm))).toBe(hhmm);
+      }
+    }
+  });
+
+  it('resolves the spring gap forwards — 01:30 does not exist on 29 March 2026', () => {
+    expect(londonTimeHHMM(londonInstant('2026-03-29', '01:30'))).toBe('02:30');
+  });
+
+  it('resolves the autumn repeat to the second, GMT, occurrence', () => {
+    // 01:30 happens twice on 25 October 2026. This picks the later one.
+    expect(londonInstant('2026-10-25', '01:30').toISOString()).toBe('2026-10-25T01:30:00.000Z');
+  });
+
+  it('honours a zone that is not London', () => {
+    expect(zonedInstant('2026-07-15', '09:00:00', 'UTC').toISOString()).toBe('2026-07-15T09:00:00.000Z');
+    expect(zonedInstant('2026-07-15', '09:00:00', 'America/New_York').toISOString())
+      .toBe('2026-07-15T13:00:00.000Z');
+  });
+
+  it('zonedWallClock inverts zonedInstant', () => {
+    const i = londonInstant('2026-10-24', '23:45');
+    expect(zonedWallClock(i)).toEqual({ date: '2026-10-24', time: '23:45:00' });
+    // Midnight is the case that renders as hour 24 on some engines.
+    expect(zonedWallClock(londonInstant('2026-07-01', '00:00'))).toEqual({
+      date: '2026-07-01', time: '00:00:00',
+    });
+  });
+});
+
+describe('day lengths', () => {
+  it('knows the 23-hour and 25-hour days', () => {
+    expect(londonDayMinutes('2026-03-28')).toBe(1440);
+    expect(londonDayMinutes('2026-03-29')).toBe(1380); // clocks forward
+    expect(londonDayMinutes('2026-10-25')).toBe(1500); // clocks back
+    expect(londonDayMinutes('2026-10-26')).toBe(1440);
+  });
+
+  it('measures into the day from London midnight, not from UTC midnight', () => {
+    expect(minutesIntoLondonDay(londonInstant('2026-07-15', '09:30'))).toBe(570);
+    expect(minutesIntoLondonDay(londonInstant('2026-01-15', '09:30'))).toBe(570);
+  });
+
+  it('a 12:00 event sits past the middle of the 25-hour day and before it on the 23-hour one', () => {
+    // The reason the grid divides by londonDayMinutes rather than by 1440.
+    const autumn = minutesIntoLondonDay(londonInstant('2026-10-25', '12:00')) / londonDayMinutes('2026-10-25');
+    const spring = minutesIntoLondonDay(londonInstant('2026-03-29', '12:00')) / londonDayMinutes('2026-03-29');
+    expect(autumn).toBeGreaterThan(0.5);
+    expect(spring).toBeLessThan(0.5);
   });
 });
