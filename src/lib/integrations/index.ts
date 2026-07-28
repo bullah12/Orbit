@@ -31,6 +31,7 @@ import { NominatimGeocodingProvider } from './geocoding/nominatim';
 import { FakeTravelTimeProvider } from './travel/fake';
 import { OpenRouteServiceTravelTimeProvider } from './travel/openrouteservice';
 import { FakePushProvider } from './push/fake';
+import { WebPushProvider } from './push/webpush';
 import { FakeAiProvider } from './ai/fake';
 
 export * from './types';
@@ -91,13 +92,23 @@ export function selectTravelTimeProvider(env: Env = process.env): TravelTimeProv
 }
 
 /**
- * Phase 4 and 5 own the real implementations of the two below. Only `fake` is
- * listed, so asking for one today fails loudly with the list of what exists
- * rather than serving fixtures under another name.
+ * Phase 4 wrote the real push provider: Web Push against RFC 8030 / 8291 /
+ * 8292. Like the two Phase 3 wrote, it has never executed a request — what the
+ * tests verify is that it constructs with no credential and refuses when
+ * called without one.
  */
 export function selectPushProvider(env: Env = process.env): PushProvider {
-  return choose<PushProvider>('PUSH_PROVIDER', env, { fake: () => new FakePushProvider() });
+  return choose<PushProvider>('PUSH_PROVIDER', env, {
+    fake: () => new FakePushProvider(),
+    webpush: () => new WebPushProvider(env),
+  });
 }
+
+/**
+ * Phase 5 owns the real AI provider. Only `fake` is listed, so asking for one
+ * today fails loudly with the list of what exists rather than serving fixtures
+ * under another name.
+ */
 
 export function selectAiProvider(env: Env = process.env): AiProvider {
   return choose<AiProvider>('AI_PROVIDER', env, { fake: () => new FakeAiProvider() });
