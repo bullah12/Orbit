@@ -37,7 +37,11 @@ export type EventRow = {
   space: SpaceRef;
   category: { name: string; colour: string; icon: string } | null;
   calendarName: string | null;
+  placeId: string | null;
   placeName: string | null;
+  /** The place's point, when it has one. Travel derivation needs it; nothing else does. */
+  placeLat: number | null;
+  placeLon: number | null;
   attendeeCount: number;
   /** Always false. Present so a block and an event can share one list. */
   isBusy: false;
@@ -106,7 +110,10 @@ export async function listCalendarItems(
             jsonb_build_object('name', c.name, 'colour', c.colour, 'icon', c.icon)
           end as category,
           cal.name  as "calendarName",
+          pl.id     as "placeId",
           pl.name   as "placeName",
+          ST_Y(pl.geom::geometry) as "placeLat",
+          ST_X(pl.geom::geometry) as "placeLon",
           coalesce(att.n, 0) as "attendeeCount"
         from public.events e
         join public.spaces s on s.id = e.space_id
@@ -178,7 +185,10 @@ function occurrencesOf(row: RawEvent, from: Date, to: Date): EventRow[] {
     space: row.space,
     category: row.category,
     calendarName: row.calendarName,
+    placeId: row.placeId,
     placeName: row.placeName,
+    placeLat: row.placeLat,
+    placeLon: row.placeLon,
     attendeeCount: row.attendeeCount,
     isBusy: false,
   };

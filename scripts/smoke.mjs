@@ -35,6 +35,7 @@ const S_PRIYA = '00000000-0000-4000-8000-000000000003';
 const S_HOME = '00000000-0000-4000-8000-000000000004';
 const S_WORK = '00000000-0000-4000-8000-000000000005';
 
+const TRAVEL_DAY = '2026-07-29';
 let placeUrl;
 let privatePlaceUrl;
 let failures = 0;
@@ -902,6 +903,151 @@ try {
     check('the outsider sees zero places', rows === 0, `${rows} rows`);
     const res = await page.goto(placeUrl);
     check('and a direct link to a real place is a 404', res.status() === 404, `HTTP ${res.status()}`);
+    await ctx.close();
+  }
+
+  // -------------------------------------------------------------- travel
+  //
+  // 2026-07-29 is the seed's travel day: three Home events at three different
+  // places, arranged so one hop has room and the next does not.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    check('the travel page renders', (await page.locator('h1').first().innerText()) === 'Travel');
+
+    const trips = await page.locator('ul[aria-label="Trips"] li').count();
+    check('trips are listed', trips >= 2, `${trips} trips`);
+    const tripIndicators = await page
+      .locator('ul[aria-label="Trips"] li span[title^="Space:"]')
+      .count();
+    check('every trip row carries a space indicator', tripIndicators >= trips, `${tripIndicators}/${trips}`);
+
+    const derived = page.locator('ul[aria-label="Journeys the calendar implies"] li');
+    const derivedCount = await derived.count();
+    check(
+      'the calendar implies journeys between events at different places',
+      derivedCount >= 2,
+      `${derivedCount} derived`,
+    );
+
+    const derivedText = await derived.first().innerText();
+    check(
+      'and states the door-to-door estimate, separating the moving part from the buffer',
+      /about .*(min|hr)/.test(derivedText) && derivedText.includes('either end'),
+      derivedText.replace(/\n/g, ' ').slice(0, 70),
+    );
+
+    const allDerived = await derived.allInnerTexts();
+    check(
+      'a journey that does not fit says how short it is, rather than looking fine',
+      allDerived.some((t) => /\d+ min short/.test(t)),
+      (allDerived.find((t) => /min short/.test(t)) ?? '').replace(/\n/g, ' ').slice(0, 60),
+    );
+    check(
+      'and one that does fit says how much room there is',
+      allDerived.some((t) => /\d+ min spare/.test(t)),
+    );
+
+    // Save the first derived journey, then delete it again: a sequence, so a
+    // second run without reseeding asserts the same thing.
+    const legsBefore = await page.locator('ul[aria-label="Journeys on this day"] li').count();
+    await derived.first().locator('button:has-text("Save this journey")').click();
+    await settle(page);
+    const saved = page.locator('ul[aria-label="Journeys on this day"] li');
+    const legsAfter = await saved.count();
+    check(
+      'a derived journey can be saved',
+      legsAfter === legsBefore + 1,
+      `${legsBefore} → ${legsAfter}`,
+    );
+    check(
+      'every journey row carries a space indicator',
+      (await saved.locator('span[title^="Space:"]').count()) >= legsAfter,
+    );
+    const savedText = await saved.first().innerText();
+    check(
+      'the saved journey carries a departure time worked back from the arrival',
+      /\d{2}:\d{2}–\d{2}:\d{2}/.test(savedText),
+      savedText.replace(/\n/g, ' ').slice(0, 60),
+    );
+    check(
+      'and it is no longer offered as a journey to save',
+      (await derived.count()) === derivedCount - 1,
+    );
+
+    // Re-estimate it as a walk. The distance is the same; the time is not.
+    const drivingText = await saved.first().innerText();
+    await saved.first().locator('select[name=mode]').selectOption('walk');
+    await saved.first().locator('button:has-text("Re-estimate")').click();
+    await settle(page);
+    const walkingRow = page.locator('ul[aria-label="Journeys on this day"] li').first();
+    const walkingText = await walkingRow.innerText();
+    check(
+      're-estimating with a different mode changes the answer',
+      walkingText !== drivingText,
+      walkingText.replace(/\n/g, ' ').slice(0, 60),
+    );
+    check(
+      'and the control shows the mode that was actually stored',
+      (await walkingRow.locator('select[name=mode]').inputValue()) === 'walk',
+    );
+
+    await page.locator('ul[aria-label="Journeys on this day"] li button[aria-label^="Delete the journey"]').first().click();
+    await settle(page);
+    check(
+      'and deleted again, leaving the day as it was found',
+      (await page.locator('ul[aria-label="Journeys on this day"] li').count()) === legsBefore,
+    );
+
+    // A journey by hand. Places belong to a space, so the space chip has to be
+    // chosen first — the picker only offers places from the chosen one, which
+    // is the whole point of it.
+    await page.check(`form[aria-label="Add a journey"] input[name=spaceId][value="${S_HOME}"]`, {
+      force: true,
+    });
+    await settle(page);
+    await page.selectOption('#leg-from', { index: 1 });
+    await page.selectOption('#leg-to', { index: 2 });
+    await page.selectOption('#leg-mode', 'cycle');
+    await page.fill('#leg-depart', '17:00');
+    await page.click('button:has-text("Add journey")');
+    await settle(page);
+    const manual = page.locator('ul[aria-label="Journeys on this day"] li');
+    check(
+      'a journey can be added by hand',
+      (await manual.count()) === legsBefore + 1,
+    );
+    await manual.first().locator('button[aria-label^="Delete the journey"]').click();
+    await settle(page);
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------- travel: partner and outsider
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const titles = await page.locator('ul[aria-label="Trips"] li').allInnerTexts();
+    check(
+      'the partner sees the household trip',
+      titles.some((t) => t.includes('Pembrokeshire')),
+      `${titles.length} trips`,
+    );
+    check(
+      'and not the trip in the space he only sees as free/busy',
+      !titles.some((t) => t.includes('Leeds')),
+    );
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const body = await page.locator('main').innerText();
+    check('the outsider sees no trips', body.includes('No trips recorded'));
+    check('and no journeys', body.includes('Nothing recorded for this day'));
+    check('and no events to derive one from', body.includes('No events on this day'));
     await ctx.close();
   }
 
