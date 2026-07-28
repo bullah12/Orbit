@@ -64,7 +64,9 @@ export default async function RulesPage({
 
       <ComposeRule spaces={writable} />
 
-      <ul className="flex flex-col">
+      {/* Identified so the smoke suite can count rules without also counting
+          the run links further down the page. */}
+      <ul id="rule-list" className="flex flex-col">
         {rules.map((row) => {
           const { rule, problems } = parseRuleRow(row);
           const triggerKind =

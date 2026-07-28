@@ -57,6 +57,30 @@ async function pageAs(userId) {
   return { ctx, page };
 }
 
+/**
+ * Every control on a page that has no accessible name.
+ *
+ * A dense interface is a keyboard interface: an unlabelled select in a row of
+ * six is unusable with a screen reader whatever it looks like. Every page a
+ * phase adds gets audited with this.
+ */
+async function labelAuditOn(page) {
+  return page.evaluate(() => {
+    const bad = [];
+    for (const el of document.querySelectorAll('input, select, textarea, button')) {
+      if (el.type === 'hidden') continue;
+      const named =
+        el.getAttribute('aria-label') ||
+        el.getAttribute('aria-labelledby') ||
+        (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) ||
+        el.closest('label') ||
+        (el.tagName === 'BUTTON' && el.textContent.trim());
+      if (!named) bad.push(`${el.tagName.toLowerCase()}[name=${el.name || '?'}]`);
+    }
+    return bad;
+  });
+}
+
 /** Server actions re-render without a navigation; wait for the DOM to settle. */
 async function settle(page) {
   await page.waitForLoadState('networkidle').catch(() => {});
@@ -403,22 +427,7 @@ try {
     // The same rule on the two densest pages Phase 3 added. A dense interface
     // is a keyboard interface, and an unlabelled select in a row of six is
     // unusable with a screen reader whatever it looks like.
-    const labelAudit = async (url) =>
-      page.evaluate(() => {
-        const bad = [];
-        for (const el of document.querySelectorAll('input, select, textarea, button')) {
-          if (el.type === 'hidden') continue;
-          const named =
-            el.getAttribute('aria-label') ||
-            el.getAttribute('aria-labelledby') ||
-            (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) ||
-            el.closest('label') ||
-            (el.tagName === 'BUTTON' && el.textContent.trim());
-          if (!named) bad.push(`${el.tagName.toLowerCase()}[name=${el.name || '?'}]`);
-        }
-        return bad;
-      });
-
+    const labelAudit = async () => labelAuditOn(page);
     await page.goto('/places?q=Cannon');
     await page.locator('main ul li a').first().click();
     await page.waitForLoadState('domcontentloaded');
@@ -1146,6 +1155,184 @@ try {
     check('the outsider sees no trips', body.includes('No trips recorded'));
     check('and no journeys', body.includes('Nothing recorded for this day'));
     check('and no events to derive one from', body.includes('No events on this day'));
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ rules
+  //
+  // Phase 4. The sequence is the assertion: a new rule starts off, refuses to
+  // be switched on until it has been previewed, then runs and says what it
+  // did. Nothing here selects by index and nothing is left behind — the rule
+  // this section creates is deleted at the end of it, so the suite passes
+  // twice in a row against the same database.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/rules');
+    const ruleLinks = page.locator('#rule-list li a[href^="/rules/"]');
+    const ruleCount = await ruleLinks.count();
+    check('the rules list renders the seeded rules', ruleCount >= 2, `${ruleCount} rules`);
+
+    const ruleIndicators = await page
+      .locator('#rule-list li a[href^="/rules/"] span[title^="Space:"]')
+      .count();
+    check(
+      'every rule row carries a space indicator',
+      ruleIndicators >= ruleCount,
+      `${ruleIndicators} indicators / ${ruleCount} rows`,
+    );
+
+    const listText = await page.locator('main').innerText();
+    check(
+      'a rule row says what it would do in one sentence',
+      listText.includes('Title contains “bin”') && listText.includes('assign it to my partner'),
+    );
+    check('and the seeded rules all ship switched off', listText.includes('0 on,'));
+
+    // ---- a rule cannot be switched on until it has been previewed ----
+    const stamp = `Smoke rule ${Date.now()}`;
+    const compose = page.locator('form[aria-label="Add a rule"]');
+    await compose.locator('input[name="name"]').fill(stamp);
+    await compose.locator('input[name="description"]').fill('Created by pnpm smoke');
+    // The Home space, chosen by its label rather than by its position.
+    await compose
+      .locator('fieldset label', { has: page.locator('span[title="Space: Home"]') })
+      .locator('input[type=radio]')
+      .check({ force: true });
+    await compose.getByRole('button', { name: 'Add' }).click();
+    await settle(page);
+
+    const smokeRuleUrl = page.url().split('?')[0];
+    check('a new rule opens on its own page', /\/rules\/[0-9a-f-]{36}$/.test(smokeRuleUrl), smokeRuleUrl);
+    check(
+      'and arrives switched off with nothing to do',
+      (await page.locator('main').innerText()).includes('cannot be switched on until it has one'),
+    );
+    check(
+      'so the switch is refused',
+      await page.getByRole('button', { name: 'Switch on' }).isDisabled(),
+    );
+
+    // Give it a condition and an action. A notify action, deliberately: it
+    // proves the push path without rewriting a seeded task, so running this
+    // section twice leaves the same tasks behind as running it once.
+    const condForm = page.locator('form:has(select[name="field"])');
+    await condForm.locator('select[name="field"]').selectOption('title');
+    await condForm.locator('select[name="op"]').selectOption('contains');
+    await condForm.locator('input[name="value"]').fill('bins');
+    await condForm.getByRole('button', { name: 'Add condition' }).click();
+    await settle(page);
+
+    const actForm = page.locator('form:has(select[name="kind"])');
+    await actForm.locator('select[name="kind"]').selectOption('notify');
+    await actForm.locator('input[name="value"]').fill('Bins tonight');
+    await actForm.getByRole('button', { name: 'Add action' }).click();
+    await settle(page);
+
+    const built = await page.locator('main').innerText();
+    check(
+      'a condition and an action read back in plain language',
+      built.includes('Title contains “bins”') && built.includes('notify me: “Bins tonight”'),
+    );
+    check(
+      'a rule with an action but no dry run still refuses to be switched on',
+      await page.getByRole('button', { name: 'Switch on' }).isDisabled(),
+    );
+    check(
+      'and says why',
+      (await page.locator('main').innerText()).includes('Dry-run it first'),
+    );
+
+    // ---- the dry run ----
+    await page.getByRole('button', { name: /Dry run/ }).click();
+    await settle(page);
+    const previewed = await page.locator('main').innerText();
+    check('a dry run says nothing was changed', previewed.includes('Nothing was changed'));
+    check(
+      'and names the task it would act on',
+      previewed.includes('Put the bins out') && previewed.includes('Send a notification'),
+    );
+    check(
+      'a locked task is listed as skipped, not silently dropped',
+      previewed.includes('(locked)') && previewed.includes('never reads a locked item'),
+    );
+
+    // ---- switching on, then running for real ----
+    check(
+      'the switch is offered once a preview exists',
+      await page.getByRole('button', { name: 'Switch on' }).isEnabled(),
+    );
+    await page.getByRole('button', { name: 'Switch on' }).click();
+    await settle(page);
+    await page.getByRole('button', { name: /Run now/ }).click();
+    await settle(page);
+    const ranText = await page.locator('main').innerText();
+    check('a real run reports itself as applied', ranText.includes('Applied'));
+    check('and the changes were applied', ranText.includes('Run finished'));
+
+    // ---- editing a rule takes its permission to run away ----
+    const editForm = page.locator('form:has(input[name="name"]):has(select[name="triggerKind"])');
+    await editForm.locator('select[name="triggerKind"]').selectOption('task.completed');
+    await editForm.getByRole('button', { name: 'Save' }).click();
+    await settle(page);
+    const afterEdit = await page.locator('main').innerText();
+    check(
+      'changing a rule switches it off and clears its preview',
+      afterEdit.includes('switches it off and clears its preview'),
+    );
+    check(
+      'so it has to be previewed again before it can run',
+      await page.getByRole('button', { name: 'Switch on' }).isDisabled(),
+    );
+
+    // ---- accessibility on both new pages ----
+    const ruleUnnamed = await labelAuditOn(page);
+    check('every control on the rule page has a label', ruleUnnamed.length === 0, ruleUnnamed.join(', '));
+    check(
+      'the rule page announces the outcome of a run rather than only redrawing',
+      (await page.locator('[aria-live="polite"]').count()) > 0,
+    );
+
+    await page.goto('/rules');
+    const rulesListUnnamed = await labelAuditOn(page);
+    check('every control on the rules list has a label', rulesListUnnamed.length === 0, rulesListUnnamed.join(', '));
+
+    // ---- leave nothing behind ----
+    await page.goto(smokeRuleUrl);
+    await page.getByRole('button', { name: 'Delete this rule' }).click();
+    await settle(page);
+    check(
+      'deleting the rule leaves the list as it was found',
+      (await page.locator('#rule-list li a[href^="/rules/"]').count()) === ruleCount,
+      `${await page.locator('#rule-list li a[href^="/rules/"]').count()} rules`,
+    );
+    check('and the rule it created is gone', !(await page.locator('main').innerText()).includes(stamp));
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/rules');
+    const text = await page.locator('main').innerText();
+    check('the partner sees the rules in the space he shares', text.includes('Bins go to Danny'));
+    check(
+      'and not the one in the space he only sees as free/busy',
+      !text.includes('Invoices are urgent'),
+    );
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/rules');
+    check(
+      'the outsider sees no rules at all',
+      (await page.locator('#rule-list li a[href^="/rules/"]').count()) === 0,
+    );
+    check('and no runs', (await page.locator('main').innerText()).includes('Nothing has run yet'));
+    const res = await page.goto('/rules/00000000-0000-4000-8000-0000000000b1');
+    check('and a direct link to a real rule is a 404', res.status() === 404, String(res.status()));
     await ctx.close();
   }
 

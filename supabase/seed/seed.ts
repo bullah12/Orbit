@@ -793,6 +793,7 @@ async function main() {
 
   const RULE_BINS = '00000000-0000-4000-8000-0000000000b1';
   const RULE_ADMIN = '00000000-0000-4000-8000-0000000000b2';
+  const RULE_WORK = '00000000-0000-4000-8000-0000000000b3';
   await sql`
     insert into public.rules (id, space_id, owner_id, name, slug, description, trigger, conditions, actions, is_enabled, last_dry_run_at) values
       (${RULE_BINS}, ${S_HOME}, ${PRIYA}, 'Bins go to Danny', 'bins-to-danny',
@@ -809,6 +810,18 @@ async function main() {
          { field: 'days_overdue', op: 'gte', value: 7 },
        ])},
        ${sql.json([{ kind: 'task.set_priority', priority: 'high' }])},
+       false, null),
+      -- One rule in Work, so "the partner sees Home rules and not Work ones"
+      -- has something on the Work side to fail on. Same reason there is one
+      -- place seeded into Work.
+      (${RULE_WORK}, ${S_WORK}, ${PRIYA}, 'Invoices are urgent after a fortnight', 'invoices-urgent',
+       'Unpaid invoices become urgent once they are two weeks overdue.',
+       ${sql.json({ kind: 'schedule', cron: '0 8 * * 1' })},
+       ${sql.json([
+         { field: 'title', op: 'contains', value: 'invoice' },
+         { field: 'days_overdue', op: 'gte', value: 14 },
+       ])},
+       ${sql.json([{ kind: 'task.set_priority', priority: 'urgent' }])},
        false, null)
   `;
 
