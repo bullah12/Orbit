@@ -418,6 +418,38 @@ async function main() {
     }
   }
 
+  // -- recurring events -----------------------------------------------------
+  //
+  // Two repeats, stored as one row plus one RRULE each rather than as expanded
+  // copies. They exist so `recurrence_rules` holds rows from a fresh seed: the
+  // outsider check in the pgTAP suite iterates pg_tables and cannot fail on an
+  // empty table, so a table nothing writes to has an untested policy.
+  //
+  // Both deliberately start before the clocks change and run past them, so the
+  // week view is exercised across a BST boundary by simply looking at it.
+  console.log('▸ recurring events');
+  for (const [space, owner, title, rrule, hour] of [
+    [S_HOME, PRIYA, 'Bin day — green bin', 'FREQ=WEEKLY;INTERVAL=2;BYDAY=WE', 7],
+    [S_WORK, PRIYA, 'Team stand-up', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;COUNT=60', 9],
+  ] as const) {
+    const dtstart = at(-30, hour, 30);
+    const rows = await sql<{ id: string }[]>`
+      insert into public.recurrence_rules (space_id, owner_id, rrule, dtstart, timezone)
+      values (${space}, ${owner}, ${rrule}, ${dtstart}, 'Europe/London')
+      returning id
+    `;
+    await sql`
+      insert into public.events
+        (space_id, owner_id, calendar_id, category_id, recurrence_rule_id,
+         title, starts_at, ends_at, all_day, status)
+      values (
+        ${space}, ${owner}, ${calIds[space]!}, ${catId[space]!.household ?? catId[space]!.work ?? null},
+        ${rows[0]!.id}, ${title}, ${dtstart},
+        ${new Date(dtstart.getTime() + 30 * 60_000)}, false, 'confirmed'
+      )
+    `;
+  }
+
   // -- tasks ----------------------------------------------------------------
   console.log('▸ tasks');
   const taskIds: string[] = [];
