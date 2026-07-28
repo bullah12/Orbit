@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(48);
+select plan(52);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -326,6 +326,47 @@ select is(
   (select count(*)::int from public.people where display_name = 'Dr Iqbal'),
   2,
   'linking leaves two records — it never collapses or merges them'
+);
+
+-- Read the link from each side. This is what the person detail page does, and
+-- it is where a careless join would leak the far record's name.
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+-- The link row lives in Home; person_b is the Home record, person_a is the one
+-- in Alice's personal space. Bob is in Home and not in Alice's space.
+select is(
+  (select count(*)::int from public.person_links
+   where person_a_id = 'eeeeeeee-0000-0000-0000-000000000002'
+      or person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
+  1,
+  'bob, a member of Home, can see that the Home record is linked to something'
+);
+
+select is(
+  (select count(*)::int
+   from public.person_links l
+   join public.people far on far.id = l.person_a_id
+   where l.person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
+  0,
+  'but resolving the far record returns nothing — he is not in that space'
+);
+
+select is(
+  (select count(*)::int from public.person_links
+   where space_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  0,
+  'and a link stored in a space he cannot read is invisible entirely'
+);
+
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+select is(
+  (select count(*)::int
+   from public.person_links l
+   join public.people far on far.id = l.person_a_id
+   where l.person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
+  1,
+  'alice, who is in both spaces, resolves the far record from the near side'
 );
 
 -- ===========================================================================

@@ -211,6 +211,56 @@ try {
     await ctx.close();
   }
 
+  // ------------------------------------------------- people, linked not merged
+  let homeIqbal;
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/people');
+    const rows = await page.locator('main ul li').count();
+    const indicators = await page.locator('main ul li span[title^="Space:"]').count();
+    check('every person row carries a space indicator', indicators >= rows, `${indicators}/${rows}`);
+
+    await page.goto('/people?q=Iqbal');
+    const linked = page.locator('main ul li', { hasText: 'linked' });
+    const linkedCount = await linked.count();
+    check(
+      'the same person appears as two records, one per space',
+      linkedCount === 2,
+      `${linkedCount} linked records`,
+    );
+
+    homeIqbal = await linked.first().locator('a').getAttribute('href');
+    await page.goto(homeIqbal);
+    const panel = page.locator('section:has-text("Also recorded elsewhere")');
+    check('the person detail shows the other record rather than merging it', await panel.count() === 1);
+
+    const otherHref = await panel.locator('a').first().getAttribute('href');
+    check('the two records are different rows', otherHref !== homeIqbal, `${homeIqbal} vs ${otherHref}`);
+
+    await page.goto(otherHref);
+    check(
+      'and the far side points back — the link is symmetric',
+      (await page.locator('section:has-text("Also recorded elsewhere") a').count()) === 1,
+    );
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto(`/people?space=${S_WORK}`);
+    check('the partner sees no people in Work', (await page.locator('main ul li').count()) === 0);
+
+    await page.goto(homeIqbal);
+    const panel = page.locator('section:has-text("Also recorded elsewhere")');
+    const text = (await panel.innerText().catch(() => '')) || '';
+    check(
+      'the partner sees that a link exists but not what is on the other side',
+      /cannot see/i.test(text),
+      text.split('\n')[1] ?? '(no panel)',
+    );
+    await ctx.close();
+  }
+
   // ------------------------------------------------------------ keyboard
   {
     const { ctx, page } = await pageAs(PRIYA);

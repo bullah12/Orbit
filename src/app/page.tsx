@@ -3,21 +3,24 @@ import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { categoriesBySpace, listTasks } from '@/lib/queries/tasks';
 import { yesterdaySummary } from '@/lib/queries/notes';
+import { upcomingDates } from '@/lib/queries/people';
 import { TaskRow } from '@/components/TaskRow';
 import { ComposeTask } from '@/components/ComposeTask';
 import { Icon } from '@/components/Icon';
+import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { plural } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
 export default async function TodayPage() {
   const user = await requireUser();
-  const [spaces, categories, today, overdue, yesterday] = await Promise.all([
+  const [spaces, categories, today, overdue, yesterday, dates] = await Promise.all([
     listSpaces(user.id),
     categoriesBySpace(user.id),
     listTasks(user.id, 'today', { limit: 50 }),
     listTasks(user.id, 'overdue', { limit: 50 }),
     yesterdaySummary(user.id),
+    upcomingDates(user.id, 21),
   ]);
 
   const overdueOnly = overdue.filter((t) => !today.some((x) => x.id === t.id));
@@ -44,6 +47,37 @@ export default async function TodayPage() {
           <Icon name="calendar" size={12} className="faint" />
           {plural(yesterday.eventCount, 'event')} yesterday, no notes.
         </div>
+      )}
+
+      {dates.length > 0 && (
+        <section>
+          <SectionHeading>Coming up</SectionHeading>
+          <ul>
+            {dates.map((d) => (
+              <li
+                key={`${d.personId}-${d.kind}-${d.onDate}`}
+                className="hairline row-hover flex flex-wrap items-baseline gap-2 border-b px-5 py-1.5 text-[13px]"
+              >
+                <Icon name="cake" size={12} className="faint shrink-0" />
+                <Link href={`/people/${d.personId}`} className="min-w-0 truncate">
+                  {d.displayName}
+                </Link>
+                <span className="muted text-[12px]">
+                  {d.label ?? d.kind}
+                  {d.turning != null && d.kind === 'birthday' ? ` — turning ${d.turning}` : ''}
+                </span>
+                <span className="faint ml-auto shrink-0 text-[11px]">
+                  {d.daysAway === 0
+                    ? 'today'
+                    : d.daysAway === 1
+                      ? 'tomorrow'
+                      : `in ${plural(d.daysAway, 'day')}`}
+                </span>
+                <SpaceIndicator space={d.space} />
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {today.length > 0 && (
