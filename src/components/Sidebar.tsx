@@ -37,6 +37,7 @@ export function Sidebar({
         <NavLink href="/" icon="check" label="Today" />
         <NavLink href="/calendar/week" icon="calendar" label="Calendar" />
         <NavLink href="/people" icon="users" label="People" />
+        <NavLink href="/places" icon="map_pin" label="Places" />
         <NavLink href="/notes" icon="note" label="Notes" />
       </div>
 

@@ -6,7 +6,7 @@ import { cookies } from 'next/headers';
 import { asUser } from '@/lib/db';
 import { listSelectableUsers, requireUser, USER_COOKIE } from '@/lib/auth';
 import { addDaysISO, londonInstant } from '@/lib/format';
-import { calendarProvider, icsProvider, parseIcs } from '@/lib/integrations';
+import { calendarProvider, geocodingProvider, icsProvider, parseIcs } from '@/lib/integrations';
 import {
   connectProviderCalendar,
   pullCalendar,
@@ -896,4 +896,274 @@ export async function syncCalendar(formData: FormData) {
   redirect(
     `/calendar/import?added=${result.added}&changed=${result.updated}&removed=${result.removed}&full=${result.wasFullPull ? 1 : 0}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Places
+//
+// A place is a row with an optional point. Nothing here reads a device
+// location and nothing here asks for the permission — decision 5. Coordinates
+// arrive one of two ways: typed in, or resolved by the GeocodingProvider when
+// somebody presses the button.
+// ---------------------------------------------------------------------------
+
+export async function createPlace(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const name = String(formData.get('name') ?? '').trim();
+  const categoryId = String(formData.get('categoryId') ?? '') || null;
+  const addressText = String(formData.get('addressText') ?? '').trim() || null;
+  const postcode = String(formData.get('postcode') ?? '').trim().toUpperCase() || null;
+  if (!spaceId || !name) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.places
+        (space_id, owner_id, category_id, name, address_text, postcode)
+      values (
+        ${spaceId}::uuid, ${user.id}::uuid,
+        (select c.id from public.categories c
+          where c.id = ${categoryId}::uuid and c.space_id = ${spaceId}::uuid),
+        ${name}, ${addressText}, ${postcode})
+      on conflict (space_id, name) do nothing
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function updatePlace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  const name = String(formData.get('name') ?? '').trim();
+  if (!id || !name) return;
+
+  const addressText = String(formData.get('addressText') ?? '').trim() || null;
+  const postcode = String(formData.get('postcode') ?? '').trim().toUpperCase() || null;
+  const city = String(formData.get('city') ?? '').trim() || null;
+  const notesMd = String(formData.get('notesMd') ?? '');
+  const categoryId = String(formData.get('categoryId') ?? '') || null;
+
+  // Typed-in coordinates are allowed and are not a geocode: the source stays
+  // 'manual' so a later geocode does not claim to have produced them.
+  const latRaw = String(formData.get('lat') ?? '').trim();
+  const lonRaw = String(formData.get('lon') ?? '').trim();
+  const lat = latRaw === '' ? null : Number(latRaw);
+  const lon = lonRaw === '' ? null : Number(lonRaw);
+  const hasPoint =
+    lat !== null && lon !== null &&
+    Number.isFinite(lat) && Number.isFinite(lon) &&
+    Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      update public.places pl set
+        name         = ${name},
+        address_text = ${addressText},
+        postcode     = ${postcode},
+        city         = ${city},
+        notes_md     = ${notesMd},
+        category_id  = (
+          select c.id from public.categories c
+          where c.id = ${categoryId}::uuid and c.space_id = pl.space_id
+        ),
+        geom = ${
+          hasPoint
+            ? tx`ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography`
+            : tx`null`
+        },
+        geocode_source = ${hasPoint ? tx`coalesce(pl.geocode_source, 'manual')` : tx`null`},
+        geocoded_at    = ${hasPoint ? tx`pl.geocoded_at` : tx`null`},
+        updated_at   = now()
+      where pl.id = ${id}::uuid and not pl.is_locked
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Resolve coordinates through the GeocodingProvider.
+ *
+ * The provider is chosen by GEOCODING_PROVIDER and defaults to the fake, which
+ * needs no network and no credential — so this button works in a cold
+ * container. What gets written is the *source*, so a place always says where
+ * its point came from.
+ */
+export async function geocodePlace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  const query = String(formData.get('query') ?? '').trim();
+  if (!id || !query) return;
+
+  const provider = geocodingProvider();
+  let results: Awaited<ReturnType<typeof provider.geocode>> = [];
+  let failure: string | null = null;
+  try {
+    results = await provider.geocode(query);
+  } catch (err) {
+    // A real provider without a credential fails here, not at construction.
+    failure = err instanceof Error ? err.message : String(err);
+  }
+
+  const best = results[0];
+  if (best) {
+    await asUser(user.id, async (tx) => {
+      await tx`
+        update public.places set
+          geom = ST_SetSRID(ST_MakePoint(${best.lon}, ${best.lat}), 4326)::geography,
+          geocoded_at = now(),
+          geocode_source = ${provider.name},
+          city = coalesce(city, ${best.label.split(',').pop()?.trim() ?? null}),
+          updated_at = now()
+        where id = ${id}::uuid and not is_locked
+      `;
+    });
+  }
+
+  revalidatePath('/', 'layout');
+  const outcome = failure ? 'error' : best ? 'ok' : 'none';
+  redirect(`/places/${id}?geocoded=${outcome}`);
+}
+
+export async function archivePlace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`update public.places set archived_at = now() where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+  redirect('/places');
+}
+
+export async function restorePlace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`update public.places set archived_at = null where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Move a place to another space.
+ *
+ * The last entity type to get a move confirmation, which completes the hard
+ * requirement. A place's consequences are its own: the category cannot follow,
+ * and every event, visit and travel leg pointing at it either comes along (the
+ * visits, which are the place's own history) or is cut loose (an event in the
+ * old space, which would otherwise reference a place its readers cannot see).
+ */
+export async function movePlaceToSpace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  const targetSpaceId = String(formData.get('targetSpaceId') ?? '');
+  if (!id || !targetSpaceId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      select 1 from app.space_move_preview('place'::app.entity_kind,
+        ${id}::uuid, ${targetSpaceId}::uuid) limit 1
+    `;
+    await tx`
+      update public.places
+      set space_id = ${targetSpaceId}::uuid, category_id = null
+      where id = ${id}::uuid
+    `;
+    // Visits are the place's own history and move with it.
+    await tx`
+      update public.place_visits set space_id = ${targetSpaceId}::uuid
+      where place_id = ${id}::uuid
+    `;
+    // Anything left behind in another space stops pointing at it, rather than
+    // pointing at something its readers can no longer see.
+    await tx`
+      update public.events set place_id = null
+      where place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
+    `;
+    await tx`
+      update public.travel_legs set from_place_id = null
+      where from_place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
+    `;
+    await tx`
+      update public.travel_legs set to_place_id = null
+      where to_place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
+    `;
+    await tx`
+      insert into public.activity_log
+        (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
+      values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'place',
+              ${id}::uuid, 'moved', 'Moved between spaces')
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/** Log a visit by hand. `source` is only ever 'manual' or 'calendar'; see 0005. */
+export async function addPlaceVisit(formData: FormData) {
+  const user = await requireUser();
+  const placeId = String(formData.get('placeId') ?? '');
+  const onDate = String(formData.get('onDate') ?? '');
+  const arrivedTime = String(formData.get('arrivedTime') ?? '') || null;
+  const departedTime = String(formData.get('departedTime') ?? '') || null;
+  const notesMd = String(formData.get('notesMd') ?? '');
+  if (!placeId || !onDate) return;
+
+  const arrivedAt = instantFromForm(onDate, arrivedTime ?? '00:00');
+  if (!arrivedAt) return;
+  const departedAt = departedTime ? instantFromForm(onDate, departedTime) : null;
+  if (departedAt && departedAt < arrivedAt) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.place_visits
+        (space_id, owner_id, place_id, source, arrived_at, departed_at, notes_md)
+      select pl.space_id, ${user.id}::uuid, pl.id, 'manual',
+             ${arrivedAt}, ${departedAt}, ${notesMd}
+      from public.places pl where pl.id = ${placeId}::uuid
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function removePlaceVisit(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('visitId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`delete from public.place_visits where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/** Attach an event to a place, or detach it. Both must be in the same space. */
+export async function setEventPlace(formData: FormData) {
+  const user = await requireUser();
+  const eventId = String(formData.get('eventId') ?? '');
+  const placeId = String(formData.get('placeId') ?? '') || null;
+  if (!eventId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      update public.events e set
+        place_id = (
+          select pl.id from public.places pl
+          where pl.id = ${placeId}::uuid and pl.space_id = e.space_id
+        ),
+        updated_at = now()
+      where e.id = ${eventId}::uuid
+    `;
+  });
+
+  revalidatePath('/', 'layout');
 }
