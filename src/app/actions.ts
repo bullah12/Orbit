@@ -1298,7 +1298,11 @@ export async function createTravelLeg(formData: FormData) {
          depart_at, arrive_at, duration_minutes, distance_metres, estimate_source,
          estimated_at, notes_md)
       values (
-        ${spaceId}::uuid, ${user.id}::uuid, ${sessionId}::uuid,
+        ${spaceId}::uuid, ${user.id}::uuid,
+        -- Resolved against the chosen space rather than trusted: a stale form
+        -- could otherwise file a journey under a trip in another space.
+        (select t.id from public.travel_sessions t
+          where t.id = ${sessionId}::uuid and t.space_id = ${spaceId}::uuid),
         ${fromPlaceId}::uuid, ${toPlaceId}::uuid, ${eventId}::uuid, ${mode},
         ${departAt}, ${arriveAt}, ${minutes}, ${estimate.metres || null},
         ${estimate.source}, ${estimate.source === 'none' ? null : new Date()},
@@ -1409,17 +1413,27 @@ export async function saveDerivedLeg(formData: FormData) {
   const departAt = departBy(arriveBy, plan);
 
   await asUser(user.id, async (tx) => {
+    // The page stops offering a journey it can see is already saved, but two
+    // tabs or a double click get past that — and `travel_legs` has no unique
+    // constraint that would refuse the second row. The insert therefore checks
+    // for itself, in the same statement, rather than trusting the button.
     await tx`
       insert into public.travel_legs
         (space_id, owner_id, from_place_id, to_place_id, event_id, mode,
          depart_at, arrive_at, duration_minutes, distance_metres, estimate_source,
          estimated_at, notes_md)
-      values (
+      select
         ${spaceId}::uuid, ${user.id}::uuid, ${fromPlaceId}::uuid, ${toPlaceId}::uuid,
         ${eventId}::uuid, ${mode}, ${departAt}, ${arriveBy},
         ${plan.doorToDoorMinutes}, ${estimate.metres || null}, ${estimate.source},
         ${estimate.source === 'none' ? null : new Date()},
-        'Derived from the calendar.')
+        'Derived from the calendar.'
+      where not exists (
+        select 1 from public.travel_legs l
+        where l.to_place_id = ${toPlaceId}::uuid
+          and l.arrive_at = ${arriveBy}
+          and l.from_place_id is not distinct from ${fromPlaceId}::uuid
+      )
     `;
   });
 

@@ -1043,6 +1043,29 @@ try {
       (await page.locator('ul[aria-label="Journeys on this day"] li').count()) === legsBefore,
     );
 
+    // Saving the same derived journey twice must not write two rows. The page
+    // stops offering it, so this goes round the page: submit the same form
+    // twice by reloading the derived list from a fresh render.
+    await derived.first().locator('button:has-text("Save this journey")').click();
+    await settle(page);
+    const dupCount = await page.locator('ul[aria-label="Journeys on this day"] li').count();
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const stillOffered = await page
+      .locator('ul[aria-label="Journeys the calendar implies"] li')
+      .count();
+    check(
+      'a saved journey is not offered again after a reload',
+      stillOffered === derivedCount - 1,
+      `${stillOffered} still offered`,
+    );
+    check(
+      'and saving it wrote exactly one row',
+      dupCount === legsBefore + 1,
+      `${dupCount} rows`,
+    );
+    await page.locator('ul[aria-label="Journeys on this day"] li button[aria-label^="Delete the journey"]').first().click();
+    await settle(page);
+
     // A journey by hand. Places belong to a space, so the space chip has to be
     // chosen first — the picker only offers places from the chosen one, which
     // is the whole point of it.
@@ -1054,12 +1077,19 @@ try {
     await page.selectOption('#leg-to', { index: 2 });
     await page.selectOption('#leg-mode', 'cycle');
     await page.fill('#leg-depart', '17:00');
+    // A journey can be filed under a trip in the same space.
+    await page.selectOption('#leg-session', { index: 1 });
     await page.click('button:has-text("Add journey")');
     await settle(page);
     const manual = page.locator('ul[aria-label="Journeys on this day"] li');
     check(
       'a journey can be added by hand',
       (await manual.count()) === legsBefore + 1,
+    );
+    check(
+      'and filed under a trip, which the row then names',
+      (await manual.first().innerText()).includes('Pembrokeshire'),
+      (await manual.first().innerText()).replace(/\n/g, ' ').slice(0, 70),
     );
     await manual.first().locator('button[aria-label^="Delete the journey"]').click();
     await settle(page);

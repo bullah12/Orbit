@@ -7,6 +7,7 @@ import { Icon } from './Icon';
 import { LEG_MODES, LEG_MODE_LABEL } from '@/lib/travel';
 import type { SpaceSummary } from '@/lib/queries/spaces';
 import type { PlacePickerRow } from '@/lib/queries/places';
+import type { TravelSessionRow } from '@/lib/queries/travel';
 
 /**
  * Add a journey by hand.
@@ -20,11 +21,13 @@ import type { PlacePickerRow } from '@/lib/queries/places';
 export function ComposeTravelLeg({
   spaces,
   places,
+  sessions,
   day,
   defaultSpaceId,
 }: {
   spaces: SpaceSummary[];
   places: PlacePickerRow[];
+  sessions: TravelSessionRow[];
   day: string;
   defaultSpaceId?: string;
 }) {
@@ -35,6 +38,7 @@ export function ComposeTravelLeg({
   if (writable.length === 0 || !initial) return null;
 
   const options = places.filter((p) => p.space.id === spaceId);
+  const trips = sessions.filter((t) => t.space.id === spaceId);
 
   return (
     <form
@@ -105,6 +109,22 @@ export function ComposeTravelLeg({
           ))}
         </select>
       </div>
+
+      {trips.length > 0 && (
+        <div className="flex min-w-40 flex-col gap-1">
+          <label htmlFor="leg-session" className="faint text-[11px] font-medium">
+            Part of
+          </label>
+          <select id="leg-session" name="sessionId" key={`trip-${spaceId}`} defaultValue="" className="input">
+            <option value="">No trip</option>
+            {trips.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.title}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1">
         <label htmlFor="leg-depart" className="faint text-[11px] font-medium">

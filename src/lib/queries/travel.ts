@@ -32,6 +32,7 @@ export type TravelLegRow = {
   eventId: string | null;
   eventTitle: string | null;
   sessionId: string | null;
+  sessionTitle: string | null;
   space: SpaceRef;
 };
 
@@ -52,6 +53,7 @@ const LEG_SELECT = `
   l.event_id         as "eventId",
   e.title            as "eventTitle",
   l.session_id       as "sessionId",
+  ts.title           as "sessionTitle",
   jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                      'colour', s.colour, 'icon', s.icon) as space
 `;
@@ -62,6 +64,7 @@ const LEG_FROM = `
   left join public.places fp on fp.id = l.from_place_id
   left join public.places tp on tp.id = l.to_place_id
   left join public.events e on e.id = l.event_id
+  left join public.travel_sessions ts on ts.id = l.session_id
 `;
 
 /** Legs departing on one London day. A leg with no departure time is listed last. */

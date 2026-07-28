@@ -18,7 +18,7 @@ rebuilt database at the end of session 4 and all five were green:
 pnpm build             clean
 pnpm typecheck         clean (needs the build first on a fresh clone)
 pnpm test              276 Vitest tests in 8 files
-pnpm smoke             123/123 against the running app     (needs pnpm start)
+pnpm smoke             126/126 against the running app     (needs pnpm start)
 ```
 
 `pnpm smoke` was run twice in a row without reseeding, and passed both times.
@@ -45,7 +45,7 @@ Everything here was executed and watched.
 - Runs as `authenticated`, not the table owner.
 - **"The outsider sees zero rows in every table in the database"** iterates
   `pg_tables` rather than a hand-written list.
-- The known-empty ledger is down to five tables: `ai_runs`, `attachments`,
+- The known-empty ledger is down to eight tables: `ai_runs`, `attachments`,
   `note_versions`, `notification_deliveries`, `person_relationships`,
   `rule_runs`, `space_invites`, `sync_cursors`. **`place_visits`,
   `travel_legs` and `travel_sessions` left it this session** — the seed writes
@@ -68,9 +68,9 @@ Everything here was executed and watched.
   `tests/recurrence.test.ts` (26), `tests/smartlists.test.ts` (32),
   `tests/markdown.test.ts` (30), `tests/contrast.test.ts` (26) — unchanged.
 
-**Smoke — `pnpm smoke`, 123 checks against the running app**
+**Smoke — `pnpm smoke`, 126 checks against the running app**
 `scripts/smoke.mjs` drives Chromium against `pnpm start`. This is how "verify
-RLS through the running app, not only in pgTAP" gets done. 47 checks are new
+RLS through the running app, not only in pgTAP" gets done. 50 checks are new
 this session.
 
 | Acting as | Result |
@@ -166,73 +166,70 @@ Including the ones I introduced this session and did not fix.
 
 ### Introduced or newly noticed in session 4
 
-1. **A travel leg is never attached to a trip from the UI.**
-   `travel_legs.session_id` exists, the seed populates it, and the trip row
-   shows a journey count — but nothing in `/travel` lets you file a journey
-   under a trip. `listLegsInSession()` is written and unused.
-2. **A trip has no detail page.** It is a row on `/travel` with a delete
+1. **A trip has no detail page.** It is a row on `/travel` with a delete
    button. There is no way to edit its dates, its title or its notes once
    created, and `travel_sessions.is_active` is written at creation and never
    updated afterwards — a trip that is running now is shown as running by
    computing it from the dates (`sessionIsActive`), not by reading the column.
-3. **Derived journeys are re-derived on every render**, like recurrence. It is
+2. **Derived journeys are re-derived on every render**, like recurrence. It is
    one day's events at a time so it is far smaller than the calendar's problem,
    but it is the same shape.
-4. **The derived-journey mode is guessed from the distance** (under 1.5 km
+3. **The derived-journey mode is guessed from the distance** (under 1.5 km
    walks, otherwise drives) and the guess is not remembered. Change it in the
    picker, save, and the *next* derived journey guesses again.
-5. **`saveDerivedLeg` does not check for a duplicate before writing.** The page
-   filters out journeys that already exist by `(from, to, arrival)`, so the
-   button disappears — but two tabs, or a fast double-click, will write two
-   rows. The `travel_legs` table has no unique constraint that would refuse it.
-6. **`estimateBetween()` swallows a provider failure.** A real provider without
+4. **A duplicate journey is refused by the insert, not by a constraint.**
+   `saveDerivedLeg` writes with a `where not exists` on
+   `(from, to, arrival)`, so two tabs or a double click cannot produce two
+   rows — but `travel_legs` still has no unique constraint, so anything that
+   writes a leg without going through that action could.
+5. **`estimateBetween()` swallows a provider failure.** A real provider without
    a credential leaves the leg saved with `estimate_source = 'none'` and no
    message on the screen. That is deliberate — the journey is still worth
    recording — but the user is not told the provider refused.
-7. **A place's visits and events are capped at 25–50 rows** with no paging and
+6. **A place's visits and events are capped at 25–50 rows** with no paging and
    no "showing the most recent" label.
-8. **`pnpm smoke` still leaves state behind**: one archived person per run,
+7. **`pnpm smoke` still leaves state behind**: one archived person per run,
    the fixture calendars connected, the school-term feed imported, and now one
    place named "Smoke private place" in Priya's own space. All harmless, all
    cleared by `pnpm seed`.
 
 ### Carried over, still true
 
-9. **A recurring event has one detail page for the whole series.** Editing it
+8. **A recurring event has one detail page for the whole series.** Editing it
    changes every occurrence; the page says so. There is no "edit this
    occurrence only" and **no UI at all for creating a repeat**.
-10. **Recurrence expansion re-runs on every render.** Bounded (400 occurrences
+9. **Recurrence expansion re-runs on every render.** Bounded (400 occurrences
     per rule, 4000 candidate periods) and imperceptible at this data size.
-11. **The calendar pull window is fixed at −180/+365 days**, in
+10. **The calendar pull window is fixed at −180/+365 days**, in
     `src/lib/sync/calendar.ts`.
-12. **Nothing pushes back.** Only `'pull'` is ever written to
+11. **Nothing pushes back.** Only `'pull'` is ever written to
     `calendar_sync_state.direction`, and `events.is_dirty` is set and never
     cleared.
-13. **The compose bar cannot set an event's location, attendees or notes.**
-14. **`switchUser` is impersonation by design.** Any seeded profile can be
+12. **The compose bar cannot set an event's location, attendees or notes.**
+13. **`switchUser` is impersonation by design.** Any seeded profile can be
     assumed with one click. **This build must not be exposed to a network you
     do not control.**
-15. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Typed
+14. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Typed
     routes are generated into `.next/types`. Also: a `redirect()` path built by
     concatenating strings loses its literal type — use one template literal.
-16. **The Markdown subset has no tables, no images, no task lists.**
-17. **The people list's "next date" is computed twice**, in SQL for the
+15. **The Markdown subset has no tables, no images, no task lists.**
+16. **The people list's "next date" is computed twice**, in SQL for the
     ordering and in TypeScript for the label, and neither is covered by Vitest.
-18. **A person's category is resolved back from its *name*** on the detail
+17. **A person's category is resolved back from its *name*** on the detail
     page. The place page does the same thing, for the same reason, and it is
     the same lookup that should not need to exist.
-19. **Contacts cannot be edited, only added and removed**; `is_primary` is
+18. **Contacts cannot be edited, only added and removed**; `is_primary` is
     never set from the UI.
-20. **Postgres does not survive container restarts.** `./scripts/db-reset.sh`
+19. **Postgres does not survive container restarts.** `./scripts/db-reset.sh`
     restarts it, or `service postgresql start` to keep the data.
-21. **`pkill -f next-server`, not `pkill -f "next start"`** — and beware that
+20. **`pkill -f next-server`, not `pkill -f "next start"`** — and beware that
     `pkill -f next-server` **can match the shell running it**, which kills your
     own command with exit 144 and sometimes takes the server with it. Start the
     server with `setsid nohup … & disown`, and if `pnpm start` logs
     `EADDRINUSE`, an old server is serving an old build and every check you run
     is testing yesterday's code.
-22. **No linting.** Out of scope by instruction.
-23. **`pnpm smoke` needs a running server** and Chromium at
+21. **No linting.** Out of scope by instruction.
+22. **`pnpm smoke` needs a running server** and Chromium at
     `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. Override with
     `CHROMIUM_PATH`.
 
@@ -254,7 +251,7 @@ pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
 pnpm test                      # 276 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm smoke                     # 123 checks against the running app
+pnpm smoke                     # 126 checks against the running app
 ```
 
 Start the server so it survives the shell that launched it:
@@ -317,11 +314,13 @@ at all, and a direct link to a place is a 404.
    `PushProvider` fake, the way `src/lib/travel.ts` and `src/lib/recurrence.ts`
    were done, with the tests before any UI.
 
-2. **Close the Phase 3 gaps that are worth closing** (rough edges 1, 2 and 5) —
-   a trip detail page that can edit its dates and file journeys under it, and a
-   unique constraint or an existence check so a derived journey cannot be
-   saved twice. None of these block Phase 4; do them when travel next annoys
-   you. Rough edges 3, 4, 6 and 7 are consciously accepted for now.
+2. **Close the Phase 3 gaps that are worth closing** (rough edges 1 and 4) — a
+   trip detail page that can edit its title, dates and notes, and a unique
+   constraint on `travel_legs` so the duplicate guard does not depend on every
+   writer going through `saveDerivedLeg`. Neither blocks Phase 4; do them when
+   travel next annoys you. Rough edges 2, 3, 5 and 6 are consciously accepted
+   for now — each is recorded in `docs/decisions-log.md` as accepted rather
+   than forgotten.
 
 3. **Recurrence in the UI, and pushing back** (rough edges 9 and 12). Still
    open from Phase 2: there is no way to *create* a repeat from the app, and

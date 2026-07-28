@@ -229,7 +229,7 @@ export default async function TravelPage({
           </ul>
         )}
 
-        <ComposeTravelLeg spaces={spaces} places={places} day={day} />
+        <ComposeTravelLeg spaces={spaces} places={places} sessions={sessions} day={day} />
       </section>
 
       {/* ------------------------------------------- derived from the calendar */}
@@ -325,6 +325,12 @@ function LegRow({ leg }: { leg: TravelLegRow }) {
             : 'no estimate'}
       </span>
       {leg.eventTitle && <span className="faint truncate text-[11px]">{leg.eventTitle}</span>}
+      {leg.sessionTitle && (
+        <span className="faint inline-flex items-center gap-1 text-[11px]">
+          <Icon name="suitcase" size={10} />
+          {leg.sessionTitle}
+        </span>
+      )}
       <SpaceIndicator space={leg.space} />
 
       <form action={reestimateTravelLeg} className="inline-flex items-center gap-1">

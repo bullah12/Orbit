@@ -327,3 +327,22 @@ tracking, ever.
   on the stored mode forces the remount. Recorded because it looked like the
   action had failed when it had not, and the smoke check that caught it now
   asserts the stored value and the visible one separately.
+- **Four Phase 3 rough edges are accepted, not forgotten.** Recorded here
+  because "accepted" means a line saying why, not silence. (a) *A trip has no
+  detail page*: it is a row with a delete button, which is enough to make trips
+  usable and demoable, and a second edit surface is Phase 4's problem if
+  anything ever needs it. (b) *Derived journeys are re-derived on every render*:
+  one day's events at a time, which is a fraction of the calendar's expansion
+  cost that is already accepted. (c) *The derived mode is guessed from the
+  distance and the guess is not remembered*: remembering it means a
+  `travel_preferences` row, which is a schema change for a convenience.
+  (d) *A provider failure leaves the journey saved with no estimate and says
+  nothing on screen*: the journey is still worth recording, and the alternative
+  — refusing to save because a routing service was unreachable — is worse.
+- **The duplicate guard on a derived journey is in the insert, not a
+  constraint.** `insert … select … where not exists` on `(from, to, arrival)`
+  costs nothing and closes the double-click. A unique constraint would be
+  better and is the honest fix, but `travel_legs` has no natural key — a leg
+  with two null place ids is legitimate — so it would need a partial index and
+  a decision about what "the same journey" means. Recorded as a rough edge
+  rather than guessed at.
