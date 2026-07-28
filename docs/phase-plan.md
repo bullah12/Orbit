@@ -16,18 +16,22 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
 - [x] `pnpm seed` — 2 users, household space, ~40 people, ~200 events, ~80 tasks,
       ~30 notes, ~15 places, Birmingham-flavoured
 - [x] RLS-scoped data access from the app (no service role at request time)
-- [ ] Tasks: list, smart lists, create, complete, edit
-- [ ] Notes: list, read, create, edit, links to entities
+- [x] Tasks: list, smart lists, create, complete, edit
+- [x] Notes: list, read, create, edit, links to entities
 - [x] Space indicator on every row and compose surface
 - [x] `app.space_move_preview()` behind every move confirmation
 - [x] Dark mode, UK conventions, neutral chrome
 
 ## Phase 1 — People
 
-- Person records, contacts, important dates
-- Same-person linking: two records, linked permanently, never collapsed
-- Person detail: linked notes, tasks, events, places
-- Birthdays and anniversaries surfaced on Today
+- [x] Person records, contacts, important dates — **read only; no create/edit
+      yet, which is what stops this phase being shippable**
+- [x] Same-person linking: two records, linked permanently, never collapsed —
+      shown from both sides, and the far side stays hidden when its space is
+- [x] Person detail: linked notes, tasks, events, places
+- [x] Birthdays and anniversaries surfaced on Today
+- [ ] Create, edit and link a person from the UI
+- [ ] Move a person between spaces (`previewMove()` already accepts 'person')
 
 ## Phase 2 — Calendar
 

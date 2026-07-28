@@ -5,24 +5,44 @@ import { listNotes } from '@/lib/queries/notes';
 import { createNote } from '@/app/actions';
 import { SpaceIndicator, CategoryChip } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
+import { markdownToPlainText } from '@/lib/markdown';
 import { formatRelative, plural } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
-export default async function NotesPage() {
+export default async function NotesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ archived?: string }>;
+}) {
+  const { archived } = await searchParams;
+  const showArchived = archived === '1';
+
   const user = await requireUser();
-  const [spaces, notes] = await Promise.all([listSpaces(user.id), listNotes(user.id)]);
+  const [spaces, notes] = await Promise.all([
+    listSpaces(user.id),
+    listNotes(user.id, { archived: showArchived }),
+  ]);
   const writable = spaces.filter((s) => s.canWrite);
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">Notes</h1>
+          <h1 className="text-[15px] font-semibold">
+            {showArchived ? 'Archived notes' : 'Notes'}
+          </h1>
           <span className="faint text-[12px]">{plural(notes.length, 'note')}</span>
+          <Link
+            href={showArchived ? '/notes' : '/notes?archived=1'}
+            className="muted ml-auto text-[12px] underline underline-offset-2"
+          >
+            {showArchived ? 'Back to notes' : 'Archive'}
+          </Link>
         </div>
       </header>
 
+      {!showArchived && (
       <form
         action={createNote}
         className="hairline flex flex-wrap items-center gap-2 border-b px-3 py-2"
@@ -32,6 +52,7 @@ export default async function NotesPage() {
         <input
           name="title"
           placeholder="New note…"
+          aria-label="Note title"
           autoComplete="off"
           required
           className="min-w-40 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[color:var(--text-faint)]"
@@ -61,16 +82,19 @@ export default async function NotesPage() {
           Add
         </button>
       </form>
+      )}
 
       {notes.length === 0 ? (
-        <p className="faint px-5 py-10 text-[13px]">No notes yet.</p>
+        <p className="faint px-5 py-10 text-[13px]">
+          {showArchived ? 'Nothing archived.' : 'No notes yet.'}
+        </p>
       ) : (
         <ul>
           {notes.map((n) => (
             <li key={n.id} className="hairline row-hover border-b px-3 py-2">
               <Link href={`/notes/${n.id}` as never} className="block">
                 <div className="flex items-baseline gap-2">
-                  {n.pinnedAt && <Icon name="check" size={11} className="faint shrink-0" />}
+                  {n.pinnedAt && <Icon name="pin" size={11} className="faint shrink-0" />}
                   <span className="min-w-0 flex-1 truncate text-[13px]">
                     {n.isLocked ? <em className="muted">Locked note</em> : n.title}
                   </span>
@@ -80,7 +104,7 @@ export default async function NotesPage() {
                 </div>
                 {!n.isLocked && n.bodyMd && (
                   <p className="faint mt-0.5 truncate pl-0 text-[11px]">
-                    {n.bodyMd.replace(/[#*`\n]/g, ' ').slice(0, 140)}
+                    {markdownToPlainText(n.bodyMd).replace(/\n/g, ' · ').slice(0, 140)}
                   </p>
                 )}
                 {n.linkCount > 0 && (

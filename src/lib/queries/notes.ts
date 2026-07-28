@@ -9,6 +9,7 @@ export type NoteRow = {
   visibility: string;
   isLocked: boolean;
   pinnedAt: string | null;
+  archivedAt: string | null;
   updatedAt: string;
   space: SpaceRef;
   category: { name: string; colour: string; icon: string } | null;
@@ -17,14 +18,15 @@ export type NoteRow = {
 
 export async function listNotes(
   userId: string,
-  opts: { spaceId?: string | null; limit?: number } = {},
+  opts: { spaceId?: string | null; limit?: number; archived?: boolean } = {},
 ): Promise<NoteRow[]> {
-  const { spaceId = null, limit = 200 } = opts;
+  const { spaceId = null, limit = 200, archived = false } = opts;
   return asUser(userId, async (tx) => {
     return tx<NoteRow[]>`
       select
         n.id, n.title, n.body_md as "bodyMd", n.visibility::text as visibility,
-        n.is_locked as "isLocked", n.pinned_at as "pinnedAt", n.updated_at as "updatedAt",
+        n.is_locked as "isLocked", n.pinned_at as "pinnedAt",
+        n.archived_at as "archivedAt", n.updated_at as "updatedAt",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space,
         case when c.id is null then null else
@@ -36,7 +38,7 @@ export async function listNotes(
       left join lateral (
         select count(*)::int as n from public.note_links l where l.note_id = n.id
       ) l on true
-      where n.archived_at is null
+      where ${archived ? tx`n.archived_at is not null` : tx`n.archived_at is null`}
         ${spaceId ? tx`and n.space_id = ${spaceId}::uuid` : tx``}
       order by n.pinned_at desc nulls last, n.updated_at desc
       limit ${limit}
@@ -58,7 +60,8 @@ export async function getNote(
     const rows = await tx<NoteRow[]>`
       select
         n.id, n.title, n.body_md as "bodyMd", n.visibility::text as visibility,
-        n.is_locked as "isLocked", n.pinned_at as "pinnedAt", n.updated_at as "updatedAt",
+        n.is_locked as "isLocked", n.pinned_at as "pinnedAt",
+        n.archived_at as "archivedAt", n.updated_at as "updatedAt",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space,
         case when c.id is null then null else
@@ -87,6 +90,47 @@ export async function getNote(
       order by l.entity_kind, label
     `;
     return { note, links };
+  });
+}
+
+export type LinkTarget = { kind: 'task' | 'person' | 'place' | 'event'; id: string; label: string };
+
+/**
+ * Things a note in this space can be linked to.
+ *
+ * Scoped to the note's own space by the `where` *and* by the policies — a link
+ * across a space boundary would put an item on a screen whose space does not
+ * govern it. Locked items are excluded because their labels do not exist.
+ */
+export async function listLinkTargets(
+  userId: string,
+  spaceId: string,
+): Promise<LinkTarget[]> {
+  return asUser(userId, async (tx) => {
+    return tx<LinkTarget[]>`
+      (select 'task'::text as kind, t.id, t.title as label
+         from public.tasks t
+        where t.space_id = ${spaceId}::uuid and not t.is_locked
+          and t.status in ('todo','doing','blocked')
+        order by t.title limit 100)
+      union all
+      (select 'person', p.id, p.display_name
+         from public.people p
+        where p.space_id = ${spaceId}::uuid and not p.is_locked and p.archived_at is null
+        order by p.display_name limit 100)
+      union all
+      (select 'place', pl.id, pl.name
+         from public.places pl
+        where pl.space_id = ${spaceId}::uuid
+        order by pl.name limit 100)
+      union all
+      (select 'event', e.id,
+              e.title || ' — ' || to_char(e.starts_at at time zone 'Europe/London', 'DD/MM/YYYY')
+         from public.events e
+        where e.space_id = ${spaceId}::uuid and e.status <> 'cancelled'
+          and e.starts_at > now() - interval '30 days'
+        order by e.starts_at desc limit 100)
+    `;
   });
 }
 

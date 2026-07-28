@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { asUser } from '@/lib/db';
 import type { SpaceRef } from '@/components/SpaceIndicator';
 
@@ -15,7 +16,9 @@ export type SpaceSummary = SpaceRef & {
  * the policy on `spaces` already restricts this to the caller's memberships.
  * Adding a filter would hide the fact that the policy is what protects it.
  */
-export async function listSpaces(userId: string): Promise<SpaceSummary[]> {
+export const listSpaces = cache(_listSpaces);
+
+async function _listSpaces(userId: string): Promise<SpaceSummary[]> {
   return asUser(userId, async (tx) => {
     return tx<SpaceSummary[]>`
       select
@@ -33,6 +36,33 @@ export async function listSpaces(userId: string): Promise<SpaceSummary[]> {
         on m.space_id = s.id and m.user_id = ${userId}::uuid and m.status = 'active'
       where s.archived_at is null
       order by s.is_default desc, s.name
+    `;
+  });
+}
+
+export type SpaceMember = {
+  id: string;
+  displayName: string;
+  role: string;
+};
+
+/**
+ * Members of a space who can hold an assignment. free_busy participants are
+ * excluded: they cannot see the item, so assigning one a task would create a
+ * task nobody can act on.
+ */
+export const listSpaceMembers = cache(_listSpaceMembers);
+
+async function _listSpaceMembers(userId: string, spaceId: string): Promise<SpaceMember[]> {
+  return asUser(userId, async (tx) => {
+    return tx<SpaceMember[]>`
+      select p.id, p.display_name as "displayName", m.role::text as role
+      from public.space_members m
+      join public.profiles p on p.id = m.user_id
+      where m.space_id = ${spaceId}::uuid
+        and m.status = 'active'
+        and m.role in ('owner','admin','member')
+      order by p.display_name
     `;
   });
 }

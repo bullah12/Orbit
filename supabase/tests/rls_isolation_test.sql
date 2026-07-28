@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(42);
+select plan(52);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -328,6 +328,47 @@ select is(
   'linking leaves two records — it never collapses or merges them'
 );
 
+-- Read the link from each side. This is what the person detail page does, and
+-- it is where a careless join would leak the far record's name.
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+-- The link row lives in Home; person_b is the Home record, person_a is the one
+-- in Alice's personal space. Bob is in Home and not in Alice's space.
+select is(
+  (select count(*)::int from public.person_links
+   where person_a_id = 'eeeeeeee-0000-0000-0000-000000000002'
+      or person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
+  1,
+  'bob, a member of Home, can see that the Home record is linked to something'
+);
+
+select is(
+  (select count(*)::int
+   from public.person_links l
+   join public.people far on far.id = l.person_a_id
+   where l.person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
+  0,
+  'but resolving the far record returns nothing — he is not in that space'
+);
+
+select is(
+  (select count(*)::int from public.person_links
+   where space_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  0,
+  'and a link stored in a space he cannot read is invisible entirely'
+);
+
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+select is(
+  (select count(*)::int
+   from public.person_links l
+   join public.people far on far.id = l.person_a_id
+   where l.person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
+  1,
+  'alice, who is in both spaces, resolves the far record from the near side'
+);
+
 -- ===========================================================================
 -- 7. Locked items stay out of search (decision 1)
 -- ===========================================================================
@@ -415,6 +456,126 @@ select throws_ok(
   '42501',
   null,
   'previewing a move into a space you cannot write to is refused'
+);
+
+-- ===========================================================================
+-- 9b. app.entity_space — SECURITY INVOKER, so RLS decides
+--
+-- Note linking calls this to refuse a link across a space boundary. If it ever
+-- became SECURITY DEFINER it would hand a space id for an item the caller
+-- cannot read, which is a membership disclosure.
+-- ===========================================================================
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+select is(
+  (select space_id from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000002')),
+  'aaaaaaaa-0000-0000-0000-000000000002'::uuid,
+  'entity_space resolves the space of an item you can read');
+
+select tests.act_as('44444444-4444-4444-4444-444444444444');
+
+select is(
+  (select count(*)::int from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000002')),
+  0,
+  'and returns nothing at all to an outsider');
+
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+select is(
+  (select count(*)::int from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000003')),
+  0,
+  'a private task in a shared space is invisible to entity_space too');
+
+-- A note cannot be linked to something in another space: the insert selects the
+-- target's space through entity_space and matches it against the note's.
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+select is(
+  (select count(*)::int
+   from public.notes n
+   where n.id = 'cccccccc-0000-0000-0000-000000000001'
+     and exists (select 1 from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000001') es
+                 where es.space_id = n.space_id)),
+  0,
+  'linking a Home note to a task in Alice''s personal space matches nothing');
+
+-- ===========================================================================
+-- 9c. The outsider sees zero — every table, not a chosen few
+--
+-- This is the case that catches a table shipped without a policy. It runs over
+-- *every* table in `public` rather than a hand-written list, so a new table is
+-- covered the moment it exists. Mallory is a member of nothing; the seeded
+-- data belongs to other people; therefore every count must be zero.
+--
+-- `profiles` is excluded because a person can always read their own row, which
+-- is the one thing here that is not space-scoped.
+-- ===========================================================================
+select tests.as_owner();
+
+create function tests.tables_visible_to_me() returns text
+language plpgsql
+as $$
+declare
+  r record;
+  n bigint;
+  bad text[] := '{}';
+begin
+  for r in
+    select tablename from pg_tables
+    where schemaname = 'public'
+      and tablename not in ('spatial_ref_sys', 'profiles')
+    order by tablename
+  loop
+    execute format('select count(*) from public.%I', r.tablename) into n;
+    if n > 0 then bad := bad || format('%s(%s)', r.tablename, n); end if;
+  end loop;
+  return coalesce(array_to_string(bad, ', '), '');
+end $$;
+
+-- How many tables actually hold rows for the *owner*. Without this, a database
+-- that failed to seed would pass the check above vacuously.
+create function tests.tables_with_rows() returns text
+language plpgsql
+as $$
+declare
+  r record;
+  n bigint;
+  empty text[] := '{}';
+begin
+  for r in
+    select tablename from pg_tables
+    where schemaname = 'public' and tablename <> 'spatial_ref_sys'
+    order by tablename
+  loop
+    execute format('select count(*) from public.%I', r.tablename) into n;
+    if n = 0 then empty := empty || r.tablename; end if;
+  end loop;
+  return coalesce(array_to_string(empty, ', '), '');
+end $$;
+
+grant execute on all functions in schema tests to authenticated;
+
+select tests.act_as('44444444-4444-4444-4444-444444444444');
+
+select is(
+  tests.tables_visible_to_me(),
+  '',
+  'the outsider sees zero rows in every table in the database'
+);
+
+select tests.as_owner();
+
+-- The seeded tables that are legitimately empty today. This is a *ledger*, not
+-- a pass: when a phase starts filling one of these, delete it from the list and
+-- the outsider check above stops being vacuous for that table. If you add a
+-- table and it appears here, you have shipped a table nothing writes to.
+select is(
+  tests.tables_with_rows(),
+  'activity_log, ai_runs, attachments, calendar_sync_state, note_versions, '
+  'notification_deliveries, person_relationships, place_visits, '
+  'recurrence_rules, rule_runs, space_invites, sync_cursors, travel_legs, '
+  'travel_sessions',
+  'every table the outsider check covers holds seeded rows, except the known-empty ledger'
 );
 
 -- ===========================================================================

@@ -65,13 +65,13 @@
  * the chip never becomes the loudest thing on a dense screen.
  */
 :root {
-  --c-emerald:  oklch(52% 0.13 162);  --c-emerald-bg:  oklch(94% 0.04 162);
-  --c-amber:    oklch(53% 0.13  75);  --c-amber-bg:    oklch(94% 0.05  85);
+  --c-emerald:  oklch(50% 0.13 162);  --c-emerald-bg:  oklch(94% 0.04 162);
+  --c-amber:    oklch(52.5% 0.13  75);  --c-amber-bg:    oklch(94% 0.05  85);
   --c-rose:     oklch(53% 0.16  15);  --c-rose-bg:     oklch(94% 0.04  15);
   --c-violet:   oklch(52% 0.16 295);  --c-violet-bg:   oklch(94% 0.04 295);
   --c-sky:      oklch(51% 0.13 235);  --c-sky-bg:      oklch(94% 0.04 235);
-  --c-lime:     oklch(52% 0.13 130);  --c-lime-bg:     oklch(94% 0.05 130);
-  --c-orange:   oklch(54% 0.15  50);  --c-orange-bg:   oklch(94% 0.05  55);
+  --c-lime:     oklch(51% 0.13 130);  --c-lime-bg:     oklch(94% 0.05 130);
+  --c-orange:   oklch(52.5% 0.15  50);  --c-orange-bg:   oklch(94% 0.05  55);
   --c-fuchsia:  oklch(53% 0.17 330);  --c-fuchsia-bg:  oklch(94% 0.04 330);
   --c-indigo:   oklch(50% 0.15 275);  --c-indigo-bg:   oklch(94% 0.04 275);
   --c-slate:    oklch(50% 0.02 260);  --c-slate-bg:    oklch(93% 0.005 260);
@@ -109,6 +109,44 @@ body {
   outline-offset: 2px;
   border-radius: 3px;
 }
+
+/*
+ * Skip link. Every page puts the sidebar first in the DOM, so a keyboard user
+ * would otherwise tab through the whole nav on every navigation.
+ */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 50;
+}
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 13px;
+}
+
+/*
+ * Form controls. Native elements, styled — a custom select would have to
+ * reimplement keyboard behaviour that the browser already gets right.
+ */
+.input {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.3rem 0.45rem;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+}
+.input:hover { border-color: var(--line-strong); }
+select.input { appearance: auto; }
 
 @layer utilities {
   .surface     { background: var(--bg-raised); border: 1px solid var(--line); }

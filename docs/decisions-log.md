@@ -75,3 +75,58 @@ tracking, ever.
 - **Money is `numeric(12,2)` and dates are `date`/`timestamptz`, never text.**
   UK conventions (DD/MM/YYYY, 24h, £, Monday-first weeks) are a *formatting*
   concern and live in `src/lib/format.ts` only.
+
+## Session 2 — 2026-07-28
+
+- **Vitest, not Jest, and no test framework for React components.** The suite
+  covers pure logic — dates, smart-list rules, Markdown, colour maths. Rendering
+  is verified by driving the real app (`pnpm smoke`), which catches the things a
+  shallow render cannot: whether the *server action* wrote to Postgres, and
+  whether RLS holds over HTTP. Reversible: add a component runner later if a
+  component grows logic worth isolating.
+- **`format.ts` functions take an injectable `today`/`now`.** A date test that
+  depends on the container's clock tests the container. Callers are unaffected —
+  the parameter defaults to real time.
+- **Smart-list rules exist twice on purpose**: as SQL in `queries/tasks.ts` for
+  listing, and as pure predicates in `smartlists.ts` for the task detail page,
+  the tests, and the optimistic path Phase 6 will need. Duplication accepted;
+  the module comment and the test names say to change both. The alternative —
+  fetching from Postgres to answer "which lists is this task in?" — costs a
+  round trip on every render.
+- **Markdown is a hand-written subset, not a dependency.** It parses to a typed
+  tree that React renders, so raw HTML is never a node and the sanitiser
+  question does not arise. Link targets are filtered to http/https/mailto and
+  in-app paths. No tables, images or task lists yet — recorded as a rough edge,
+  not a silent gap.
+- **Contrast is a test, not a judgement.** `src/lib/colour.ts` converts oklch to
+  sRGB and computes WCAG ratios from the tokens in `globals.css`. It found four
+  real failures on its first run (emerald, amber, lime and orange against their
+  own light chip fill, 4.31–4.51:1); those tokens were darkened. A new colour
+  that reads badly now fails `pnpm test`.
+- **`app.entity_space()` is SECURITY INVOKER, deliberately.** It exists so note
+  linking can refuse a cross-space link. As SECURITY DEFINER it would hand back
+  a space id for an item the caller cannot read, which is a membership
+  disclosure. There is a pgTAP case pinning this.
+- **The outsider check iterates `pg_tables` rather than listing tables.** A
+  per-table hand-written case is the thing you forget. The cost is that it can
+  pass vacuously on an empty table, so assertion 44 is a ledger of the tables
+  that are legitimately empty today; a new table appearing there means nothing
+  writes to it.
+- **A third seeded profile, Sam Okafor, a member of nothing.** pgTAP proves an
+  outsider sees zero; this makes the same thing provable *through the app*, in
+  one click of the dev switcher. Its UUID is a literal, not a `uid()` call, so
+  adding it shifted no other seeded id.
+- **`pnpm smoke` is a first-class check, not a scratch script.** "Verify RLS
+  through the running app, not only in pgTAP" is a standing instruction; a
+  repeatable command is the only way that survives a session boundary. It is
+  deliberately not wired into `pnpm test` — it needs a running server.
+- **Archive before delete, everywhere it is offered.** Notes archive by default
+  and can only be deleted from the archive. Tasks delete outright because a task
+  is a smaller thing to lose and `status = 'dropped'` already exists for the
+  reversible case. Departure from nothing in particular; recorded because the
+  asymmetry is deliberate.
+- **`ComposeTask` became a client component.** Categories belong to a space, so
+  changing the space has to change the category list without a round trip.
+  Rendering every space's categories at once and letting the server sort it out
+  is how a task ends up silently uncategorised — which is exactly the bug
+  session 1 recorded as rough edge 6.

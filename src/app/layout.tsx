@@ -24,8 +24,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     ]);
     body = (
       <div className="flex min-h-screen">
+        <a href="#main" className="skip-link">
+          Skip to content
+        </a>
         <Sidebar user={user} users={users} spaces={spaces} counts={counts} />
-        <main className="min-w-0 flex-1">{children}</main>
+        <main id="main" tabIndex={-1} className="min-w-0 flex-1">
+          {children}
+        </main>
       </div>
     );
   } catch (err) {
