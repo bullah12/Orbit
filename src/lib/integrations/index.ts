@@ -27,7 +27,9 @@ import { GoogleCalendarProvider } from './calendar/google';
 import { FakeIcsProvider } from './ics/fake';
 import { HttpIcsProvider } from './ics/http';
 import { FakeGeocodingProvider } from './geocoding/fake';
+import { NominatimGeocodingProvider } from './geocoding/nominatim';
 import { FakeTravelTimeProvider } from './travel/fake';
+import { OpenRouteServiceTravelTimeProvider } from './travel/openrouteservice';
 import { FakePushProvider } from './push/fake';
 import { FakeAiProvider } from './ai/fake';
 
@@ -69,18 +71,30 @@ export function selectIcsProvider(env: Env = process.env): IcsProvider {
 }
 
 /**
- * Phase 3 and 5 own the real implementations of the four below. Only `fake` is
- * listed, so asking for `nominatim` today fails loudly with the list of what
- * exists rather than serving Birmingham fixtures under another name.
+ * Phase 3 wrote both real implementations below. Neither has ever executed a
+ * request — there is no network and no credential here — so what the tests
+ * verify is that each constructs happily without one and refuses to act when
+ * called without one.
  */
 export function selectGeocodingProvider(env: Env = process.env): GeocodingProvider {
-  return choose<GeocodingProvider>('GEOCODING_PROVIDER', env, { fake: () => new FakeGeocodingProvider() });
+  return choose<GeocodingProvider>('GEOCODING_PROVIDER', env, {
+    fake: () => new FakeGeocodingProvider(),
+    nominatim: () => new NominatimGeocodingProvider(env),
+  });
 }
 
 export function selectTravelTimeProvider(env: Env = process.env): TravelTimeProvider {
-  return choose<TravelTimeProvider>('TRAVEL_TIME_PROVIDER', env, { fake: () => new FakeTravelTimeProvider() });
+  return choose<TravelTimeProvider>('TRAVEL_TIME_PROVIDER', env, {
+    fake: () => new FakeTravelTimeProvider(),
+    openrouteservice: () => new OpenRouteServiceTravelTimeProvider(env),
+  });
 }
 
+/**
+ * Phase 4 and 5 own the real implementations of the two below. Only `fake` is
+ * listed, so asking for one today fails loudly with the list of what exists
+ * rather than serving fixtures under another name.
+ */
 export function selectPushProvider(env: Env = process.env): PushProvider {
   return choose<PushProvider>('PUSH_PROVIDER', env, { fake: () => new FakePushProvider() });
 }

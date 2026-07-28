@@ -6,7 +6,24 @@ import { cookies } from 'next/headers';
 import { asUser } from '@/lib/db';
 import { listSelectableUsers, requireUser, USER_COOKIE } from '@/lib/auth';
 import { addDaysISO, londonInstant } from '@/lib/format';
-import { calendarProvider, icsProvider, parseIcs } from '@/lib/integrations';
+import {
+  calendarProvider,
+  geocodingProvider,
+  icsProvider,
+  parseIcs,
+  travelTimeProvider,
+} from '@/lib/integrations';
+import {
+  departBy,
+  estimateLegMinutes,
+  haversineMetres,
+  LEG_MODES,
+  planLeg,
+  providerModeFor,
+  sessionFromEvent,
+  sessionIsActive,
+  type LegMode,
+} from '@/lib/travel';
 import {
   connectProviderCalendar,
   pullCalendar,
@@ -896,4 +913,627 @@ export async function syncCalendar(formData: FormData) {
   redirect(
     `/calendar/import?added=${result.added}&changed=${result.updated}&removed=${result.removed}&full=${result.wasFullPull ? 1 : 0}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Places
+//
+// A place is a row with an optional point. Nothing here reads a device
+// location and nothing here asks for the permission — decision 5. Coordinates
+// arrive one of two ways: typed in, or resolved by the GeocodingProvider when
+// somebody presses the button.
+// ---------------------------------------------------------------------------
+
+export async function createPlace(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const name = String(formData.get('name') ?? '').trim();
+  const categoryId = String(formData.get('categoryId') ?? '') || null;
+  const addressText = String(formData.get('addressText') ?? '').trim() || null;
+  const postcode = String(formData.get('postcode') ?? '').trim().toUpperCase() || null;
+  if (!spaceId || !name) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.places
+        (space_id, owner_id, category_id, name, address_text, postcode)
+      values (
+        ${spaceId}::uuid, ${user.id}::uuid,
+        (select c.id from public.categories c
+          where c.id = ${categoryId}::uuid and c.space_id = ${spaceId}::uuid),
+        ${name}, ${addressText}, ${postcode})
+      on conflict (space_id, name) do nothing
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function updatePlace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  const name = String(formData.get('name') ?? '').trim();
+  if (!id || !name) return;
+
+  const addressText = String(formData.get('addressText') ?? '').trim() || null;
+  const postcode = String(formData.get('postcode') ?? '').trim().toUpperCase() || null;
+  const city = String(formData.get('city') ?? '').trim() || null;
+  const notesMd = String(formData.get('notesMd') ?? '');
+  const categoryId = String(formData.get('categoryId') ?? '') || null;
+
+  // Typed-in coordinates are allowed and are not a geocode: the source stays
+  // 'manual' so a later geocode does not claim to have produced them.
+  const latRaw = String(formData.get('lat') ?? '').trim();
+  const lonRaw = String(formData.get('lon') ?? '').trim();
+  const lat = latRaw === '' ? null : Number(latRaw);
+  const lon = lonRaw === '' ? null : Number(lonRaw);
+  const hasPoint =
+    lat !== null && lon !== null &&
+    Number.isFinite(lat) && Number.isFinite(lon) &&
+    Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      update public.places pl set
+        name         = ${name},
+        address_text = ${addressText},
+        postcode     = ${postcode},
+        city         = ${city},
+        notes_md     = ${notesMd},
+        category_id  = (
+          select c.id from public.categories c
+          where c.id = ${categoryId}::uuid and c.space_id = pl.space_id
+        ),
+        geom = ${
+          hasPoint
+            ? tx`ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography`
+            : tx`null`
+        },
+        geocode_source = ${hasPoint ? tx`coalesce(pl.geocode_source, 'manual')` : tx`null`},
+        geocoded_at    = ${hasPoint ? tx`pl.geocoded_at` : tx`null`},
+        updated_at   = now()
+      where pl.id = ${id}::uuid and not pl.is_locked
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Resolve coordinates through the GeocodingProvider.
+ *
+ * The provider is chosen by GEOCODING_PROVIDER and defaults to the fake, which
+ * needs no network and no credential — so this button works in a cold
+ * container. What gets written is the *source*, so a place always says where
+ * its point came from.
+ */
+export async function geocodePlace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  const query = String(formData.get('query') ?? '').trim();
+  if (!id || !query) return;
+
+  const provider = geocodingProvider();
+  let results: Awaited<ReturnType<typeof provider.geocode>> = [];
+  let failure: string | null = null;
+  try {
+    results = await provider.geocode(query);
+  } catch (err) {
+    // A real provider without a credential fails here, not at construction.
+    failure = err instanceof Error ? err.message : String(err);
+  }
+
+  const best = results[0];
+  if (best) {
+    await asUser(user.id, async (tx) => {
+      await tx`
+        update public.places set
+          geom = ST_SetSRID(ST_MakePoint(${best.lon}, ${best.lat}), 4326)::geography,
+          geocoded_at = now(),
+          geocode_source = ${provider.name},
+          city = coalesce(city, ${best.label.split(',').pop()?.trim() ?? null}),
+          updated_at = now()
+        where id = ${id}::uuid and not is_locked
+      `;
+    });
+  }
+
+  revalidatePath('/', 'layout');
+  const outcome = failure ? 'error' : best ? 'ok' : 'none';
+  redirect(`/places/${id}?geocoded=${outcome}`);
+}
+
+export async function archivePlace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`update public.places set archived_at = now() where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+  redirect('/places');
+}
+
+export async function restorePlace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`update public.places set archived_at = null where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Move a place to another space.
+ *
+ * The last entity type to get a move confirmation, which completes the hard
+ * requirement. A place's consequences are its own: the category cannot follow,
+ * and every event, visit and travel leg pointing at it either comes along (the
+ * visits, which are the place's own history) or is cut loose (an event in the
+ * old space, which would otherwise reference a place its readers cannot see).
+ */
+export async function movePlaceToSpace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('placeId') ?? '');
+  const targetSpaceId = String(formData.get('targetSpaceId') ?? '');
+  if (!id || !targetSpaceId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      select 1 from app.space_move_preview('place'::app.entity_kind,
+        ${id}::uuid, ${targetSpaceId}::uuid) limit 1
+    `;
+    await tx`
+      update public.places
+      set space_id = ${targetSpaceId}::uuid, category_id = null
+      where id = ${id}::uuid
+    `;
+    // Visits are the place's own history and move with it.
+    await tx`
+      update public.place_visits set space_id = ${targetSpaceId}::uuid
+      where place_id = ${id}::uuid
+    `;
+    // Anything left behind in another space stops pointing at it, rather than
+    // pointing at something its readers can no longer see.
+    await tx`
+      update public.events set place_id = null
+      where place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
+    `;
+    await tx`
+      update public.travel_legs set from_place_id = null
+      where from_place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
+    `;
+    await tx`
+      update public.travel_legs set to_place_id = null
+      where to_place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
+    `;
+    await tx`
+      insert into public.activity_log
+        (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
+      values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'place',
+              ${id}::uuid, 'moved', 'Moved between spaces')
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/** Log a visit by hand. `source` is only ever 'manual' or 'calendar'; see 0005. */
+export async function addPlaceVisit(formData: FormData) {
+  const user = await requireUser();
+  const placeId = String(formData.get('placeId') ?? '');
+  const onDate = String(formData.get('onDate') ?? '');
+  const arrivedTime = String(formData.get('arrivedTime') ?? '') || null;
+  const departedTime = String(formData.get('departedTime') ?? '') || null;
+  const notesMd = String(formData.get('notesMd') ?? '');
+  if (!placeId || !onDate) return;
+
+  const arrivedAt = instantFromForm(onDate, arrivedTime ?? '00:00');
+  if (!arrivedAt) return;
+  const departedAt = departedTime ? instantFromForm(onDate, departedTime) : null;
+  if (departedAt && departedAt < arrivedAt) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.place_visits
+        (space_id, owner_id, place_id, source, arrived_at, departed_at, notes_md)
+      select pl.space_id, ${user.id}::uuid, pl.id, 'manual',
+             ${arrivedAt}, ${departedAt}, ${notesMd}
+      from public.places pl where pl.id = ${placeId}::uuid
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function removePlaceVisit(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('visitId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`delete from public.place_visits where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/** Attach an event to a place, or detach it. Both must be in the same space. */
+export async function setEventPlace(formData: FormData) {
+  const user = await requireUser();
+  const eventId = String(formData.get('eventId') ?? '');
+  const placeId = String(formData.get('placeId') ?? '') || null;
+  if (!eventId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      update public.events e set
+        place_id = (
+          select pl.id from public.places pl
+          where pl.id = ${placeId}::uuid and pl.space_id = e.space_id
+        ),
+        updated_at = now()
+      where e.id = ${eventId}::uuid
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+// ---------------------------------------------------------------------------
+// Travel
+//
+// Decision 5, again and throughout: a journey is manual — you said so — or
+// calendar-derived — two events with places imply a trip between them. There is
+// no third source. Nothing below reads a position, and Orbit never asks for the
+// permission.
+//
+// The maths lives in src/lib/travel.ts and is tested there. What is here is the
+// writing.
+// ---------------------------------------------------------------------------
+
+/** A provider estimate for two places, or null when it cannot be had. */
+async function estimateBetween(
+  from: { lat: number | null; lon: number | null },
+  to: { lat: number | null; lon: number | null },
+  mode: LegMode,
+): Promise<{ minutes: number; metres: number; source: 'provider' | 'none' }> {
+  const providerMode = providerModeFor(mode);
+  if (
+    !providerMode ||
+    from.lat === null || from.lon === null ||
+    to.lat === null || to.lon === null
+  ) {
+    // A flight, or a place nobody has geocoded. Fall back to the crude table
+    // rather than to a confident number from a routing engine that was never
+    // asked — and say so in `estimate_source`.
+    if (from.lat === null || from.lon === null || to.lat === null || to.lon === null) {
+      return { minutes: 0, metres: 0, source: 'none' };
+    }
+    const metres = haversineMetres(
+      { lat: from.lat, lon: from.lon },
+      { lat: to.lat, lon: to.lon },
+    );
+    return { minutes: estimateLegMinutes(metres, mode), metres, source: 'none' };
+  }
+
+  try {
+    const result = await travelTimeProvider().estimate(
+      { lat: from.lat, lon: from.lon },
+      { lat: to.lat, lon: to.lon },
+      providerMode,
+    );
+    return { minutes: result.minutes, metres: result.metres, source: 'provider' };
+  } catch {
+    // A real provider without a credential, or one that refuses this mode. The
+    // leg is still worth saving; it just carries no provider estimate.
+    return { minutes: 0, metres: 0, source: 'none' };
+  }
+}
+
+/** Both ends of a leg, read under the caller's own privileges. */
+async function placeEnds(userId: string, fromId: string | null, toId: string | null) {
+  return asUser(userId, async (tx) => {
+    const rows = await tx<
+      { id: string; spaceId: string; lat: number | null; lon: number | null }[]
+    >`
+      select id, space_id as "spaceId",
+             ST_Y(geom::geometry) as lat, ST_X(geom::geometry) as lon
+      from public.places
+      where id in (${fromId ?? null}::uuid, ${toId ?? null}::uuid)
+    `;
+    return {
+      from: rows.find((r) => r.id === fromId) ?? null,
+      to: rows.find((r) => r.id === toId) ?? null,
+    };
+  });
+}
+
+export async function createTravelLeg(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const fromPlaceId = String(formData.get('fromPlaceId') ?? '') || null;
+  const toPlaceId = String(formData.get('toPlaceId') ?? '') || null;
+  const mode = String(formData.get('mode') ?? 'car') as LegMode;
+  const onDate = String(formData.get('onDate') ?? '');
+  const departTime = String(formData.get('departTime') ?? '') || null;
+  const notesMd = String(formData.get('notesMd') ?? '');
+  const eventId = String(formData.get('eventId') ?? '') || null;
+  const sessionId = String(formData.get('sessionId') ?? '') || null;
+  if (!spaceId || !LEG_MODES.includes(mode)) return;
+
+  const ends = await placeEnds(user.id, fromPlaceId, toPlaceId);
+  const estimate = await estimateBetween(
+    ends.from ?? { lat: null, lon: null },
+    ends.to ?? { lat: null, lon: null },
+    mode,
+  );
+  const plan = planLeg(estimate.minutes, mode);
+
+  // An explicit arrival wins over an estimate; otherwise depart + door-to-door.
+  const departAt = onDate ? instantFromForm(onDate, departTime ?? '00:00') : null;
+  const arriveTime = String(formData.get('arriveTime') ?? '') || null;
+  const arriveAt =
+    onDate && arriveTime
+      ? instantFromForm(onDate, arriveTime)
+      : departAt && plan.doorToDoorMinutes > 0
+        ? new Date(departAt.getTime() + plan.doorToDoorMinutes * 60_000)
+        : null;
+  if (arriveAt && departAt && arriveAt < departAt) return;
+
+  const minutes =
+    arriveAt && departAt
+      ? Math.round((arriveAt.getTime() - departAt.getTime()) / 60_000)
+      : plan.doorToDoorMinutes || null;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.travel_legs
+        (space_id, owner_id, session_id, from_place_id, to_place_id, event_id, mode,
+         depart_at, arrive_at, duration_minutes, distance_metres, estimate_source,
+         estimated_at, notes_md)
+      values (
+        ${spaceId}::uuid, ${user.id}::uuid,
+        -- Resolved against the chosen space rather than trusted: a stale form
+        -- could otherwise file a journey under a trip in another space.
+        (select t.id from public.travel_sessions t
+          where t.id = ${sessionId}::uuid and t.space_id = ${spaceId}::uuid),
+        ${fromPlaceId}::uuid, ${toPlaceId}::uuid, ${eventId}::uuid, ${mode},
+        ${departAt}, ${arriveAt}, ${minutes}, ${estimate.metres || null},
+        ${estimate.source}, ${estimate.source === 'none' ? null : new Date()},
+        ${notesMd})
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function deleteTravelLeg(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('legId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`delete from public.travel_legs where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/** Re-ask the provider for a saved leg. The mode may have changed since. */
+export async function reestimateTravelLeg(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('legId') ?? '');
+  const mode = String(formData.get('mode') ?? '') as LegMode;
+  if (!id || !LEG_MODES.includes(mode)) return;
+
+  const leg = await asUser(user.id, async (tx) => {
+    const rows = await tx<
+      {
+        fromLat: number | null; fromLon: number | null;
+        toLat: number | null; toLon: number | null;
+        departAt: string | null;
+      }[]
+    >`
+      select ST_Y(fp.geom::geometry) as "fromLat", ST_X(fp.geom::geometry) as "fromLon",
+             ST_Y(tp.geom::geometry) as "toLat",   ST_X(tp.geom::geometry) as "toLon",
+             l.depart_at as "departAt"
+      from public.travel_legs l
+      left join public.places fp on fp.id = l.from_place_id
+      left join public.places tp on tp.id = l.to_place_id
+      where l.id = ${id}::uuid
+    `;
+    return rows[0] ?? null;
+  });
+  if (!leg) return;
+
+  const estimate = await estimateBetween(
+    { lat: leg.fromLat, lon: leg.fromLon },
+    { lat: leg.toLat, lon: leg.toLon },
+    mode,
+  );
+  const plan = planLeg(estimate.minutes, mode);
+  const departAt = leg.departAt ? new Date(leg.departAt) : null;
+  const arriveAt =
+    departAt && plan.doorToDoorMinutes > 0
+      ? new Date(departAt.getTime() + plan.doorToDoorMinutes * 60_000)
+      : null;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      update public.travel_legs set
+        mode = ${mode},
+        duration_minutes = ${plan.doorToDoorMinutes || null},
+        distance_metres  = ${estimate.metres || null},
+        arrive_at        = ${arriveAt},
+        estimate_source  = ${estimate.source},
+        estimated_at     = ${estimate.source === 'none' ? null : new Date()},
+        updated_at       = now()
+      where id = ${id}::uuid
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Save a leg the calendar implied.
+ *
+ * The endpoints and times come from the derivation rather than from the form,
+ * so what is written is what was shown. The form carries only the identifiers
+ * and the mode — and the database is what decides whether the caller may write
+ * into that space at all.
+ */
+export async function saveDerivedLeg(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const fromPlaceId = String(formData.get('fromPlaceId') ?? '') || null;
+  const toPlaceId = String(formData.get('toPlaceId') ?? '') || null;
+  const eventId = String(formData.get('eventId') ?? '') || null;
+  const mode = String(formData.get('mode') ?? 'car') as LegMode;
+  const arriveByIso = String(formData.get('arriveBy') ?? '');
+  const day = String(formData.get('day') ?? '');
+  if (!spaceId || !toPlaceId || !arriveByIso || !LEG_MODES.includes(mode)) return;
+
+  const arriveBy = new Date(arriveByIso);
+  if (Number.isNaN(arriveBy.getTime())) return;
+
+  const ends = await placeEnds(user.id, fromPlaceId, toPlaceId);
+  const estimate = await estimateBetween(
+    ends.from ?? { lat: null, lon: null },
+    ends.to ?? { lat: null, lon: null },
+    mode,
+  );
+  const plan = planLeg(estimate.minutes, mode);
+  const departAt = departBy(arriveBy, plan);
+
+  await asUser(user.id, async (tx) => {
+    // The page stops offering a journey it can see is already saved, but two
+    // tabs or a double click get past that — and `travel_legs` has no unique
+    // constraint that would refuse the second row. The insert therefore checks
+    // for itself, in the same statement, rather than trusting the button.
+    await tx`
+      insert into public.travel_legs
+        (space_id, owner_id, from_place_id, to_place_id, event_id, mode,
+         depart_at, arrive_at, duration_minutes, distance_metres, estimate_source,
+         estimated_at, notes_md)
+      select
+        ${spaceId}::uuid, ${user.id}::uuid, ${fromPlaceId}::uuid, ${toPlaceId}::uuid,
+        ${eventId}::uuid, ${mode}, ${departAt}, ${arriveBy},
+        ${plan.doorToDoorMinutes}, ${estimate.metres || null}, ${estimate.source},
+        ${estimate.source === 'none' ? null : new Date()},
+        'Derived from the calendar.'
+      where not exists (
+        select 1 from public.travel_legs l
+        where l.to_place_id = ${toPlaceId}::uuid
+          and l.arrive_at = ${arriveBy}
+          and l.from_place_id is not distinct from ${fromPlaceId}::uuid
+      )
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+  if (day) redirect(`/travel?day=${day}`);
+}
+
+export async function createTravelSession(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const title = String(formData.get('title') ?? '').trim();
+  const startDate = String(formData.get('startDate') ?? '');
+  const endDate = String(formData.get('endDate') ?? '');
+  const destinationPlaceId = String(formData.get('destinationPlaceId') ?? '') || null;
+  const originPlaceId = String(formData.get('originPlaceId') ?? '') || null;
+  if (!spaceId || !title || !startDate || !endDate) return;
+
+  const startsAt = instantFromForm(startDate, '00:00');
+  const endsAt = instantFromForm(endDate, '23:59');
+  if (!startsAt || !endsAt || endsAt < startsAt) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.travel_sessions
+        (space_id, owner_id, title, source, origin_place_id, destination_place_id,
+         starts_at, ends_at, is_active)
+      values (
+        ${spaceId}::uuid, ${user.id}::uuid, ${title}, 'manual',
+        ${originPlaceId}::uuid, ${destinationPlaceId}::uuid,
+        ${startsAt}, ${endsAt},
+        ${startsAt <= new Date() && endsAt >= new Date()})
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Create a session from a multi-day event.
+ *
+ * The other half of decision 5. `sessionFromEvent()` decides whether the event
+ * is a trip at all — a gig that runs past midnight is a late night, not a trip
+ * — and the answer is the same one the page showed before the button existed.
+ */
+export async function createSessionFromEvent(formData: FormData) {
+  const user = await requireUser();
+  const eventId = String(formData.get('eventId') ?? '');
+  if (!eventId) return;
+
+  const event = await asUser(user.id, async (tx) => {
+    const rows = await tx<
+      {
+        id: string; title: string; spaceId: string; startsAt: string; endsAt: string;
+        allDay: boolean; placeId: string | null;
+      }[]
+    >`
+      select id, title, space_id as "spaceId", starts_at as "startsAt",
+             ends_at as "endsAt", all_day as "allDay", place_id as "placeId"
+      from public.events where id = ${eventId}::uuid and not is_locked
+    `;
+    return rows[0] ?? null;
+  });
+  if (!event) return;
+
+  const draft = sessionFromEvent({
+    ...event,
+    startsAt: new Date(event.startsAt).toISOString(),
+    endsAt: new Date(event.endsAt).toISOString(),
+    placeName: null,
+    placeLat: null,
+    placeLon: null,
+  });
+  if (!draft) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.travel_sessions
+        (space_id, owner_id, title, source, destination_place_id, event_id,
+         starts_at, ends_at, is_active)
+      values (
+        ${event.spaceId}::uuid, ${user.id}::uuid, ${draft.title}, 'calendar',
+        ${draft.destinationPlaceId}::uuid, ${draft.eventId}::uuid,
+        ${draft.startsAt}, ${draft.endsAt},
+        ${sessionIsActive(draft)})
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function deleteTravelSession(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('sessionId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    // The FK cascades the legs; a leg with no session is not a leg anybody
+    // asked for.
+    await tx`delete from public.travel_sessions where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
 }

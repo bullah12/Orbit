@@ -264,9 +264,11 @@ async function main() {
   // -- places ---------------------------------------------------------------
   console.log('▸ places');
   const placeIds: string[] = [];
+  const placeByName: Record<string, string> = {};
   for (const p of PLACES) {
     const id = uid();
     placeIds.push(id);
+    placeByName[p.name] = id;
     await sql`
       insert into public.places
         (id, space_id, owner_id, category_id, name, address_text, postcode, city,
@@ -279,6 +281,23 @@ async function main() {
       )
     `;
   }
+
+  // One place in Work, so that travel in a space Danny can only see as
+  // free/busy is a real row rather than a hypothetical. Everything else is in
+  // Home; this is the one that proves the policy bites.
+  const WORK_PLACE = uid();
+  placeByName['Office — Colmore Row'] = WORK_PLACE;
+  await sql`
+    insert into public.places
+      (id, space_id, owner_id, category_id, name, address_text, postcode, city,
+       geom, geocoded_at, geocode_source)
+    values (
+      ${WORK_PLACE}, ${S_WORK}, ${PRIYA}, ${catId[S_WORK]!.work ?? null},
+      'Office — Colmore Row', 'Colmore Row, Birmingham', 'B3 2QD', 'Birmingham',
+      ST_SetSRID(ST_MakePoint(-1.9005, 52.4813), 4326)::geography,
+      now(), 'fake'
+    )
+  `;
 
   // -- people ---------------------------------------------------------------
   console.log('▸ people');
@@ -458,6 +477,113 @@ async function main() {
       )
     `;
   }
+
+  // -- travel ---------------------------------------------------------------
+  //
+  // Three tables that used to sit in the pgTAP known-empty ledger — a table
+  // nothing writes to has a policy nothing tests, and the outsider check
+  // iterates pg_tables and cannot fail on an empty table. They hold rows now.
+  //
+  // TRAVEL_DAY is a fixed date rather than "today plus two" so that a demo and
+  // the smoke suite can navigate straight to it. Its three events are placed
+  // deliberately: the first hop has room, the second does not, so /travel shows
+  // both verdicts the moment the app is opened.
+  console.log('▸ travel');
+  const TRAVEL_DAY = '2026-07-29';
+  const travelAt = (hhmm: string) => new Date(`${TRAVEL_DAY}T${hhmm}:00+01:00`);
+
+  const travelDayEvents: [string, string, string, string][] = [
+    ['Swim',              'Home — Kings Heath', '09:30', '10:30'],
+    ['CBSO matinee',      'Symphony Hall',      '12:00', '13:30'],
+    ['Meet Sadia in the park', 'Cannon Hill Park', '13:45', '14:30'],
+  ];
+  for (const [title, placeName, from, to] of travelDayEvents) {
+    const id = uid();
+    eventIds.push(id);
+    await sql`
+      insert into public.events
+        (id, space_id, owner_id, calendar_id, category_id, place_id, title,
+         starts_at, ends_at, all_day, status)
+      values (
+        ${id}, ${S_HOME}, ${PRIYA}, ${calIds[S_HOME]!}, ${catId[S_HOME]!.social!},
+        ${placeByName[placeName]!}, ${title},
+        ${travelAt(from)}, ${travelAt(to)}, false, 'confirmed'
+      )
+    `;
+  }
+
+  // Visits: recorded by hand or lifted from the calendar. Never from a device
+  // location — there is no column for one and no permission is requested.
+  for (const [placeName, dayNo, arrive, depart, source] of [
+    ['Moseley Farmers’ Market', -7, 9, 11, 'manual'],
+    ['Cannon Hill Park', -5, 14, 16, 'manual'],
+    ['Symphony Hall', -12, 19, 22, 'calendar'],
+    ['Stirchley — Loaf Bakery', -2, 8, 9, 'manual'],
+  ] as const) {
+    await sql`
+      insert into public.place_visits
+        (space_id, owner_id, place_id, source, arrived_at, departed_at, notes_md)
+      values (
+        ${S_HOME}, ${PRIYA}, ${placeByName[placeName]!}, ${source},
+        ${at(dayNo, arrive)}, ${at(dayNo, depart)},
+        ${source === 'calendar' ? 'From the calendar.' : ''}
+      )
+    `;
+  }
+  // One in Work, so "the partner sees Home visits and no Work ones" is a claim
+  // with a row behind it on both sides.
+  await sql`
+    insert into public.place_visits
+      (space_id, owner_id, place_id, source, arrived_at, departed_at)
+    values (${S_WORK}, ${PRIYA}, ${WORK_PLACE}, 'manual', ${at(-3, 9)}, ${at(-3, 17)})
+  `;
+
+  // A trip, with the journeys that belong to it.
+  const TRIP = uid();
+  await sql`
+    insert into public.travel_sessions
+      (id, space_id, owner_id, title, source, origin_place_id, destination_place_id,
+       starts_at, ends_at, timezone, is_active, notes_md)
+    values (
+      ${TRIP}, ${S_HOME}, ${PRIYA}, 'Half term — Pembrokeshire', 'manual',
+      ${placeByName['Home — Kings Heath']!}, null,
+      ${at(-21, 8)}, ${at(-17, 18)}, 'Europe/London', false,
+      'Cottage booked. Take the big cool bag.'
+    )
+  `;
+  await sql`
+    insert into public.travel_legs
+      (space_id, owner_id, session_id, from_place_id, to_place_id, mode,
+       depart_at, arrive_at, duration_minutes, distance_metres, estimate_source,
+       estimated_at, notes_md)
+    values
+      (${S_HOME}, ${PRIYA}, ${TRIP}, ${placeByName['Home — Kings Heath']!},
+       ${placeByName['Birmingham New Street']!}, 'car',
+       ${at(-21, 8)}, ${at(-21, 8, 35)}, 35, 8200, 'provider', ${at(-21, 8)}, ''),
+      (${S_HOME}, ${PRIYA}, ${TRIP}, ${placeByName['Birmingham New Street']!},
+       null, 'train',
+       ${at(-21, 9)}, ${at(-21, 13)}, 240, 340000, 'manual', null,
+       'Change at Cardiff.')
+  `;
+  // And a Work journey, in a space Danny can only see as free/busy.
+  await sql`
+    insert into public.travel_sessions
+      (space_id, owner_id, title, source, destination_place_id,
+       starts_at, ends_at, timezone, is_active)
+    values (
+      ${S_WORK}, ${PRIYA}, 'Client workshop — Leeds', 'manual', null,
+      ${at(14, 7)}, ${at(15, 19)}, 'Europe/London', false
+    )
+  `;
+  await sql`
+    insert into public.travel_legs
+      (space_id, owner_id, from_place_id, to_place_id, mode,
+       depart_at, arrive_at, duration_minutes, distance_metres, estimate_source)
+    values (
+      ${S_WORK}, ${PRIYA}, ${WORK_PLACE}, null, 'train',
+      ${at(14, 7)}, ${at(14, 9, 30)}, 150, 180000, 'manual'
+    )
+  `;
 
   // -- tasks ----------------------------------------------------------------
   console.log('▸ tasks');
@@ -723,6 +849,9 @@ async function main() {
     union all select 'notes', count(*)::int from public.notes
     union all select 'note_links', count(*)::int from public.note_links
     union all select 'places', count(*)::int from public.places
+    union all select 'place_visits', count(*)::int from public.place_visits
+    union all select 'travel_legs', count(*)::int from public.travel_legs
+    union all select 'travel_sessions', count(*)::int from public.travel_sessions
     order by 1
   `;
   console.log('▸ seeded:');

@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(55);
+select plan(63);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -114,6 +114,48 @@ insert into public.people (id, space_id, owner_id, display_name) values
    '11111111-1111-1111-1111-111111111111', 'Dr Iqbal'),
   ('eeeeeeee-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'Dr Iqbal');
+
+-- Places and travel. One of each in the shared space and one of each in
+-- Alice's own, so every assertion below is "the partner sees exactly the shared
+-- one" rather than "the partner sees something".
+--
+-- Where somebody goes, and when they left to get there, is content. A free/busy
+-- participant gets times from app.free_busy_blocks() and nothing else — so
+-- Carol must see none of these four tables, not a redacted version of them.
+insert into public.places (id, space_id, owner_id, name, postcode) values
+  ('a1a1a1a1-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'Community centre', 'B14 7SB'),
+  ('a1a1a1a1-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'Alice''s lock-up', 'B18 6HQ');
+
+insert into public.place_visits (id, space_id, owner_id, place_id, source, arrived_at) values
+  ('a2a2a2a2-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'a1a1a1a1-0000-0000-0000-000000000001',
+   'manual', '2026-08-03 10:00+01'),
+  ('a2a2a2a2-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'a1a1a1a1-0000-0000-0000-000000000002',
+   'manual', '2026-08-03 14:00+01');
+
+insert into public.travel_sessions
+  (id, space_id, owner_id, title, source, starts_at, ends_at) values
+  ('a3a3a3a3-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'Weekend away', 'manual',
+   '2026-08-07 08:00+01', '2026-08-09 18:00+01'),
+  ('a3a3a3a3-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'Alice alone', 'manual',
+   '2026-08-14 08:00+01', '2026-08-15 18:00+01');
+
+insert into public.travel_legs
+  (id, space_id, owner_id, session_id, from_place_id, to_place_id, mode,
+   depart_at, arrive_at, duration_minutes) values
+  ('a4a4a4a4-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'a3a3a3a3-0000-0000-0000-000000000001',
+   'a1a1a1a1-0000-0000-0000-000000000001', null, 'car',
+   '2026-08-07 08:00+01', '2026-08-07 09:30+01', 90),
+  ('a4a4a4a4-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'a3a3a3a3-0000-0000-0000-000000000002',
+   'a1a1a1a1-0000-0000-0000-000000000002', null, 'train',
+   '2026-08-14 08:00+01', '2026-08-14 11:00+01', 180);
 
 -- ===========================================================================
 -- 1. RLS is on, everywhere
@@ -240,6 +282,59 @@ select is(
   (select count(*)::int from public.recurrence_rules),
   0,
   'a free_busy participant sees no recurrence rules — the shape of a week is content');
+
+-- Places and travel, from both sides of the membership.
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+select is(
+  (select count(*)::int from public.places
+   where id in ('a1a1a1a1-0000-0000-0000-000000000001',
+                'a1a1a1a1-0000-0000-0000-000000000002')),
+  1,
+  'the partner sees the shared place and not the one in Alice''s own space');
+
+select is(
+  (select count(*)::int from public.place_visits
+   where id in ('a2a2a2a2-0000-0000-0000-000000000001',
+                'a2a2a2a2-0000-0000-0000-000000000002')),
+  1,
+  'and the shared visit only — where somebody went is content, not availability');
+
+select is(
+  (select count(*)::int from public.travel_legs
+   where id in ('a4a4a4a4-0000-0000-0000-000000000001',
+                'a4a4a4a4-0000-0000-0000-000000000002')),
+  1,
+  'and the shared journey only');
+
+select is(
+  (select count(*)::int from public.travel_sessions
+   where id in ('a3a3a3a3-0000-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000002')),
+  1,
+  'and the shared trip only');
+
+select tests.act_as('33333333-3333-3333-3333-333333333333');
+
+select is(
+  (select count(*)::int from public.places),
+  0,
+  'a free_busy participant sees no places — an address is content');
+
+select is(
+  (select count(*)::int from public.place_visits),
+  0,
+  'and no visits: when you were somewhere is more than when you were busy');
+
+select is(
+  (select count(*)::int from public.travel_legs),
+  0,
+  'and no journeys');
+
+select is(
+  (select count(*)::int from public.travel_sessions),
+  0,
+  'and no trips — that you are away is not the same as that you are busy');
 
 -- ===========================================================================
 -- 4. Writing
@@ -611,9 +706,8 @@ select is(
    where t <> ''
      and t <> all (array[
        'ai_runs', 'attachments', 'note_versions',
-       'notification_deliveries', 'person_relationships', 'place_visits',
-       'rule_runs', 'space_invites', 'sync_cursors',
-       'travel_legs', 'travel_sessions'
+       'notification_deliveries', 'person_relationships',
+       'rule_runs', 'space_invites', 'sync_cursors'
      ])),
   '',
   'every table outside the known-empty ledger holds rows, so the outsider check is not vacuous'

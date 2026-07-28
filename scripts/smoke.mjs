@@ -35,6 +35,9 @@ const S_PRIYA = '00000000-0000-4000-8000-000000000003';
 const S_HOME = '00000000-0000-4000-8000-000000000004';
 const S_WORK = '00000000-0000-4000-8000-000000000005';
 
+const TRAVEL_DAY = '2026-07-29';
+let placeUrl;
+let privatePlaceUrl;
 let failures = 0;
 const results = [];
 
@@ -397,6 +400,49 @@ try {
     });
     check('every control on the task form has a label', unnamed.length === 0, unnamed.join(', '));
 
+    // The same rule on the two densest pages Phase 3 added. A dense interface
+    // is a keyboard interface, and an unlabelled select in a row of six is
+    // unusable with a screen reader whatever it looks like.
+    const labelAudit = async (url) =>
+      page.evaluate(() => {
+        const bad = [];
+        for (const el of document.querySelectorAll('input, select, textarea, button')) {
+          if (el.type === 'hidden') continue;
+          const named =
+            el.getAttribute('aria-label') ||
+            el.getAttribute('aria-labelledby') ||
+            (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) ||
+            el.closest('label') ||
+            (el.tagName === 'BUTTON' && el.textContent.trim());
+          if (!named) bad.push(`${el.tagName.toLowerCase()}[name=${el.name || '?'}]`);
+        }
+        return bad;
+      });
+
+    await page.goto('/places?q=Cannon');
+    await page.locator('main ul li a').first().click();
+    await page.waitForLoadState('domcontentloaded');
+    const placeUnnamed = await labelAudit();
+    check('every control on the place page has a label', placeUnnamed.length === 0, placeUnnamed.join(', '));
+    check(
+      'the geocode outcome is announced rather than only redrawn',
+      (await page.locator('#geocode-status').getAttribute('aria-live')) === 'polite',
+    );
+
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const travelUnnamed = await labelAudit();
+    check('every control on the travel page has a label', travelUnnamed.length === 0, travelUnnamed.join(', '));
+
+    // Reachable by keyboard alone: tab until the first journey's mode select
+    // has focus, rather than asserting a tabindex nobody set.
+    const reached = await page.evaluate(() => {
+      const focusable = document.querySelectorAll(
+        'a[href], button, input:not([type=hidden]), select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      return [...focusable].some((el) => el.matches('select[name=mode]'));
+    });
+    check('the mode picker on a derived journey is in the tab order', reached);
+
     await ctx.close();
   }
 
@@ -549,7 +595,22 @@ try {
       options.length > 0 && !options.some((o) => o.includes('Danny')),
       options.join(' | '),
     );
-    await page.selectOption('select[name="calendarId"]', { index: 1 });
+    // Chosen by name, not by index. Connecting the fixture calendars in an
+    // earlier run adds options to this list, so `{ index: 1 }` means a
+    // different calendar on the second run — which silently re-imports the
+    // feed into another space and breaks a move check further down. Found by
+    // running the suite twice from a freshly reset database.
+    const calendarValues = await page
+      .locator('select[name="calendarId"] option')
+      .evaluateAll((els) =>
+        els.map((el) => ({ value: el.value, label: el.textContent.trim() })),
+      );
+    const homeCalendar = calendarValues.find(
+      (o) => /Home/.test(o.label) && !/fixture/i.test(o.label),
+    );
+    check('the household calendar is offered as an import target', Boolean(homeCalendar),
+      calendarValues.map((o) => o.label).join(' | '));
+    await page.selectOption('select[name="calendarId"]', homeCalendar.value);
     await page.click('form[aria-label="Import an ICS feed"] button[type="submit"]');
     await settle(page);
 
@@ -592,7 +653,8 @@ try {
     // Re-importing the same feed must update, not duplicate.
     await page.goto('/calendar/import');
     await page.selectOption('select[name="ref"]', 'school-term');
-    await page.selectOption('select[name="calendarId"]', { index: 1 });
+    // The same calendar as the first import, chosen the same way.
+    await page.selectOption('select[name="calendarId"]', homeCalendar.value);
     await page.click('form[aria-label="Import an ICS feed"] button[type="submit"]');
     await settle(page);
     const second = await page.locator('[role="status"]').innerText();
@@ -708,7 +770,16 @@ try {
     );
 
     // The move confirmation is a hard requirement for every entity that can move.
-    await page.goto(`${eventUrl}?moveTo=${S_PRIYA}`);
+    // The destination comes from the page's own list of offered targets rather
+    // than from a hard-coded space id: which space this imported event lives in
+    // depends on which calendar the import chose, and asking to move it to the
+    // space it is already in renders the picker instead of the preview.
+    await page.goto(eventUrl);
+    const moveHref = await page
+      .locator('a[href*="moveTo="]')
+      .first()
+      .getAttribute('href');
+    await page.goto(moveHref);
     const moveText = await page.locator('main').innerText();
     check(
       'the event move preview states who is affected',
@@ -719,6 +790,362 @@ try {
       moveText.includes('Attendees move with the event') && moveText.includes('default calendar'),
     );
 
+    await ctx.close();
+  }
+
+  // -------------------------------------------------------------- places
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/places');
+    const rows = await page.locator('main ul li').count();
+    check('the places list renders the seeded Birmingham places', rows >= 15, `${rows} rows`);
+
+    const indicators = await page.locator('main ul li span[title^="Space:"]').count();
+    check('every place row carries a space indicator', indicators >= rows, `${indicators}/${rows}`);
+    check(
+      'the place compose surface carries space indicators',
+      (await page.locator('form[aria-label="Add a place"] span[title^="Space:"]').count()) > 0,
+    );
+
+    await page.goto('/places?q=Cannon');
+    const found = await page.locator('main ul li').count();
+    check('places can be searched by name', found === 1, `${found} matches`);
+
+    placeUrl = await page.locator('main ul li a').first().getAttribute('href');
+    await page.goto(placeUrl);
+    check('the place detail opens', (await page.locator('#place-name').inputValue()).includes('Cannon Hill'));
+
+    // Edit round-trip. The stamp changes every run, so this asserts the write
+    // landed rather than asserting an absolute value.
+    const stamp = `Smoke ${Date.now()}`;
+    await page.fill('#place-notes', `Meet by the **${stamp}** gate.`);
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    await page.reload();
+    check(
+      'a place edit round-trips to Postgres',
+      (await page.locator('#place-notes').inputValue()).includes(stamp),
+    );
+    check(
+      'and the place notes render as Markdown',
+      (await page.locator('section:has-text("Rendered") strong').first().innerText()) === stamp,
+    );
+
+    // Geocoding, with no network and no credential. Clear the point, then
+    // resolve it again — a sequence, so the check survives a second run.
+    await page.fill('#place-lat', '');
+    await page.fill('#place-lon', '');
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    await page.reload();
+    check(
+      'coordinates can be cleared',
+      (await page.locator('#geocode-status').innerText()).includes('No coordinates yet'),
+    );
+    check(
+      'the page names the geocoder that will answer',
+      (await page.locator('#geocode-provider').innerText()).includes('geocoding:'),
+    );
+
+    await page.fill('#geocode-query', 'Kings Heath');
+    await page.click('button:has-text("Find coordinates")');
+    await settle(page);
+    const geocoded = await page.locator('#geocode-status').innerText();
+    check(
+      'a place can be geocoded from the running app with no network',
+      /52\.4\d+, -1\.\d+/.test(geocoded),
+      geocoded.split('\n')[0].slice(0, 60),
+    );
+    check('and the point says where it came from', geocoded.includes('geocoding:fake'));
+
+    // Put Cannon Hill Park back where it belongs, so the next run starts level.
+    await page.fill('#place-lat', '52.4489');
+    await page.fill('#place-lon', '-1.9006');
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+
+    // A visit, logged by hand. Nothing here comes from a device location.
+    const visitsBefore = await page.locator('ul[aria-label="Recorded visits"] li').count();
+    await page.fill('#visit-arrived', '10:30');
+    await page.fill('#visit-departed', '12:00');
+    await page.fill('#visit-note', 'Smoke visit');
+    await page.click('button:has-text("Log a visit")');
+    await settle(page);
+    const visitsAfter = await page.locator('ul[aria-label="Recorded visits"] li').count();
+    check('a visit can be logged by hand', visitsAfter === visitsBefore + 1, `${visitsBefore} → ${visitsAfter}`);
+
+    await page.locator('ul[aria-label="Recorded visits"] li button').first().click();
+    await settle(page);
+    check(
+      'and removed again, so the check is a sequence not a state',
+      (await page.locator('ul[aria-label="Recorded visits"] li').count()) === visitsBefore,
+    );
+
+    // The move confirmation — places were the last entity type without one.
+    await page.goto(`${placeUrl}?moveTo=${S_PRIYA}`);
+    const moveText = await page.locator('main').innerText();
+    check(
+      'the place move preview states who is affected',
+      moveText.includes('lose access') || moveText.includes('gain access') || moveText.includes('Unchanged'),
+    );
+    check(
+      'and states the consequences a move has for a place',
+      moveText.includes('visits move with the place'),
+    );
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------------- places: an event's place
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/calendar/month');
+    // Places are seeded into Home only, and the picker offers a place from the
+    // event's *own* space — so find an event that has one rather than assuming
+    // whichever event happens to be first does.
+    const hrefs = await page.locator('a[href^="/calendar/event/"]').evaluateAll((els) =>
+      els.map((e) => e.getAttribute('href').split('?')[0]),
+    );
+    let options = 0;
+    for (const href of [...new Set(hrefs)].slice(0, 12)) {
+      await page.goto(href);
+      options = await page.locator('#event-place option').count();
+      if (options > 1) break;
+    }
+    const before = await page.locator('#event-place').inputValue();
+    check('an event can be given a place from its own space', options > 1, `${options} options`);
+
+    const target = await page.locator('#event-place option').nth(1).getAttribute('value');
+    await page.selectOption('#event-place', target);
+    await page.click('button:has-text("Save place")');
+    await settle(page);
+    await page.reload();
+    check(
+      'the place attaches to the event and round-trips',
+      (await page.locator('#event-place').inputValue()) === target,
+    );
+
+    // Put it back, whatever it was — including "no place".
+    await page.selectOption('#event-place', before);
+    await page.click('button:has-text("Save place")');
+    await settle(page);
+    await ctx.close();
+  }
+
+  // ------------------------------------ places: the partner and the outsider
+  {
+    // A place in Priya's own space. Created idempotently — the unique
+    // constraint on (space_id, name) makes a second run a no-op.
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/places');
+    await page.fill('form[aria-label="Add a place"] input[name=name]', 'Smoke private place');
+    await page.check(`form[aria-label="Add a place"] input[name=spaceId][value="${S_PRIYA}"]`);
+    await page.click('form[aria-label="Add a place"] button:has-text("Add")');
+    await settle(page);
+    await page.goto('/places?q=Smoke%20private');
+    const mine = await page.locator('main ul li').count();
+    check('a place can be created into a chosen space', mine === 1, `${mine} matches`);
+    privatePlaceUrl = await page.locator('main ul li a').first().getAttribute('href');
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/places');
+    const rows = await page.locator('main ul li').count();
+    check('the partner sees the household places', rows >= 15, `${rows} rows`);
+    check(
+      'and not a place in a space he is not a member of',
+      (await page.locator('main ul li', { hasText: 'Smoke private place' }).count()) === 0,
+    );
+    const res = await page.goto(privatePlaceUrl);
+    check('a direct link to it is a 404, not a 403', res.status() === 404, `HTTP ${res.status()}`);
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/places');
+    const rows = await page.locator('main ul li').count();
+    check('the outsider sees zero places', rows === 0, `${rows} rows`);
+    const res = await page.goto(placeUrl);
+    check('and a direct link to a real place is a 404', res.status() === 404, `HTTP ${res.status()}`);
+    await ctx.close();
+  }
+
+  // -------------------------------------------------------------- travel
+  //
+  // 2026-07-29 is the seed's travel day: three Home events at three different
+  // places, arranged so one hop has room and the next does not.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    check('the travel page renders', (await page.locator('h1').first().innerText()) === 'Travel');
+
+    const trips = await page.locator('ul[aria-label="Trips"] li').count();
+    check('trips are listed', trips >= 2, `${trips} trips`);
+    const tripIndicators = await page
+      .locator('ul[aria-label="Trips"] li span[title^="Space:"]')
+      .count();
+    check('every trip row carries a space indicator', tripIndicators >= trips, `${tripIndicators}/${trips}`);
+
+    const derived = page.locator('ul[aria-label="Journeys the calendar implies"] li');
+    const derivedCount = await derived.count();
+    check(
+      'the calendar implies journeys between events at different places',
+      derivedCount >= 2,
+      `${derivedCount} derived`,
+    );
+
+    const derivedText = await derived.first().innerText();
+    check(
+      'and states the door-to-door estimate, separating the moving part from the buffer',
+      /about .*(min|hr)/.test(derivedText) && derivedText.includes('either end'),
+      derivedText.replace(/\n/g, ' ').slice(0, 70),
+    );
+
+    const allDerived = await derived.allInnerTexts();
+    check(
+      'a journey that does not fit says how short it is, rather than looking fine',
+      allDerived.some((t) => /\d+ min short/.test(t)),
+      (allDerived.find((t) => /min short/.test(t)) ?? '').replace(/\n/g, ' ').slice(0, 60),
+    );
+    check(
+      'and one that does fit says how much room there is',
+      allDerived.some((t) => /\d+ min spare/.test(t)),
+    );
+
+    // Save the first derived journey, then delete it again: a sequence, so a
+    // second run without reseeding asserts the same thing.
+    const legsBefore = await page.locator('ul[aria-label="Journeys on this day"] li').count();
+    await derived.first().locator('button:has-text("Save this journey")').click();
+    await settle(page);
+    const saved = page.locator('ul[aria-label="Journeys on this day"] li');
+    const legsAfter = await saved.count();
+    check(
+      'a derived journey can be saved',
+      legsAfter === legsBefore + 1,
+      `${legsBefore} → ${legsAfter}`,
+    );
+    check(
+      'every journey row carries a space indicator',
+      (await saved.locator('span[title^="Space:"]').count()) >= legsAfter,
+    );
+    const savedText = await saved.first().innerText();
+    check(
+      'the saved journey carries a departure time worked back from the arrival',
+      /\d{2}:\d{2}–\d{2}:\d{2}/.test(savedText),
+      savedText.replace(/\n/g, ' ').slice(0, 60),
+    );
+    check(
+      'and it is no longer offered as a journey to save',
+      (await derived.count()) === derivedCount - 1,
+    );
+
+    // Re-estimate it as a walk. The distance is the same; the time is not.
+    const drivingText = await saved.first().innerText();
+    await saved.first().locator('select[name=mode]').selectOption('walk');
+    await saved.first().locator('button:has-text("Re-estimate")').click();
+    await settle(page);
+    const walkingRow = page.locator('ul[aria-label="Journeys on this day"] li').first();
+    const walkingText = await walkingRow.innerText();
+    check(
+      're-estimating with a different mode changes the answer',
+      walkingText !== drivingText,
+      walkingText.replace(/\n/g, ' ').slice(0, 60),
+    );
+    check(
+      'and the control shows the mode that was actually stored',
+      (await walkingRow.locator('select[name=mode]').inputValue()) === 'walk',
+    );
+
+    await page.locator('ul[aria-label="Journeys on this day"] li button[aria-label^="Delete the journey"]').first().click();
+    await settle(page);
+    check(
+      'and deleted again, leaving the day as it was found',
+      (await page.locator('ul[aria-label="Journeys on this day"] li').count()) === legsBefore,
+    );
+
+    // Saving the same derived journey twice must not write two rows. The page
+    // stops offering it, so this goes round the page: submit the same form
+    // twice by reloading the derived list from a fresh render.
+    await derived.first().locator('button:has-text("Save this journey")').click();
+    await settle(page);
+    const dupCount = await page.locator('ul[aria-label="Journeys on this day"] li').count();
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const stillOffered = await page
+      .locator('ul[aria-label="Journeys the calendar implies"] li')
+      .count();
+    check(
+      'a saved journey is not offered again after a reload',
+      stillOffered === derivedCount - 1,
+      `${stillOffered} still offered`,
+    );
+    check(
+      'and saving it wrote exactly one row',
+      dupCount === legsBefore + 1,
+      `${dupCount} rows`,
+    );
+    await page.locator('ul[aria-label="Journeys on this day"] li button[aria-label^="Delete the journey"]').first().click();
+    await settle(page);
+
+    // A journey by hand. Places belong to a space, so the space chip has to be
+    // chosen first — the picker only offers places from the chosen one, which
+    // is the whole point of it.
+    await page.check(`form[aria-label="Add a journey"] input[name=spaceId][value="${S_HOME}"]`, {
+      force: true,
+    });
+    await settle(page);
+    await page.selectOption('#leg-from', { index: 1 });
+    await page.selectOption('#leg-to', { index: 2 });
+    await page.selectOption('#leg-mode', 'cycle');
+    await page.fill('#leg-depart', '17:00');
+    // A journey can be filed under a trip in the same space.
+    await page.selectOption('#leg-session', { index: 1 });
+    await page.click('button:has-text("Add journey")');
+    await settle(page);
+    const manual = page.locator('ul[aria-label="Journeys on this day"] li');
+    check(
+      'a journey can be added by hand',
+      (await manual.count()) === legsBefore + 1,
+    );
+    check(
+      'and filed under a trip, which the row then names',
+      (await manual.first().innerText()).includes('Pembrokeshire'),
+      (await manual.first().innerText()).replace(/\n/g, ' ').slice(0, 70),
+    );
+    await manual.first().locator('button[aria-label^="Delete the journey"]').click();
+    await settle(page);
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------- travel: partner and outsider
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const titles = await page.locator('ul[aria-label="Trips"] li').allInnerTexts();
+    check(
+      'the partner sees the household trip',
+      titles.some((t) => t.includes('Pembrokeshire')),
+      `${titles.length} trips`,
+    );
+    check(
+      'and not the trip in the space he only sees as free/busy',
+      !titles.some((t) => t.includes('Leeds')),
+    );
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const body = await page.locator('main').innerText();
+    check('the outsider sees no trips', body.includes('No trips recorded'));
+    check('and no journeys', body.includes('Nothing recorded for this day'));
+    check('and no events to derive one from', body.includes('No events on this day'));
     await ctx.close();
   }
 

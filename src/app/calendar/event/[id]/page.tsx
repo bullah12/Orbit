@@ -4,7 +4,8 @@ import { requireUser } from '@/lib/auth';
 import { getEvent } from '@/lib/queries/events';
 import { listCategories, type CategoryOption } from '@/lib/queries/tasks';
 import { listSpaces, previewMove, type SpaceSummary } from '@/lib/queries/spaces';
-import { deleteEvent, moveEventToSpace, updateEvent } from '@/app/actions';
+import { listPlaceOptions } from '@/lib/queries/places';
+import { deleteEvent, moveEventToSpace, setEventPlace, updateEvent } from '@/app/actions';
 import { Icon } from '@/components/Icon';
 import { Markdown } from '@/components/Markdown';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
@@ -35,9 +36,10 @@ export default async function EventPage({
   const event = await getEvent(user.id, id);
   if (!event) notFound();
 
-  const [spaces, categories] = await Promise.all([
+  const [spaces, categories, places] = await Promise.all([
     listSpaces(user.id),
     listCategories(user.id, event.space.id),
+    listPlaceOptions(user.id, event.space.id),
   ]);
 
   const targets = spaces.filter((s) => s.canWrite && s.id !== event.space.id);
@@ -96,6 +98,56 @@ export default async function EventPage({
         </div>
       ) : (
         <EditForm event={event} categories={categories} day={day} />
+      )}
+
+      {!event.isLocked && (
+        <section className="hairline border-b px-5 py-4">
+          <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+            <Icon name="map_pin" size={11} />
+            Place
+          </h2>
+          <p className="muted mb-2 text-[12px]">
+            A location typed into the field above is text. Naming a place links this
+            event to a record with coordinates, which is what travel estimates need.
+          </p>
+          {/* A separate form: HTML has no nested forms, and this is one field. */}
+          <form action={setEventPlace} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="eventId" value={event.id} />
+            <div className="flex min-w-56 flex-col gap-1">
+              <label htmlFor="event-place" className="faint text-[11px] font-medium">
+                Place in {event.space.name}
+              </label>
+              <select
+                id="event-place"
+                name="placeId"
+                defaultValue={event.placeId ?? ''}
+                className="input"
+              >
+                <option value="">No place</option>
+                {places.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.lat === null ? ' (no coordinates)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+            >
+              Save place
+            </button>
+            {event.placeId && (
+              <Link
+                href={`/places/${event.placeId}` as never}
+                className="muted text-[12px] underline underline-offset-2"
+              >
+                Open {event.placeName}
+              </Link>
+            )}
+          </form>
+        </section>
       )}
 
       {event.attendees.length > 0 && (

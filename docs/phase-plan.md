@@ -49,10 +49,26 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
 
 ## Phase 3 — Places and Travel
 
-- Places, visits, geocoding behind an interface
-- Travel legs, travel time estimates behind an interface
-- Travel Mode: manual + calendar-derived only. No background location, and we do
-  not request the permission.
+- [x] Places: list, detail, create, edit, archive and restore; linked events,
+      notes and people; the space indicator on every row and compose surface
+- [x] Move a place between spaces, behind `app.space_move_preview()` — the
+      fifth and last entity type, which completes that requirement
+- [x] Visits, recorded by hand or marked as calendar-derived. No background
+      location column, no permission request
+- [x] Geocoding behind `GeocodingProvider`: the fake is the default and needs
+      no network; **Nominatim written, never run** (`GEOCODING_PROVIDER=nominatim`)
+- [x] Travel legs and estimates behind `TravelTimeProvider`: the fake is the
+      default; **OpenRouteService written, never run**
+- [x] Travel Mode: manual + calendar-derived only. A trip is started by hand or
+      lifted from a multi-day event; a journey is typed in or derived from two
+      events at different places. No background location, and we do not request
+      the permission.
+- [x] `src/lib/travel.ts` is pure and carries the maths — buffers, departure
+      instants, whether a journey fits the gap, derivation, sessions — with 46
+      Vitest cases including both 2026 clock changes
+- [x] `place_visits`, `travel_legs` and `travel_sessions` seeded and out of the
+      pgTAP known-empty ledger, with isolation cases from the partner's and the
+      free/busy participant's side
 
 ## Phase 4 — Rules engine
 
