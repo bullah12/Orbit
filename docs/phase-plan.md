@@ -34,12 +34,18 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
 
 ## Phase 2 — Calendar
 
-- Events, attendees, recurrence
-- Day / week / month views, merged across spaces
-- `free_busy` participants render as anonymous blocks in the merged calendar
-- ICS import (fixture-backed fake by default)
-- Google Calendar behind the same interface, no credentials required to run
-- Today: quiet "N events yesterday, no notes" row. That is the whole feature.
+- [x] Events, attendees, recurrence — a repeat is one row plus an RRULE,
+      expanded by `src/lib/recurrence.ts`, never stored expanded
+- [x] Day / week / month views, merged across spaces, Monday-first
+- [x] `free_busy` participants render as anonymous blocks in the merged
+      calendar, reached only through `app.free_busy_blocks()`
+- [x] ICS import (fixture-backed fake by default), re-importable without
+      duplicating, writing `recurrence_rules` and `event_attendees`
+- [x] Google Calendar behind the same interface, no credentials required to
+      run — the *interface and the pull* are exercised here against the fake;
+      the Google implementation itself is **written, never run**
+- [x] Today: quiet "N events yesterday, no notes" row. That is the whole
+      feature. (Shipped in Phase 0.)
 
 ## Phase 3 — Places and Travel
 

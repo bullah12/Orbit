@@ -1,173 +1,163 @@
 # STATUS — handoff contract
 
-Last rewritten: **session 2**, 2026-07-28. Branch: `claude/orbit-build-8ybx2s`.
+Last rewritten: **session 3**, 2026-07-28. Branch: `claude/orbit-build-phase-2-vu20kw`.
 
 This file takes precedence over your assumptions about what is done. Read it,
 then `docs/decisions-log.md`, then get the database up and pick from **Next
 three things** at the bottom.
 
-**Where the project is:** Phases 0 and 1 are complete and shippable. Phase 2
-(Calendar) has not started, and is blocked on `src/lib/integrations/`, which
-does not exist. Phases 3–6 have not started.
+**Where the project is:** Phases 0, 1 and 2 are complete and shippable. Phases
+3–6 have not started. `src/lib/integrations/` now exists with all six
+interfaces and their fakes, which is what Phase 2 was blocked on.
 
 **Five commands are the whole truth about this repo.** All five were run from a
-rebuilt database at the end of session 2 and all five were green:
+rebuilt database at the end of session 3 and all five were green:
 
 ```
-./scripts/db-test.sh   52/52 pgTAP assertions
-pnpm typecheck         clean
-pnpm test              121 Vitest tests
+./scripts/db-test.sh   55/55 pgTAP assertions
 pnpm build             clean
-pnpm smoke             39/39 against the running app     (needs pnpm start)
+pnpm typecheck         clean (needs the build first on a fresh clone)
+pnpm test              227 Vitest tests
+pnpm smoke             76/76 against the running app     (needs pnpm start)
 ```
+
+`pnpm smoke` was run twice in a row without reseeding, and passed both times.
 
 ---
 
 ## Works — verified by running it
 
-Everything here was executed and watched. Where it says "verified", there is a
-command above that proves it.
+Everything here was executed and watched.
 
 **Database**
 - `./scripts/db-reset.sh` rebuilds from zero: apt-installs PostGIS/pgvector/pgTAP
   if missing, starts Postgres, applies `supabase/migrations/*.sql` in order,
   seeds. It **fails the run** if any table lacks RLS.
 - 41 tables, 41 with RLS. `space_id` + `owner_id` on every space-scoped table;
-  every unique constraint leads with `space_id`. Both are asserted structurally,
-  so a careless new table breaks the build rather than the security model.
-- `app.space_move_preview()` returns gains / loses / unchanged with a
-  plain-language reason per person.
-- `app.free_busy_blocks()` is the only path a `free_busy` participant has to
-  event times, and returns times only.
-- **New in session 2:** `app.entity_space(kind, id)` — `SECURITY INVOKER`, so an
-  item you cannot read resolves to *no rows* rather than to a space id. Note
-  linking uses it to refuse a link across a space boundary.
+  every unique constraint leads with `space_id`. Both asserted structurally.
+- `app.space_move_preview()` — gains / loses / unchanged, with a plain-language
+  reason per person.
+- `app.free_busy_blocks()` — the only path a `free_busy` participant has to
+  event times. Returns times only.
+- `app.entity_space(kind, id)` — `SECURITY INVOKER`, so an item you cannot read
+  resolves to *no rows* rather than to a space id.
+- **New in session 3:** migration `0010_recurrence_exdates.sql` adds
+  `recurrence_rules.exdates`. It is the only schema change since session 1.
 
-**pgTAP — `./scripts/db-test.sh`, 52/52**
-- Runs as `authenticated`, not the table owner, so a policy that only appeared
-  to work would fail.
-- **"The outsider sees zero rows in every table in the database"** iterates over
-  `pg_tables` rather than a hand-written list, so a table added tomorrow is
-  covered the moment it exists. This is the assertion that catches a table
-  shipped without a policy.
-- Guarded against a vacuous pass by a ledger of tables that are legitimately
-  empty after a fresh seed (assertion 48). It is a **subset** check: a ledger
-  table filling up is fine (using the app writes to `activity_log`, and this
-  suite runs against the live database), but a table *outside* the ledger being
-  empty fails — that means either the seed did not run or you have shipped a
-  table nothing writes to, whose policy is therefore untested.
+**pgTAP — `./scripts/db-test.sh`, 55/55**
+- Runs as `authenticated`, not the table owner.
+- **"The outsider sees zero rows in every table in the database"** iterates
+  `pg_tables` rather than a hand-written list.
+- Guarded against a vacuous pass by a subset-checked ledger of legitimately
+  empty tables (assertion 51). `recurrence_rules` and `calendar_sync_state`
+  **left the ledger this session** — the seed writes both now, so the outsider
+  check bites on them for real.
+- **New this session:** the partner sees the shared space's recurrence rule and
+  not the private one; a `free_busy` participant sees no recurrence rules at
+  all. How often something repeats, and from when, is content.
 - Also covers: partner sees shared but not private; `free_busy` sees
   availability but no content; forged `owner_id` rejected; `item_shares`
-  refusing a non-member; cross-space person linking needing write on both sides;
-  **person_links read from each side, including the far record resolving to
-  nothing for the partner**; locked items carrying no plaintext; `activity_log`
-  refusing to record a view; the move preview's gains/loses.
-- `db-test.sh` also fails on a plan-count mismatch, which pgTAP reports as a
-  comment rather than `not ok`.
+  refusing a non-member; cross-space person linking needing write on both
+  sides; person links read from each side; locked items carrying no plaintext;
+  `activity_log` refusing to record a view; the move preview.
 
-**TypeScript tests — `pnpm test`, 121 Vitest tests**
-- `tests/format.test.ts` (33) — dates across the BST/GMT boundaries. Every case
-  names the boundary it stands on. `format.ts` takes an injectable `today`/`now`
-  so a failure means the rule is wrong, not the container's clock.
-- `tests/smartlists.test.ts` (32) — every smart-list rule as a pure predicate,
-  including the overlaps (an overdue task is *also* in Today) and the 25-hour
-  day on 25 October.
-- `tests/markdown.test.ts` (30) — the note Markdown subset, link-target safety,
-  and that unbalanced markers terminate rather than loop.
-- `tests/contrast.test.ts` (26) — WCAG ratios computed from the actual tokens in
-  `globals.css`, both themes. It **found four failures** on arrival (emerald,
-  amber, lime, orange against their own light chip fill, 4.31–4.51); those are
-  fixed.
+**TypeScript tests — `pnpm test`, 227 Vitest tests in 7 files**
+- `tests/format.test.ts` (42) — dates across the BST/GMT boundaries, plus the
+  new `zonedInstant` / `zonedWallClock` / `londonDayMinutes` helpers. Includes
+  every hour of both boundary days round-tripping.
+- `tests/recurrence.test.ts` (26) — RRULE parsing and expansion. Month ends
+  (the 31st skips April, `BYMONTHDAY=-1`, 29 February) and the clocks (09:00
+  stays 09:00 across both boundaries while the UTC instant moves).
+- `tests/calendar.test.ts` (42) — the week grid, month grid, day spans and
+  column packing. The 23-hour and 25-hour days are asserted directly.
+- `tests/integrations.test.ts` (29) — provider selection, the fakes, the ICS
+  parser end to end, and that the real implementations refuse to act without
+  credentials rather than throwing at construction.
+- `tests/smartlists.test.ts` (32), `tests/markdown.test.ts` (30),
+  `tests/contrast.test.ts` (26) — as session 2 left them.
 
-**Smoke — `pnpm smoke`, 39 checks against the running app**
+**Smoke — `pnpm smoke`, 76 checks against the running app**
 `scripts/smoke.mjs` drives Chromium against `pnpm start`. This is how "verify
-RLS through the running app, not only in pgTAP" gets done, and it is repeatable.
-It restores what it edits; the people run leaves one archived person behind per
-invocation (rough edge 1).
+RLS through the running app, not only in pgTAP" gets done.
 
 | Acting as | Result |
 |---|---|
-| Priya | 56 tasks in All open, every row with a space indicator; 42 people; task *and* person edits round-trip to Postgres; create, link, unlink, move and archive a person all work |
-| Danny (partner) | 29 rows in Home; **0 in Work**, with the free/busy chip still shown; **0 in Priya's personal space**; sees that a person link exists but *not* what is on the other side |
-| Sam Okafor (outsider) | **0 rows on Today, All open, Notes and People**; a direct link to someone else's task is a **404, not a 403** |
+| Priya | 56 tasks, 42 people, the week/month/day calendar with a space indicator on every block; task, person and event edits round-trip to Postgres; create, link, unlink, move and archive all work; ICS import and calendar pull both run |
+| Danny (partner) | 29 rows in Home; **0 in Work**; **anonymous busy blocks** in the merged calendar with no title, no category and no link; sees that a person link exists but not what is on the other side |
+| Sam Okafor (outsider) | **0 rows on Today, All open, Notes, People and the calendar**; a direct link to someone else's task *or event* is a **404, not a 403** |
 
-**App — Phase 0**
-- Today: due-today, overdue, the quiet "N events yesterday, no notes" row
-  (decision 10 — that row is the whole feature and hides itself when there is
-  nothing to say), and **Coming up** (birthdays/anniversaries, next 21 days).
-- Eight smart lists at `/tasks/<list>` with sidebar counts, derived from columns.
-- **Task detail is a full edit form**: title, body, status, priority, due date,
-  category, assignee, estimate, waiting-on, deferral, plus delete. Category and
-  assignee are resolved *in SQL against the task's own space*, so a stale form
-  cannot write a cross-space reference. The header says which smart lists the
-  task is in.
-- Move confirmation renders `space_move_preview()` before anything is written,
-  re-runs it server-side on submit, and **now states that the category will be
-  cleared** and why.
-- Notes: list, archive view, read, create, edit (with a `note_versions` snapshot
-  on every save), **archive / restore / delete-from-archive**, and **links that
-  can be added and removed** through a picker scoped to the note's own space.
-- **Note and task bodies render as Markdown** — a parsed tree, not a string of
-  HTML, so raw markup is never a node and there is nothing to sanitise.
-- Compose passes a category; it is a client component so changing the space
-  changes the category list.
-- Space indicator on every task row, note row, person row, and both compose
-  surfaces.
-- Dev user switcher, now including the outsider.
+**App — Phase 0 and 1** (unchanged from session 2, all still green in smoke)
+Today with the quiet "N events yesterday, no notes" row and Coming up; eight
+smart lists; full task edit; notes with versions, archive, links and Markdown;
+people with contacts, dates, linking and moving; the space indicator
+everywhere; dev user switcher.
 
-**App — Phase 1 (People)**
-- `/people`: compose bar with the space chips, list, bookmarkable name/nickname
-  search, "linked" chip, next important date, space indicator on every row.
-- `/people/[id]`: the linked-record panel first (two records, both exist,
-  nothing merges them), then an edit form (name, known-as, pronouns, category,
-  Markdown notes), contacts with `mailto:`/`tel:`, important dates with the year
-  suppressed when unknown, mentions, the move confirmation, and archive.
-- Contacts and dates can be added and removed. Every insert takes `space_id` and
-  `owner_id` from the person's own row, never from the form.
-- **Link and unlink.** The row is written once in canonical id order — the check
-  constraint requires `person_a_id < person_b_id`, so which record you started
-  from cannot change what gets stored. Candidates come only from spaces you can
-  *write*, because the policy requires write on both sides. Unlinking leaves
-  both records exactly as they were.
-- **Move**, with the same preview-before-write contract as tasks, and a
-  consequence line covering all three effects: contacts and dates travel with
-  the person, the category cannot, and a link survives but the far side may stop
-  being able to see this record.
-- The link resolves through RLS in both directions. When the far record is in a
-  space you cannot read, the row stays and says *"a linked record in a space you
-  cannot see"* — the link's existence is not a secret, its contents are.
+**App — Phase 2 (Calendar), new this session**
+- `/calendar/week`, `/calendar/day`, `/calendar/month`, Monday-first, merged
+  across every space the caller can read. Prev/next/today, view switcher, a
+  current-time line, and an all-day banner separate from the timed grid.
+- Blocks are positioned as fractions of the day's **real** length, so the 23-
+  and 25-hour days are right. An event crossing midnight draws on both days,
+  clipped, with a continuation arrow. Overlapping events pack into lanes per
+  cluster, so one busy morning does not narrow the whole day.
+- **`free_busy` spaces render as anonymous blocks**: a time, a space chip and
+  the word "Busy". Different type, different query — `app.free_busy_blocks()`.
+  There is no code path that turns an event into one.
+- `/calendar/event/[id]`: read, edit (title, date, times, all-day, status,
+  category, location, Markdown notes), attendees, delete, and **move behind
+  `app.space_move_preview()`**.
+- **Recurring events are stored once**, as a row plus an RRULE, and expanded by
+  the app on every render. The seed ships two; the calendar draws 29 stand-up
+  occurrences across a month from a single row.
+- ICS import at `/calendar/import`, fixture-backed by default. Re-importing the
+  same feed updates rather than duplicates. Writes `recurrence_rules` (with
+  EXDATEs) and `event_attendees`.
+- **Connect and pull** a provider calendar from the same page. First pull is
+  full, second carries the sync token and is incremental, a provider deletion
+  cancels the local event. All exercised here against the fake.
+- The page lists all six integrations and states, for each, whether what is
+  running is a fixture-backed fake or a real implementation.
+- **Notes can now be moved between spaces** too, with the link consequence
+  stated before the write.
 
 ---
 
 ## Stubbed / fixture-backed
 
-- **Every external integration is unimplemented, including the fakes.**
-  `.env.example` declares `CALENDAR_PROVIDER`, `ICS_PROVIDER`,
-  `GEOCODING_PROVIDER`, `TRAVEL_TIME_PROVIDER`, `PUSH_PROVIDER`, `AI_PROVIDER`,
-  and the ADR describes the interface-plus-fake pattern — but
-  **`src/lib/integrations/` does not exist.** Nothing reads those variables.
-  This is still the largest gap between the documentation and the tree, and
-  Phase 2 cannot ship without it.
-  *No real implementation has been written either, so there is nothing yet to
-  mark "written, never run".*
+**`src/lib/integrations/` — the interface-plus-fake pattern is now real.**
+Every `*_PROVIDER` variable in `.env.example` genuinely selects an
+implementation; the default is `fake` everywhere; an unknown value is a hard
+error rather than a silent fall back.
+
+| Interface | Fake (default, runs here) | Real |
+|---|---|---|
+| `CalendarProvider` | `calendar:fake` — fixture events, sync tokens, deletions | `calendar:google` — Google Calendar API v3, **written, never run** |
+| `IcsProvider` | `ics:fake` — two fixture feeds | `ics:http` — HTTP fetcher, **written, never run** |
+| `GeocodingProvider` | `geocoding:fake` — Birmingham places | **not written** — Phase 3 |
+| `TravelTimeProvider` | `travel:fake` — haversine × mode speed | **not written** — Phase 3 |
+| `PushProvider` | `push:fake` — in-memory outbox | **not written** — Phase 4 |
+| `AiProvider` | `ai:fake` — deterministic, offline | **not written** — Phase 5 |
+
+**"Written, never run" means exactly that.** `GoogleCalendarProvider` and
+`HttpIcsProvider` have never executed a request — there is no network and no
+credential in this environment and there never will be. They are written
+against the published APIs. Do not describe either as working. What *is*
+verified is that they construct without credentials, refuse to act without
+them, and that the ICS parser they share is correct.
+
+Also still fixture-backed or absent:
 - **Auth** is a cookie naming a seeded profile. `AUTH_PROVIDER=dev` is the only
-  implementation. No password, no OAuth; the cookie is unsigned despite
-  `AUTH_COOKIE_SECRET` existing in `.env.example`. It now refuses an id that is
-  not a seeded profile.
-- **Locked items** are modelled and enforced end to end in the database
-  (constraints, excluded from search indexes, ciphertext in `encrypted_blobs`)
-  but there is **no client-side crypto**. The seed's ciphertext is a placeholder.
-  The UI refuses to show locked content and refuses to edit it.
-- **Rules engine**: tables and two seeded rules exist, both disabled. No
-  evaluator.
+  implementation; the cookie is unsigned despite `AUTH_COOKIE_SECRET` existing.
+- **Locked items** are modelled and enforced end to end in the database but
+  there is **no client-side crypto**. The UI refuses to show or edit them.
+- **Rules engine**: tables and two seeded rules, both disabled. No evaluator.
 
 ---
 
 ## Not started
 
-Phases 2–6 in `docs/phase-plan.md`: calendar UI (the 200 seeded events are not
-rendered anywhere), places/travel UI, rules evaluator, search, NL capture, AI,
-sync.
+Phases 3–6 in `docs/phase-plan.md`: places/travel UI, the rules evaluator,
+search, NL capture, AI, sync and offline.
 
 ---
 
@@ -175,55 +165,62 @@ sync.
 
 Including the ones I introduced and did not fix.
 
-1. **`pnpm smoke` leaves one archived person behind per run.** It archives
-   rather than deletes, because archiving is the reversible option and deleting
-   a person is not offered in the UI. `pnpm seed` clears them. Harmless, but the
-   people count creeps up if you run it repeatedly.
-2. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Typed
-   routes are generated into `.next/types`, so `tsc` fails with
-   `Type '"/people"' is not assignable to type 'RouteImpl<"/people">'` until a
-   build has run once. Documented in "How to run" — do not chase it.
-3. **`switchUser` is still impersonation by design.** It now refuses an id that
-   is not a seeded profile, but any seeded profile can be assumed with one
-   click. **This build must not be exposed to a network you do not control.**
-4. **Move is implemented for tasks and people only.** `previewMove()` also
-   accepts notes, events and places, and `app.space_move_preview()` handles
-   them — no UI reaches those three. Notes are the obvious next one.
-5. **`recurrence_rules` is unused.** Tasks and events both have the FK; nothing
-   writes or expands one. It is in the known-empty ledger in the pgTAP suite.
-6. **The Markdown subset has no tables, no images, no task lists.** Deliberate
-   for now, but a note pasted from elsewhere will lose them silently rather
-   than showing them as literal text.
-7. **The people list's "next date" is computed twice**, once in SQL for the
-   ordering and once in TypeScript for the label (`nextOccurrence` in
-   `src/app/people/page.tsx`). They agree today. They are two places to change,
-   and neither is covered by a Vitest case — the anniversary maths deserves one.
-8. **A person's category is resolved back from its *name*** on the detail page,
-   because the query returns the category as a chip rather than an id
-   (`findCategoryId`). Names are unique per space so it is correct, and the
-   action re-checks the id against the space anyway, but it is a lookup that
-   should not need to exist.
-9. **Contacts cannot be edited, only added and removed**, and `is_primary` is
-   never set from the UI — the seed is the only thing that marks a primary
-   contact.
-10. **Postgres does not survive container restarts.** `./scripts/db-reset.sh`
-   restarts it, or `service postgresql start` if you do not want to lose data.
-11. **`pkill -f next-server`, not `pkill -f "next start"`.** And start the server
-   with `setsid nohup … & disown` or the tool that started it will take it down
-   with it.
-12. **No linting.** Out of scope by instruction. `pnpm typecheck`, `pnpm build`,
-    `pnpm test`, `./scripts/db-test.sh` and `pnpm smoke` are the checks.
-13. **`pnpm smoke` needs a running server** and Chromium at
+1. **`pnpm smoke` leaves state behind.** One archived person per run (as
+   before), and after a run the fixture calendars are connected and the school
+   term feed is imported. All harmless and all cleared by `pnpm seed` — but it
+   means the calendar has fixture events in it that the seed did not put there.
+2. **A recurring event has one detail page for the whole series.** Clicking any
+   occurrence opens the series and editing it changes every occurrence; the
+   page says so. There is no "edit this occurrence only", and no UI at all for
+   *creating* a repeat — the compose bar makes one-off events. Recurrence
+   arrives through ICS import and the calendar pull.
+3. **Recurrence expansion re-runs on every render.** A month view expands every
+   rule in every visible space each time. It is bounded (400 occurrences per
+   rule, 4000 candidate periods) and imperceptible at this data size, but it is
+   not cached and it will be the first thing to hurt.
+4. **The pull window is fixed at −180/+365 days** and is not configurable. An
+   event outside it is invisible to sync until somebody widens the constant in
+   `src/lib/sync/calendar.ts`.
+5. **Nothing pushes back.** `calendar_sync_state` has a `direction` column and
+   only `'pull'` is ever written. `events.is_dirty` is set when a synced event
+   is edited locally and nothing ever clears it by sending the change.
+6. **Move is now implemented for tasks, people, events and notes — not
+   places.** `previewMove()` and `app.space_move_preview()` handle places;
+   there is no places UI at all yet (Phase 3).
+7. **The compose bar cannot set an event's location, attendees or notes.** It
+   takes a title, date, times, all-day, category and space. Everything else is
+   on the detail page.
+8. **`switchUser` is still impersonation by design.** Any seeded profile can be
+   assumed with one click. **This build must not be exposed to a network you do
+   not control.**
+9. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Typed
+   routes are generated into `.next/types`. Also: a `redirect()` path built by
+   concatenating strings loses its literal type and fails the build — use one
+   template literal.
+10. **The Markdown subset has no tables, no images, no task lists.**
+11. **The people list's "next date" is computed twice**, once in SQL for the
+    ordering and once in TypeScript for the label, and neither is covered by a
+    Vitest case. Unchanged from session 2.
+12. **A person's category is resolved back from its *name*** on the detail page
+    (`findCategoryId`). Correct, but a lookup that should not need to exist.
+13. **Contacts cannot be edited, only added and removed**, and `is_primary` is
+    never set from the UI.
+14. **Postgres does not survive container restarts.** `./scripts/db-reset.sh`
+    restarts it, or `service postgresql start` to keep the data. It went down
+    once mid-session and every page 500s until it is back.
+15. **`pkill -f next-server`, not `pkill -f "next start"`** — and beware that
+    `pkill -f next-server` can match the shell command running it. Start the
+    server with `setsid nohup … & disown`. If `pnpm start` logs `EADDRINUSE`,
+    an old server is still serving an old build and every check you run is
+    testing yesterday's code.
+16. **No linting.** Out of scope by instruction.
+17. **`pnpm smoke` needs a running server** and Chromium at
     `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. Override with
-    `CHROMIUM_PATH`. It is not wired into any other command on purpose.
+    `CHROMIUM_PATH`.
 
-Fixed in session 2, previously listed here: task editing; the locked-note
-version-snapshot leak; the silent category drop on move; compose ignoring
-categories; `listSpaces` running three times per page; note bodies rendering as
-plain text; note delete/archive; people being read-only.
-
-Also fixed within this session: the pgTAP empty-table ledger compared for
-equality, so simply *using the app* failed the suite. It is a subset check now.
+Fixed in session 3, previously listed here: `src/lib/integrations/` not
+existing; `recurrence_rules` being unused; move being implemented for tasks and
+people only (events and notes now have it).
 
 ---
 
@@ -235,12 +232,12 @@ From a cold container:
 cd /home/user/Orbit
 pnpm install
 ./scripts/db-reset.sh          # installs extensions if needed, migrates, seeds
-./scripts/db-test.sh           # 52/52 must be green
+./scripts/db-test.sh           # 55/55 must be green
 pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
-pnpm test                      # 121 Vitest tests
+pnpm test                      # 227 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm smoke                     # 27 checks against the running app
+pnpm smoke                     # 76 checks against the running app
 ```
 
 Start the server so it survives the shell that launched it:
@@ -260,7 +257,9 @@ and **no credential is required**.
 | `DATABASE_URL` | `postgres://orbit_app:orbit_dev_password@localhost:5432/orbit` | App role. Owns nothing, no BYPASSRLS, no table grants. |
 | `SEED_DATABASE_URL` | `postgres://orbit_seed:…@localhost:5432/orbit` | BYPASSRLS. Seeding only — never at request time. |
 | `AUTH_PROVIDER` | `dev` | Only implementation. |
-| `*_PROVIDER` | `fake` | Declared, **not yet read by anything**. |
+| `CALENDAR_PROVIDER` | `fake` | `fake` \| `google`. Google needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` and has never been run. |
+| `ICS_PROVIDER` | `fake` | `fake` \| `http`. |
+| `GEOCODING_PROVIDER` `TRAVEL_TIME_PROVIDER` `PUSH_PROVIDER` `AI_PROVIDER` | `fake` | `fake` is the only accepted value today; anything else is a hard error. |
 | `ORBIT_DB_NAME` | `orbit` | Read by both scripts. |
 | `ORBIT_URL` | `http://localhost:3000` | `pnpm smoke` only. |
 | `CHROMIUM_PATH` | `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` | `pnpm smoke` only. |
@@ -277,31 +276,41 @@ migrations and tests).
 | Danny Whitehouse | `…0002` | Danny, Home; `free_busy` on Work — the partner |
 | Sam Okafor | `…00ff` | nothing at all — the outsider |
 
+**A five-minute demo:** switch to Priya, open the calendar, page through a
+week. Go to Import, connect "Family (fixture)", come back — the pulled events
+are there with a space indicator each. Import the `school-term` feed, then look
+at the week of 23 March 2026 and the week after: the assembly is at 09:00 on
+both sides of the clocks going forward, and 6 April is missing because the feed
+excluded it. Switch to Danny and look at the same calendar: Work is a column of
+anonymous "Busy" blocks. Switch to Sam and look again: nothing at all.
+
 ---
 
 ## Next three things, in order
 
-1. **Build `src/lib/integrations/` with the fakes.** This is the biggest
-   documentation-vs-reality gap and Phase 2 is blocked on it. Define
-   `CalendarProvider` and `IcsProvider`, ship the fixture-backed fakes, make the
-   env var actually select one, and write Vitest coverage against the fake.
-   Write the real Google/ICS implementations too — they can never be executed
-   here, so mark them in STATUS as **written, never run** and do not let the
-   fake stand in for them in a "Works" claim.
+1. **Phase 3 — Places and Travel.** `places` is seeded with 15 Birmingham
+   locations and nothing renders them. Build the places list and detail, wire
+   `GeocodingProvider` (the fake exists; write the real Nominatim one, marked
+   written-never-run), then travel legs and estimates behind
+   `TravelTimeProvider`. `place_visits`, `travel_legs` and `travel_sessions` are
+   all in the pgTAP known-empty ledger — take them out as you start writing to
+   them. Travel Mode is manual and calendar-derived only (decision 5): no
+   background location, and do not request the permission. Places also need a
+   move confirmation — they are the last entity type without one (rough edge 6).
 
-2. **Phase 2 — Calendar.** 200 seeded events render nowhere. Day/week/month,
-   Monday-first, merged across spaces, with `free_busy` participants as
-   anonymous blocks via `app.free_busy_blocks()`. `startOfWeekISO` and
-   `londonMidnight` in `src/lib/format.ts` exist and are tested for exactly
-   this; use them rather than reaching for `getDate()`. Add Vitest cases for the
-   week grid across both BST boundaries — that is where this will break. Add a
-   smoke check that Danny sees anonymous blocks and not titles.
+2. **Phase 4 — the rules engine.** Tables and two disabled seeded rules exist;
+   there is no evaluator. Dry-run preview before enabling, and a `rule_runs`
+   audit trail. The brief calls it a bug farm and it is: write the evaluator as
+   a pure module against the `PushProvider` fake, the way recurrence was done,
+   and test it before wiring any UI to it.
 
-3. **ICS import, then recurrence.** With `IcsProvider` in place, import into
-   `events` and expand `recurrence_rules` (rough edge 5 — the FK exists and
-   nothing writes one). Recurrence expansion is named in the completion criteria
-   as something the Vitest suite must cover, and it is a bug farm: test the
-   month-end cases and both BST boundaries before wiring any UI to it.
+3. **Recurrence in the UI, and pushing back.** Two gaps Phase 2 left open
+   (rough edges 2 and 5): there is no way to *create* a repeat from the app, and
+   nothing ever sends a local edit back to a provider. Both are small vertical
+   slices — a repeat picker on the event form using `describeRrule()` for the
+   confirmation line, and a push direction in `calendar_sync_state` that clears
+   `events.is_dirty`. Neither blocks Phase 3, so do them when the calendar next
+   annoys you rather than before.
 
 ### Before you finish your session
 
