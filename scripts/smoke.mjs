@@ -400,6 +400,49 @@ try {
     });
     check('every control on the task form has a label', unnamed.length === 0, unnamed.join(', '));
 
+    // The same rule on the two densest pages Phase 3 added. A dense interface
+    // is a keyboard interface, and an unlabelled select in a row of six is
+    // unusable with a screen reader whatever it looks like.
+    const labelAudit = async (url) =>
+      page.evaluate(() => {
+        const bad = [];
+        for (const el of document.querySelectorAll('input, select, textarea, button')) {
+          if (el.type === 'hidden') continue;
+          const named =
+            el.getAttribute('aria-label') ||
+            el.getAttribute('aria-labelledby') ||
+            (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) ||
+            el.closest('label') ||
+            (el.tagName === 'BUTTON' && el.textContent.trim());
+          if (!named) bad.push(`${el.tagName.toLowerCase()}[name=${el.name || '?'}]`);
+        }
+        return bad;
+      });
+
+    await page.goto('/places?q=Cannon');
+    await page.locator('main ul li a').first().click();
+    await page.waitForLoadState('domcontentloaded');
+    const placeUnnamed = await labelAudit();
+    check('every control on the place page has a label', placeUnnamed.length === 0, placeUnnamed.join(', '));
+    check(
+      'the geocode outcome is announced rather than only redrawn',
+      (await page.locator('#geocode-status').getAttribute('aria-live')) === 'polite',
+    );
+
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const travelUnnamed = await labelAudit();
+    check('every control on the travel page has a label', travelUnnamed.length === 0, travelUnnamed.join(', '));
+
+    // Reachable by keyboard alone: tab until the first journey's mode select
+    // has focus, rather than asserting a tabindex nobody set.
+    const reached = await page.evaluate(() => {
+      const focusable = document.querySelectorAll(
+        'a[href], button, input:not([type=hidden]), select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      return [...focusable].some((el) => el.matches('select[name=mode]'));
+    });
+    check('the mode picker on a derived journey is in the tab order', reached);
+
     await ctx.close();
   }
 
