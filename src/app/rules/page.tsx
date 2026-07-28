@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
-import { listRuleRuns, listRules, parseRuleRow } from '@/lib/queries/rules';
+import { listDeliveries, listRuleRuns, listRules, parseRuleRow } from '@/lib/queries/rules';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { ComposeRule } from '@/components/ComposeRule';
@@ -25,10 +25,11 @@ export default async function RulesPage({
 }) {
   const { error } = await searchParams;
   const user = await requireUser();
-  const [spaces, rules, runs] = await Promise.all([
+  const [spaces, rules, runs, deliveries] = await Promise.all([
     listSpaces(user.id),
     listRules(user.id),
     listRuleRuns(user.id, { limit: 8 }),
+    listDeliveries(user.id, 6),
   ]);
 
   const writable = spaces.filter((s) => s.canWrite);
@@ -145,6 +146,36 @@ export default async function RulesPage({
           ))}
           {runs.length === 0 && (
             <li className="faint text-[12px]">Nothing has run yet.</li>
+          )}
+        </ul>
+      </section>
+      <section className="px-5 pb-6">
+        <h2 className="text-[13px] font-semibold">Notifications sent</h2>
+        <p className="muted mt-0.5 text-[12px]">
+          Every attempt is recorded, including the ones that went nowhere — it
+          is the only way to tell “the rule never fired” from “it fired and the
+          push failed”. The provider that answered is named, so a delivery is
+          never quietly the in-memory outbox pretending to be a phone.
+        </p>
+        <ul className="mt-2 flex flex-col gap-1">
+          {deliveries.map((d) => (
+            <li key={d.id} className="hairline flex flex-wrap items-center gap-2 rounded border px-2 py-1.5">
+              <SpaceIndicator space={d.space} />
+              <span className="text-[12px]">{d.channel}</span>
+              <span className="faint text-[11px]">{d.status}</span>
+              <span className="faint text-[11px]">via {d.provider}</span>
+              <span className="faint text-[11px]">
+                {d.sentAt ? formatRelative(d.sentAt) : `queued ${formatRelative(d.createdAt)}`}
+              </span>
+              {d.error && (
+                <span className="text-[11px]" style={{ color: 'var(--c-rose)' }}>
+                  {d.error}
+                </span>
+              )}
+            </li>
+          ))}
+          {deliveries.length === 0 && (
+            <li className="faint text-[12px]">Nothing has been sent.</li>
           )}
         </ul>
       </section>

@@ -216,6 +216,12 @@ export default async function PlacePage({
           device’s location — Orbit never asks for that permission.
         </p>
 
+        {visits.length >= 50 && (
+          <p className="faint mb-2 text-[11px]">
+            Showing the 50 most recent visits. There is no paging yet.
+          </p>
+        )}
+
         {visits.length === 0 ? (
           <p className="faint mb-3 text-[12px]">No visits recorded.</p>
         ) : (
@@ -289,7 +295,9 @@ export default async function PlacePage({
 
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
-            <h3 className="muted mb-1 text-[11px] font-medium">Events here</h3>
+            <h3 className="muted mb-1 text-[11px] font-medium">
+              Events here{events.length >= 25 ? ' — 25 most recent' : ''}
+            </h3>
             {events.length === 0 ? (
               <p className="faint text-[12px]">None.</p>
             ) : (

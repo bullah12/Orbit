@@ -741,3 +741,45 @@ export async function deleteRule(userId: string, ruleId: string): Promise<void> 
     await tx`delete from public.rules where id = ${ruleId}::uuid`;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export type DeliveryRow = {
+  id: string;
+  channel: string;
+  status: string;
+  provider: string;
+  error: string | null;
+  attempts: number;
+  sentAt: string | null;
+  createdAt: string;
+  space: SpaceRef;
+};
+
+/**
+ * What the notify action actually did.
+ *
+ * A delivery that went nowhere visible is a half feature: the row exists in the
+ * database and nobody who used the app would know whether their rule had sent
+ * anything. This is the surface that answers that, and it says which provider
+ * answered — so "it sent a notification" never quietly means "the in-memory
+ * outbox accepted one".
+ */
+export async function listDeliveries(userId: string, limit = 8): Promise<DeliveryRow[]> {
+  return asUser(userId, async (tx) => {
+    return tx<DeliveryRow[]>`
+      select
+        d.id, d.channel, d.status, d.provider, d.error, d.attempts,
+        d.sent_at    as "sentAt",
+        d.created_at as "createdAt",
+        jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
+                           'colour', s.colour, 'icon', s.icon) as space
+      from public.notification_deliveries d
+      join public.spaces s on s.id = d.space_id
+      order by d.created_at desc
+      limit ${limit}
+    `;
+  });
+}
