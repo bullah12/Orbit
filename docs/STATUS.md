@@ -6,19 +6,19 @@ This file takes precedence over your assumptions about what is done. Read it,
 then `docs/decisions-log.md`, then get the database up and pick from **Next
 three things** at the bottom.
 
-**Where the project is:** Phase 0 is complete and shippable. Phase 1 (People) is
-complete apart from creating and editing a person, which is the first thing on
-the list below. Phases 2–6 have not started.
+**Where the project is:** Phases 0 and 1 are complete and shippable. Phase 2
+(Calendar) has not started, and is blocked on `src/lib/integrations/`, which
+does not exist. Phases 3–6 have not started.
 
-**Four commands are the whole truth about this repo.** All four were run from a
-rebuilt database at the end of session 2 and all four were green:
+**Five commands are the whole truth about this repo.** All five were run from a
+rebuilt database at the end of session 2 and all five were green:
 
 ```
 ./scripts/db-test.sh   52/52 pgTAP assertions
 pnpm typecheck         clean
 pnpm test              121 Vitest tests
 pnpm build             clean
-pnpm smoke             27/27 against the running app     (needs pnpm start)
+pnpm smoke             39/39 against the running app     (needs pnpm start)
 ```
 
 ---
@@ -51,9 +51,11 @@ command above that proves it.
   covered the moment it exists. This is the assertion that catches a table
   shipped without a policy.
 - Guarded against a vacuous pass by a ledger of tables that are legitimately
-  empty today (assertion 44). **When a phase starts writing to one of them,
-  delete it from the ledger.** If a table you added shows up there, nothing
-  writes to it.
+  empty after a fresh seed (assertion 48). It is a **subset** check: a ledger
+  table filling up is fine (using the app writes to `activity_log`, and this
+  suite runs against the live database), but a table *outside* the ledger being
+  empty fails — that means either the seed did not run or you have shipped a
+  table nothing writes to, whose policy is therefore untested.
 - Also covers: partner sees shared but not private; `free_busy` sees
   availability but no content; forged `owner_id` rejected; `item_shares`
   refusing a non-member; cross-space person linking needing write on both sides;
@@ -77,14 +79,15 @@ command above that proves it.
   amber, lime, orange against their own light chip fill, 4.31–4.51); those are
   fixed.
 
-**Smoke — `pnpm smoke`, 27 checks against the running app**
+**Smoke — `pnpm smoke`, 39 checks against the running app**
 `scripts/smoke.mjs` drives Chromium against `pnpm start`. This is how "verify
 RLS through the running app, not only in pgTAP" gets done, and it is repeatable.
-It restores what it changes.
+It restores what it edits; the people run leaves one archived person behind per
+invocation (rough edge 1).
 
 | Acting as | Result |
 |---|---|
-| Priya | 56 tasks in All open, every row with a space indicator; 42 people; edits round-trip to Postgres |
+| Priya | 56 tasks in All open, every row with a space indicator; 42 people; task *and* person edits round-trip to Postgres; create, link, unlink, move and archive a person all work |
 | Danny (partner) | 29 rows in Home; **0 in Work**, with the free/busy chip still shown; **0 in Priya's personal space**; sees that a person link exists but *not* what is on the other side |
 | Sam Okafor (outsider) | **0 rows on Today, All open, Notes and People**; a direct link to someone else's task is a **404, not a 403** |
 
@@ -113,11 +116,23 @@ It restores what it changes.
 - Dev user switcher, now including the outsider.
 
 **App — Phase 1 (People)**
-- `/people`: list, bookmarkable name/nickname search, "linked" chip, next
-  important date, space indicator on every row.
+- `/people`: compose bar with the space chips, list, bookmarkable name/nickname
+  search, "linked" chip, next important date, space indicator on every row.
 - `/people/[id]`: the linked-record panel first (two records, both exist,
-  nothing merges them), contacts with `mailto:`/`tel:`, important dates with the
-  year suppressed when unknown, Markdown notes, and mentions.
+  nothing merges them), then an edit form (name, known-as, pronouns, category,
+  Markdown notes), contacts with `mailto:`/`tel:`, important dates with the year
+  suppressed when unknown, mentions, the move confirmation, and archive.
+- Contacts and dates can be added and removed. Every insert takes `space_id` and
+  `owner_id` from the person's own row, never from the form.
+- **Link and unlink.** The row is written once in canonical id order — the check
+  constraint requires `person_a_id < person_b_id`, so which record you started
+  from cannot change what gets stored. Candidates come only from spaces you can
+  *write*, because the policy requires write on both sides. Unlinking leaves
+  both records exactly as they were.
+- **Move**, with the same preview-before-write contract as tasks, and a
+  consequence line covering all three effects: contacts and dates travel with
+  the person, the category cannot, and a link survives but the far side may stop
+  being able to see this record.
 - The link resolves through RLS in both directions. When the far record is in a
   space you cannot read, the row stays and says *"a linked record in a space you
   cannot see"* — the link's existence is not a secret, its contents are.
@@ -152,7 +167,7 @@ It restores what it changes.
 
 Phases 2–6 in `docs/phase-plan.md`: calendar UI (the 200 seeded events are not
 rendered anywhere), places/travel UI, rules evaluator, search, NL capture, AI,
-sync. Plus, within Phase 1, creating and editing a person.
+sync.
 
 ---
 
@@ -160,10 +175,10 @@ sync. Plus, within Phase 1, creating and editing a person.
 
 Including the ones I introduced and did not fix.
 
-1. **You cannot create or edit a person.** `/people` is read-only apart from
-   search. The seed is the only way a person gets into the database, and the
-   only way to link two records is `psql`. Phase 1 is not shippable until this
-   exists — it is next thing #1.
+1. **`pnpm smoke` leaves one archived person behind per run.** It archives
+   rather than deletes, because archiving is the reversible option and deleting
+   a person is not offered in the UI. `pnpm seed` clears them. Harmless, but the
+   people count creeps up if you run it repeatedly.
 2. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Typed
    routes are generated into `.next/types`, so `tsc` fails with
    `Type '"/people"' is not assignable to type 'RouteImpl<"/people">'` until a
@@ -171,9 +186,9 @@ Including the ones I introduced and did not fix.
 3. **`switchUser` is still impersonation by design.** It now refuses an id that
    is not a seeded profile, but any seeded profile can be assumed with one
    click. **This build must not be exposed to a network you do not control.**
-4. **Move is implemented for tasks only.** `previewMove()` accepts notes,
-   people, events and places, and `app.space_move_preview()` handles them —
-   no UI reaches them. People especially need it now they have pages.
+4. **Move is implemented for tasks and people only.** `previewMove()` also
+   accepts notes, events and places, and `app.space_move_preview()` handles
+   them — no UI reaches those three. Notes are the obvious next one.
 5. **`recurrence_rules` is unused.** Tasks and events both have the FK; nothing
    writes or expands one. It is in the known-empty ledger in the pgTAP suite.
 6. **The Markdown subset has no tables, no images, no task lists.** Deliberate
@@ -181,22 +196,34 @@ Including the ones I introduced and did not fix.
    than showing them as literal text.
 7. **The people list's "next date" is computed twice**, once in SQL for the
    ordering and once in TypeScript for the label (`nextOccurrence` in
-   `src/app/people/page.tsx`). They agree today. They are two places to change.
-8. **Postgres does not survive container restarts.** `./scripts/db-reset.sh`
+   `src/app/people/page.tsx`). They agree today. They are two places to change,
+   and neither is covered by a Vitest case — the anniversary maths deserves one.
+8. **A person's category is resolved back from its *name*** on the detail page,
+   because the query returns the category as a chip rather than an id
+   (`findCategoryId`). Names are unique per space so it is correct, and the
+   action re-checks the id against the space anyway, but it is a lookup that
+   should not need to exist.
+9. **Contacts cannot be edited, only added and removed**, and `is_primary` is
+   never set from the UI — the seed is the only thing that marks a primary
+   contact.
+10. **Postgres does not survive container restarts.** `./scripts/db-reset.sh`
    restarts it, or `service postgresql start` if you do not want to lose data.
-9. **`pkill -f next-server`, not `pkill -f "next start"`.** And start the server
+11. **`pkill -f next-server`, not `pkill -f "next start"`.** And start the server
    with `setsid nohup … & disown` or the tool that started it will take it down
    with it.
-10. **No linting.** Out of scope by instruction. `pnpm typecheck`, `pnpm build`,
+12. **No linting.** Out of scope by instruction. `pnpm typecheck`, `pnpm build`,
     `pnpm test`, `./scripts/db-test.sh` and `pnpm smoke` are the checks.
-11. **`pnpm smoke` needs a running server** and Chromium at
+13. **`pnpm smoke` needs a running server** and Chromium at
     `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. Override with
     `CHROMIUM_PATH`. It is not wired into any other command on purpose.
 
 Fixed in session 2, previously listed here: task editing; the locked-note
 version-snapshot leak; the silent category drop on move; compose ignoring
 categories; `listSpaces` running three times per page; note bodies rendering as
-plain text; note delete/archive.
+plain text; note delete/archive; people being read-only.
+
+Also fixed within this session: the pgTAP empty-table ledger compared for
+equality, so simply *using the app* failed the suite. It is a subset check now.
 
 ---
 
@@ -254,16 +281,7 @@ migrations and tests).
 
 ## Next three things, in order
 
-1. **Finish Phase 1: create, edit and link a person.** `/people` is read-only,
-   which is the only thing standing between Phase 1 and shippable. Needs: a
-   compose bar on `/people` (same shape as `ComposeTask`, with the space radio),
-   an edit form on `/people/[id]` covering name, nickname, pronouns, category,
-   notes, contacts and dates, and a **link/unlink control** — linking must
-   require write on both spaces, which the policy already enforces, so surface
-   the refusal rather than hiding the option. Add the move UI for people while
-   you are there (rough edge 4): `previewMove()` already accepts `'person'`.
-
-2. **Build `src/lib/integrations/` with the fakes.** This is the biggest
+1. **Build `src/lib/integrations/` with the fakes.** This is the biggest
    documentation-vs-reality gap and Phase 2 is blocked on it. Define
    `CalendarProvider` and `IcsProvider`, ship the fixture-backed fakes, make the
    env var actually select one, and write Vitest coverage against the fake.
@@ -271,12 +289,19 @@ migrations and tests).
    here, so mark them in STATUS as **written, never run** and do not let the
    fake stand in for them in a "Works" claim.
 
-3. **Phase 2 — Calendar.** 200 seeded events render nowhere. Day/week/month,
+2. **Phase 2 — Calendar.** 200 seeded events render nowhere. Day/week/month,
    Monday-first, merged across spaces, with `free_busy` participants as
-   anonymous blocks. `startOfWeekISO` and `londonMidnight` in `src/lib/format.ts`
-   exist and are tested for exactly this; use them rather than reaching for
-   `getDate()`. Add Vitest cases for the week grid across both BST boundaries —
-   that is where this will break.
+   anonymous blocks via `app.free_busy_blocks()`. `startOfWeekISO` and
+   `londonMidnight` in `src/lib/format.ts` exist and are tested for exactly
+   this; use them rather than reaching for `getDate()`. Add Vitest cases for the
+   week grid across both BST boundaries — that is where this will break. Add a
+   smoke check that Danny sees anonymous blocks and not titles.
+
+3. **ICS import, then recurrence.** With `IcsProvider` in place, import into
+   `events` and expand `recurrence_rules` (rough edge 5 — the FK exists and
+   nothing writes one). Recurrence expansion is named in the completion criteria
+   as something the Vitest suite must cover, and it is a bug farm: test the
+   month-end cases and both BST boundaries before wiring any UI to it.
 
 ### Before you finish your session
 

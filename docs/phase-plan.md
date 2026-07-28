@@ -24,14 +24,13 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
 
 ## Phase 1 — People
 
-- [x] Person records, contacts, important dates — **read only; no create/edit
-      yet, which is what stops this phase being shippable**
+- [x] Person records, contacts, important dates — create, edit, add and remove
 - [x] Same-person linking: two records, linked permanently, never collapsed —
       shown from both sides, and the far side stays hidden when its space is
 - [x] Person detail: linked notes, tasks, events, places
 - [x] Birthdays and anniversaries surfaced on Today
-- [ ] Create, edit and link a person from the UI
-- [ ] Move a person between spaces (`previewMove()` already accepts 'person')
+- [x] Create, edit and link a person from the UI
+- [x] Move a person between spaces, behind `app.space_move_preview()`
 
 ## Phase 2 — Calendar
 
