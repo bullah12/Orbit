@@ -346,3 +346,12 @@ tracking, ever.
   with two null place ids is legitimate — so it would need a partial index and
   a decision about what "the same journey" means. Recorded as a rough edge
   rather than guessed at.
+- **A smoke check must not choose anything by index.** The ICS import check
+  picked its target calendar with `{ index: 1 }`. Connecting the fixture
+  calendars — which a previous run of the same suite does — adds options above
+  it, so on the second run the feed imported into a different space and left
+  two "Monday assembly" events, which broke an unrelated move check three
+  sections later. Session 3's "passes twice in a row" was true of the database
+  it was run against and not of a freshly reset one. Both checks now name what
+  they want: the calendar by label, and the move destination read off the
+  page's own list of offered targets.

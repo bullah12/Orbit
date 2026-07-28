@@ -595,7 +595,22 @@ try {
       options.length > 0 && !options.some((o) => o.includes('Danny')),
       options.join(' | '),
     );
-    await page.selectOption('select[name="calendarId"]', { index: 1 });
+    // Chosen by name, not by index. Connecting the fixture calendars in an
+    // earlier run adds options to this list, so `{ index: 1 }` means a
+    // different calendar on the second run — which silently re-imports the
+    // feed into another space and breaks a move check further down. Found by
+    // running the suite twice from a freshly reset database.
+    const calendarValues = await page
+      .locator('select[name="calendarId"] option')
+      .evaluateAll((els) =>
+        els.map((el) => ({ value: el.value, label: el.textContent.trim() })),
+      );
+    const homeCalendar = calendarValues.find(
+      (o) => /Home/.test(o.label) && !/fixture/i.test(o.label),
+    );
+    check('the household calendar is offered as an import target', Boolean(homeCalendar),
+      calendarValues.map((o) => o.label).join(' | '));
+    await page.selectOption('select[name="calendarId"]', homeCalendar.value);
     await page.click('form[aria-label="Import an ICS feed"] button[type="submit"]');
     await settle(page);
 
@@ -638,7 +653,8 @@ try {
     // Re-importing the same feed must update, not duplicate.
     await page.goto('/calendar/import');
     await page.selectOption('select[name="ref"]', 'school-term');
-    await page.selectOption('select[name="calendarId"]', { index: 1 });
+    // The same calendar as the first import, chosen the same way.
+    await page.selectOption('select[name="calendarId"]', homeCalendar.value);
     await page.click('form[aria-label="Import an ICS feed"] button[type="submit"]');
     await settle(page);
     const second = await page.locator('[role="status"]').innerText();
@@ -754,7 +770,16 @@ try {
     );
 
     // The move confirmation is a hard requirement for every entity that can move.
-    await page.goto(`${eventUrl}?moveTo=${S_PRIYA}`);
+    // The destination comes from the page's own list of offered targets rather
+    // than from a hard-coded space id: which space this imported event lives in
+    // depends on which calendar the import chose, and asking to move it to the
+    // space it is already in renders the picker instead of the preview.
+    await page.goto(eventUrl);
+    const moveHref = await page
+      .locator('a[href*="moveTo="]')
+      .first()
+      .getAttribute('href');
+    await page.goto(moveHref);
     const moveText = await page.locator('main').innerText();
     check(
       'the event move preview states who is affected',

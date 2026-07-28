@@ -18,10 +18,12 @@ rebuilt database at the end of session 4 and all five were green:
 pnpm build             clean
 pnpm typecheck         clean (needs the build first on a fresh clone)
 pnpm test              276 Vitest tests in 8 files
-pnpm smoke             126/126 against the running app     (needs pnpm start)
+pnpm smoke             127/127 against the running app     (needs pnpm start)
 ```
 
-`pnpm smoke` was run twice in a row without reseeding, and passed both times.
+`pnpm smoke` was run **three times in a row** without reseeding after that
+rebuild, and passed every time. Two of those runs found a latent flake in the
+session-3 checks — see rough edge 7 — which is fixed rather than tolerated.
 
 ---
 
@@ -68,7 +70,7 @@ Everything here was executed and watched.
   `tests/recurrence.test.ts` (26), `tests/smartlists.test.ts` (32),
   `tests/markdown.test.ts` (30), `tests/contrast.test.ts` (26) — unchanged.
 
-**Smoke — `pnpm smoke`, 126 checks against the running app**
+**Smoke — `pnpm smoke`, 127 checks against the running app**
 `scripts/smoke.mjs` drives Chromium against `pnpm start`. This is how "verify
 RLS through the running app, not only in pgTAP" gets done. 50 checks are new
 this session.
@@ -191,7 +193,14 @@ Including the ones I introduced this session and did not fix.
 7. **`pnpm smoke` still leaves state behind**: one archived person per run,
    the fixture calendars connected, the school-term feed imported, and now one
    place named "Smoke private place" in Priya's own space. All harmless, all
-   cleared by `pnpm seed`.
+   cleared by `pnpm seed`. **This was worse than session 3 recorded**: the ICS
+   import chose its target calendar by *index*, and connecting the fixture
+   calendars in run 1 added options that shifted that index, so run 2 imported
+   the same feed into a different space and left two "Monday assembly" rows.
+   The suite now chooses the calendar by name and reads the move destination
+   off the page rather than hard-coding a space id. If you find a duplicated
+   imported event in a database somebody ran the old suite against, `pnpm seed`
+   clears it.
 
 ### Carried over, still true
 
@@ -251,7 +260,7 @@ pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
 pnpm test                      # 276 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm smoke                     # 126 checks against the running app
+pnpm smoke                     # 127 checks against the running app
 ```
 
 Start the server so it survives the shell that launched it:
