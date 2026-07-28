@@ -573,6 +573,20 @@ async function main() {
   }
 
   // -- tags -----------------------------------------------------------------
+  // -- activity ------------------------------------------------------------
+  // One real audit row, so `activity_log` is covered by the pgTAP outsider
+  // check from a fresh seed rather than only after somebody moves something.
+  // Note what is *not* here: nothing records that a thing was viewed. The
+  // table has a check constraint refusing it, and there is a test for that.
+  console.log('▸ activity');
+  await sql`
+    insert into public.activity_log
+      (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
+    select ${S_HOME}, ${PRIYA}, ${PRIYA}, 'task', t.id, 'created',
+           'Added from the weekly shop list'
+    from public.tasks t where t.space_id = ${S_HOME} limit 1
+  `;
+
   console.log('▸ tags');
   for (const space of [S_PRIYA, S_HOME, S_WORK] as const) {
     for (const t of TAGS) {

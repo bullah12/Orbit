@@ -565,17 +565,28 @@ select is(
 
 select tests.as_owner();
 
--- The seeded tables that are legitimately empty today. This is a *ledger*, not
--- a pass: when a phase starts filling one of these, delete it from the list and
--- the outsider check above stops being vacuous for that table. If you add a
--- table and it appears here, you have shipped a table nothing writes to.
+-- The tables that are legitimately empty after a fresh seed. This is a
+-- *ledger*, not a pass: the outsider check above cannot fail on an empty table,
+-- so anything listed here is a gap in that coverage rather than a guarantee.
+--
+-- The assertion is deliberately a subset check, not equality. A ledger table
+-- filling up is fine and must not fail the suite — using the app writes to
+-- activity_log, and the whole point of this file is that it runs against the
+-- live database. What must never happen is a table *outside* the ledger being
+-- empty: that means either the seed did not run, or you have shipped a table
+-- nothing writes to and whose policy is therefore untested.
 select is(
-  tests.tables_with_rows(),
-  'activity_log, ai_runs, attachments, calendar_sync_state, note_versions, '
-  'notification_deliveries, person_relationships, place_visits, '
-  'recurrence_rules, rule_runs, space_invites, sync_cursors, travel_legs, '
-  'travel_sessions',
-  'every table the outsider check covers holds seeded rows, except the known-empty ledger'
+  (select coalesce(string_agg(t, ', ' order by t), '')
+   from unnest(string_to_array(tests.tables_with_rows(), ', ')) as t
+   where t <> ''
+     and t <> all (array[
+       'ai_runs', 'attachments', 'calendar_sync_state', 'note_versions',
+       'notification_deliveries', 'person_relationships', 'place_visits',
+       'recurrence_rules', 'rule_runs', 'space_invites', 'sync_cursors',
+       'travel_legs', 'travel_sessions'
+     ])),
+  '',
+  'every table outside the known-empty ledger holds rows, so the outsider check is not vacuous'
 );
 
 -- ===========================================================================
