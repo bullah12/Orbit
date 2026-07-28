@@ -45,6 +45,10 @@ const PATHS: Record<string, string> = {
   train: 'M7 3h10v12H7V3ZM7 9h10M9.5 12.5h.1M14.5 12.5h.1M9 15l-2.5 5M15 15l2.5 5',
   plane: 'M3 13.5 21 4l-4 17-4.5-6.5L6 12.5l6.5 2Z',
   suitcase: 'M3 8h18v12H3V8ZM8 8V4.5h8V8M8 20v-8M16 20v-8',
+  search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM16 16l4.5 4.5',
+  sparkle: 'M12 3.5 13.8 9l5.5 1.8-5.5 1.8L12 18l-1.8-5.4L4.7 10.8 10.2 9 12 3.5ZM18.5 16.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2Z',
+  wand: 'M4 20 15 9M15 9l-2-2 3-3 2 2-3 3ZM19 4.5v.1M21.5 9v.1M9 4v.1M6 7.5v.1',
+  slash: 'M17 4 7 20',
 };
 
 export type IconName = keyof typeof PATHS | string;

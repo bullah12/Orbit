@@ -35,6 +35,7 @@ export function Sidebar({
 
       <div className="flex flex-col gap-0.5">
         <NavLink href="/" icon="check" label="Today" />
+        <NavLink href="/search" icon="search" label="Search" />
         <NavLink href="/calendar/week" icon="calendar" label="Calendar" />
         <NavLink href="/people" icon="users" label="People" />
         <NavLink href="/places" icon="map_pin" label="Places" />

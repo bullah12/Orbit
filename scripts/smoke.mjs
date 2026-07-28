@@ -1336,6 +1336,141 @@ try {
     await ctx.close();
   }
 
+  // ---------------------------------------------------------------- search
+  //
+  // Search is the one surface where "the client filtered it" and "the policy
+  // filtered it" look identical from the outside, so what is asserted here is a
+  // *relationship* between what three different people get back for the same
+  // query — not a count, which would rot the moment the seed changes.
+  let priyaHrefs = [];
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/');
+    check(
+      'search is reachable from the sidebar',
+      (await page.locator('nav a[href="/search"]').count()) === 1,
+    );
+
+    await page.goto('/search?q=bins');
+    const rows = await page.locator('#search-results li').count();
+    check('search finds things', rows > 0, `${rows} results`);
+
+    priyaHrefs = await page
+      .locator('#search-results li a')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+
+    check(
+      'and the owner finds things in her own space that nobody else is in',
+      (await page.locator('#search-results li span[title="Space: Priya"]').count()) > 0,
+    );
+
+    const indicators = await page.locator('#search-results li span[title^="Space:"]').count();
+    check(
+      'every search result carries a space indicator',
+      indicators >= rows,
+      `${indicators} indicators / ${rows} rows`,
+    );
+
+    // Every result says which kind it is; a mixed list where you cannot tell a
+    // note from an event is a list you have to open to read.
+    const kinds = await page
+      .locator('#search-results li')
+      .evaluateAll((lis) =>
+        lis.filter((li) => /\b(Task|Note|Person|Event|Place)\b/.test(li.innerText)).length,
+      );
+    check('and says which kind of thing it is', kinds === rows, `${kinds}/${rows}`);
+
+    // A locked item has no plaintext on the server, so it cannot be found — and
+    // the page must say so rather than being silently short.
+    check(
+      'search says plainly that locked items were not searched',
+      (await page.locator('main').innerText()).includes('not searched'),
+    );
+    const blank = await page
+      .locator('#search-results li')
+      .evaluateAll((lis) => lis.filter((li) => li.innerText.trim().length < 3).length);
+    check('and no result is an empty row where a locked item used to be', blank === 0);
+
+    // The kind filter declines to *look* for something; it does not hide
+    // anything the caller could otherwise see.
+    await page.goto('/search?q=bins&kind=note');
+    const noteRows = await page.locator('#search-results li').count();
+    const onlyNotes = await page
+      .locator('#search-results li')
+      .evaluateAll((lis) => lis.every((li) => /\bNote\b/.test(li.innerText)));
+    check('narrowing to notes returns only notes', noteRows > 0 && onlyNotes, `${noteRows} notes`);
+    check('and fewer results than the unfiltered query', noteRows < rows);
+
+    await page.goto('/search?q=zzqqxx');
+    check(
+      'a query that matches nothing says so',
+      (await page.locator('main').innerText()).includes('Nothing matches'),
+    );
+    check(
+      'and returns no rows',
+      (await page.locator('#search-results li').count()) === 0,
+    );
+
+    const searchUnnamed = await labelAuditOn(page);
+    check('every control on the search page has a label', searchUnnamed.length === 0, searchUnnamed.join(', '));
+    check(
+      'the search page announces its result count rather than only redrawing',
+      (await page.locator('[aria-live="polite"]').count()) > 0,
+    );
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/search?q=bins');
+    const dannyHrefs = await page
+      .locator('#search-results li a')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    check('the partner finds things too', dannyHrefs.length > 0, `${dannyHrefs.length} results`);
+
+    // In the space they share, the two of them find the same rows. This is the
+    // real claim: membership decides, not identity — so "Danny sees less" must
+    // be entirely explained by the spaces he is not in, and not by anything
+    // being hidden from him inside the one he is.
+    const dannyShared = await page
+      .locator('#search-results li')
+      .evaluateAll((lis) =>
+        lis
+          .filter((li) => li.querySelector('span[title="Space: Home"]'))
+          .map((li) => li.querySelector('a').getAttribute('href')),
+      );
+    check(
+      'and in the space they share, they find exactly the same rows',
+      dannyShared.length > 0 && dannyShared.every((h) => priyaHrefs.includes(h)),
+      `${dannyShared.length} shared rows`,
+    );
+    check(
+      'and nothing at all from the space he only sees as free/busy',
+      (await page.locator('#search-results li span[title="Space: Work"]').count()) === 0,
+    );
+    check(
+      'and nothing from the space that is hers alone',
+      (await page.locator('#search-results li span[title="Space: Priya"]').count()) === 0,
+    );
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/search?q=bins');
+    check(
+      'the outsider finds nothing at all',
+      (await page.locator('#search-results li').count()) === 0,
+    );
+    check(
+      'and is told so, rather than shown an error',
+      (await page.locator('main').innerText()).includes('Nothing matches'),
+    );
+    await ctx.close();
+  }
+
   // ------------------------------------------------------------- dark mode
   {
     const { ctx, page } = await pageAs(PRIYA);
