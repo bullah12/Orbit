@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { asUser } from '@/lib/db';
-import { requireUser, USER_COOKIE } from '@/lib/auth';
+import { listSelectableUsers, requireUser, USER_COOKIE } from '@/lib/auth';
 
 /**
  * Server actions.
@@ -15,8 +15,19 @@ import { requireUser, USER_COOKIE } from '@/lib/auth';
  * database would still refuse.
  */
 
+/**
+ * The dev user switcher.
+ *
+ * Impersonation is the whole point of it, so this is not a security control —
+ * but it now refuses an id that is not a seeded profile, so a typo lands you
+ * back on your own account rather than in the silent fallback. This build still
+ * must not be exposed to a network you do not control.
+ */
 export async function switchUser(formData: FormData) {
   const id = String(formData.get('userId') ?? '');
+  const known = await listSelectableUsers();
+  if (!known.some((u) => u.id === id)) return;
+
   const jar = await cookies();
   jar.set(USER_COOKIE, id, { httpOnly: true, sameSite: 'lax', path: '/' });
   revalidatePath('/', 'layout');

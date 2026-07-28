@@ -56,6 +56,16 @@ const at = (n: number, hour: number, minute = 0) => {
 const PRIYA = uid();
 const DANNY = uid();
 
+/**
+ * The outsider. A member of nothing, on purpose.
+ *
+ * pgTAP proves that an outsider sees zero rows; this profile is what lets you
+ * prove the same thing *through the running app*, over HTTP, in one click of
+ * the dev user switcher. Its id is a literal rather than a uid() call so that
+ * adding it does not shift every other seeded id.
+ */
+const OUTSIDER = '00000000-0000-4000-8000-0000000000ff';
+
 const S_PRIYA = uid();   // Priya's personal space
 const S_HOME = uid();    // the household space, shared with Danny
 const S_WORK = uid();    // Priya's work space — Danny is free/busy here only
@@ -199,7 +209,8 @@ async function main() {
   await sql`
     insert into public.profiles (id, email, display_name, timezone, locale) values
       (${PRIYA}, 'priya@orbit.test', 'Priya Raghavan', 'Europe/London', 'en-GB'),
-      (${DANNY}, 'danny@orbit.test', 'Danny Whitehouse', 'Europe/London', 'en-GB')
+      (${DANNY}, 'danny@orbit.test', 'Danny Whitehouse', 'Europe/London', 'en-GB'),
+      (${OUTSIDER}, 'sam@orbit.test', 'Sam Okafor (outsider)', 'Europe/London', 'en-GB')
   `;
 
   // -- spaces ---------------------------------------------------------------

@@ -73,8 +73,19 @@ export default async function TodayPage() {
         </section>
       )}
 
-      {today.length === 0 && overdueOnly.length === 0 && (
-        <p className="faint px-5 py-10 text-[13px]">Nothing due. That is allowed.</p>
+      {spaces.length === 0 ? (
+        <div className="muted px-5 py-10 text-[13px]">
+          <p className="mb-1">You are not a member of any space.</p>
+          <p className="faint text-[12px]">
+            Nothing is hidden from you here — there is genuinely nothing to show. Spaces
+            are the unit of sharing in Orbit, and membership is the only way in.
+          </p>
+        </div>
+      ) : (
+        today.length === 0 &&
+        overdueOnly.length === 0 && (
+          <p className="faint px-5 py-10 text-[13px]">Nothing due. That is allowed.</p>
+        )
       )}
     </div>
   );

@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(46);
+select plan(48);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -457,6 +457,85 @@ select is(
                  where es.space_id = n.space_id)),
   0,
   'linking a Home note to a task in Alice''s personal space matches nothing');
+
+-- ===========================================================================
+-- 9c. The outsider sees zero — every table, not a chosen few
+--
+-- This is the case that catches a table shipped without a policy. It runs over
+-- *every* table in `public` rather than a hand-written list, so a new table is
+-- covered the moment it exists. Mallory is a member of nothing; the seeded
+-- data belongs to other people; therefore every count must be zero.
+--
+-- `profiles` is excluded because a person can always read their own row, which
+-- is the one thing here that is not space-scoped.
+-- ===========================================================================
+select tests.as_owner();
+
+create function tests.tables_visible_to_me() returns text
+language plpgsql
+as $$
+declare
+  r record;
+  n bigint;
+  bad text[] := '{}';
+begin
+  for r in
+    select tablename from pg_tables
+    where schemaname = 'public'
+      and tablename not in ('spatial_ref_sys', 'profiles')
+    order by tablename
+  loop
+    execute format('select count(*) from public.%I', r.tablename) into n;
+    if n > 0 then bad := bad || format('%s(%s)', r.tablename, n); end if;
+  end loop;
+  return coalesce(array_to_string(bad, ', '), '');
+end $$;
+
+-- How many tables actually hold rows for the *owner*. Without this, a database
+-- that failed to seed would pass the check above vacuously.
+create function tests.tables_with_rows() returns text
+language plpgsql
+as $$
+declare
+  r record;
+  n bigint;
+  empty text[] := '{}';
+begin
+  for r in
+    select tablename from pg_tables
+    where schemaname = 'public' and tablename <> 'spatial_ref_sys'
+    order by tablename
+  loop
+    execute format('select count(*) from public.%I', r.tablename) into n;
+    if n = 0 then empty := empty || r.tablename; end if;
+  end loop;
+  return coalesce(array_to_string(empty, ', '), '');
+end $$;
+
+grant execute on all functions in schema tests to authenticated;
+
+select tests.act_as('44444444-4444-4444-4444-444444444444');
+
+select is(
+  tests.tables_visible_to_me(),
+  '',
+  'the outsider sees zero rows in every table in the database'
+);
+
+select tests.as_owner();
+
+-- The seeded tables that are legitimately empty today. This is a *ledger*, not
+-- a pass: when a phase starts filling one of these, delete it from the list and
+-- the outsider check above stops being vacuous for that table. If you add a
+-- table and it appears here, you have shipped a table nothing writes to.
+select is(
+  tests.tables_with_rows(),
+  'activity_log, ai_runs, attachments, calendar_sync_state, note_versions, '
+  'notification_deliveries, person_relationships, place_visits, '
+  'recurrence_rules, rule_runs, space_invites, sync_cursors, travel_legs, '
+  'travel_sessions',
+  'every table the outsider check covers holds seeded rows, except the known-empty ledger'
+);
 
 -- ===========================================================================
 -- 10. Structural invariants — these catch a careless new table
