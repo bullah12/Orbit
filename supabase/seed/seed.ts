@@ -368,6 +368,15 @@ async function main() {
       insert into public.calendars (id, space_id, owner_id, account_id, name, colour, icon)
       values (${calId}, ${space}, ${owner}, ${accountId}, ${name}, 'slate', 'calendar')
     `;
+    // A connected calendar that has never been pulled — no token, status idle.
+    // This is what the row genuinely looks like before a first sync, and it
+    // keeps calendar_sync_state out of the pgTAP known-empty ledger: the
+    // outsider check iterates pg_tables and cannot fail on an empty table.
+    await sql`
+      insert into public.calendar_sync_state
+        (space_id, owner_id, calendar_id, direction, last_status)
+      values (${space}, ${owner}, ${calId}, 'pull', 'idle')
+    `;
   }
 
   // -- events ---------------------------------------------------------------

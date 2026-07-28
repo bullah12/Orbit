@@ -46,7 +46,10 @@ const SPECS: Spec[] = [
   {
     id: 'fx-swimming', calendar: 'family@fixture', dayOffset: 2, start: '17:15', end: '18:00',
     title: 'Swimming lesson', location: 'Stirchley Baths',
-    rrule: 'FREQ=WEEKLY;BYDAY=WE;COUNT=12',
+    // No BYDAY: fixtures are positioned relative to an injectable `now`, so a
+    // rule naming a weekday would only line up with its own DTSTART on some
+    // days of the week. A plain weekly repeat is stable whatever day it is.
+    rrule: 'FREQ=WEEKLY;COUNT=12',
   },
   {
     id: 'fx-dentist', calendar: 'family@fixture', dayOffset: 3, start: '08:20', end: '08:50',
@@ -57,8 +60,11 @@ const SPECS: Spec[] = [
     title: 'Half term', allDay: true,
   },
   {
+    // Deleted by the provider on the second pull, so a pull has a deletion to
+    // act on. It arrives *confirmed*: what makes it disappear is the
+    // tombstone, not a status it shipped with.
     id: 'fx-cancelled', calendar: 'work@fixture', dayOffset: 4, start: '11:00', end: '12:00',
-    title: 'Budget review', status: 'cancelled',
+    title: 'Budget review',
   },
 ];
 

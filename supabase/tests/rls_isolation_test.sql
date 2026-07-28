@@ -610,7 +610,7 @@ select is(
    from unnest(string_to_array(tests.tables_with_rows(), ', ')) as t
    where t <> ''
      and t <> all (array[
-       'ai_runs', 'attachments', 'calendar_sync_state', 'note_versions',
+       'ai_runs', 'attachments', 'note_versions',
        'notification_deliveries', 'person_relationships', 'place_visits',
        'rule_runs', 'space_invites', 'sync_cursors',
        'travel_legs', 'travel_sessions'

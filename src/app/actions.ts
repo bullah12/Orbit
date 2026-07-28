@@ -6,8 +6,12 @@ import { cookies } from 'next/headers';
 import { asUser } from '@/lib/db';
 import { listSelectableUsers, requireUser, USER_COOKIE } from '@/lib/auth';
 import { addDaysISO, londonInstant } from '@/lib/format';
-import { icsProvider, parseIcs } from '@/lib/integrations';
-import { parseRrule } from '@/lib/recurrence';
+import { calendarProvider, icsProvider, parseIcs } from '@/lib/integrations';
+import {
+  connectProviderCalendar,
+  pullCalendar,
+  upsertExternalEvent,
+} from '@/lib/sync/calendar';
 
 /**
  * Server actions.
@@ -738,9 +742,9 @@ export async function moveEventToSpace(formData: FormData) {
  * Import an .ics feed into a calendar.
  *
  * The provider only fetches bytes; parsing, recurrence and the write are all
- * ours. Every row is written with the space_id and owner_id of the *calendar*,
- * never from the form — and the policies would refuse a calendar the caller
- * cannot write to anyway.
+ * ours, and the write is the same `upsertExternalEvent` a Google pull uses —
+ * one implementation, so an ICS event and a pulled event cannot end up shaped
+ * differently.
  *
  * Re-importing the same feed updates rather than duplicates: the unique
  * constraint on (space_id, calendar_id, external_id) is what makes that safe,
@@ -770,89 +774,14 @@ export async function importIcs(formData: FormData) {
     let rules = 0;
 
     for (const event of parsed.events) {
-      // What is already here, so a re-import updates the same rows rather than
-      // stacking a new recurrence rule behind every event on every run.
-      const existing = await tx<{ id: string; ruleId: string | null }[]>`
-        select id, recurrence_rule_id as "ruleId" from public.events
-        where space_id = ${calendar.spaceId}::uuid
-          and calendar_id = ${calendar.id}::uuid
-          and external_id = ${event.externalId}
-      `;
-      const priorRuleId = existing[0]?.ruleId ?? null;
-
-      let ruleId: string | null = null;
-      if (event.rrule) {
-        if (priorRuleId) {
-          await tx`
-            update public.recurrence_rules
-            set rrule = ${event.rrule}, dtstart = ${event.startsAt}::timestamptz,
-                until = ${ruleUntil(event.rrule)}, timezone = ${event.timezone},
-                exdates = ${event.exdates}::timestamptz[]
-            where id = ${priorRuleId}::uuid
-          `;
-          ruleId = priorRuleId;
-        } else {
-          const rows = await tx<{ id: string }[]>`
-            insert into public.recurrence_rules
-              (space_id, owner_id, rrule, dtstart, until, timezone, exdates)
-            values (${calendar.spaceId}::uuid, ${user.id}::uuid, ${event.rrule},
-                    ${event.startsAt}::timestamptz,
-                    ${ruleUntil(event.rrule)}, ${event.timezone},
-                    ${event.exdates}::timestamptz[])
-            returning id
-          `;
-          ruleId = rows[0]?.id ?? null;
-        }
-        rules += 1;
-      }
-
-      const rows = await tx<{ id: string; inserted: boolean }[]>`
-        insert into public.events
-          (space_id, owner_id, calendar_id, title, body_md, location_text,
-           starts_at, ends_at, all_day, timezone, status, external_id, external_etag,
-           recurrence_rule_id)
-        values (
-          ${calendar.spaceId}::uuid, ${user.id}::uuid, ${calendar.id}::uuid,
-          ${event.title}, ${event.description}, ${event.location},
-          ${event.startsAt}::timestamptz, ${event.endsAt}::timestamptz,
-          ${event.allDay}, ${event.timezone}, ${event.status},
-          ${event.externalId}, ${event.etag}, ${ruleId}::uuid
-        )
-        on conflict (space_id, calendar_id, external_id) do update
-          set title = excluded.title,
-              body_md = excluded.body_md,
-              location_text = excluded.location_text,
-              starts_at = excluded.starts_at,
-              ends_at = excluded.ends_at,
-              all_day = excluded.all_day,
-              status = excluded.status,
-              external_etag = excluded.external_etag,
-              recurrence_rule_id = excluded.recurrence_rule_id
-        returning id, (xmax = 0) as inserted
-      `;
-      if (rows[0]?.inserted) imported += 1;
-      else if (rows[0]) updated += 1;
-
-      // A feed that dropped a repeat leaves the old rule behind otherwise.
-      if (priorRuleId && ruleId !== priorRuleId) {
-        await tx`delete from public.recurrence_rules where id = ${priorRuleId}::uuid`;
-      }
-
-      // Attendees are replaced wholesale: a feed is the source of truth for who
-      // is on its own events, and a diff would leave a removed guest behind.
-      const eventId = rows[0]?.id;
-      if (eventId) {
-        await tx`delete from public.event_attendees where event_id = ${eventId}::uuid`;
-        for (const a of event.attendees) {
-          if (!a.email && !a.displayName) continue;
-          await tx`
-            insert into public.event_attendees
-              (space_id, owner_id, event_id, email, display_name, response, is_organiser)
-            values (${calendar.spaceId}::uuid, ${user.id}::uuid, ${eventId}::uuid,
-                    ${a.email}, ${a.displayName}, ${a.response}, ${a.isOrganiser})
-          `;
-        }
-      }
+      const res = await upsertExternalEvent(
+        tx,
+        { userId: user.id, spaceId: calendar.spaceId, calendarId: calendar.id },
+        event,
+      );
+      if (res.inserted) imported += 1;
+      else if (res.id) updated += 1;
+      if (res.wroteRule) rules += 1;
     }
 
     await tx`
@@ -869,11 +798,51 @@ export async function importIcs(formData: FormData) {
   );
 }
 
-/** The UNTIL a rule declares, as a timestamp for the column. Null means open-ended. */
-function ruleUntil(rrule: string): string | null {
-  try {
-    return parseRrule(rrule).until;
-  } catch {
-    return null;
-  }
+/**
+ * Connect one of the calendar provider's calendars to a space, and pull it.
+ *
+ * With CALENDAR_PROVIDER=fake (the default) this runs end to end with no
+ * credential — that is the whole point of the interface. With
+ * CALENDAR_PROVIDER=google it runs the same code against an implementation
+ * that has never been executed here.
+ */
+export async function connectCalendar(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const externalId = String(formData.get('externalId') ?? '');
+  const name = String(formData.get('name') ?? '').trim() || externalId;
+  const writable = String(formData.get('writable') ?? '') === 'true';
+  if (!spaceId || !externalId) return;
+
+  const providerName = calendarProvider().isFake ? 'local' : 'google';
+  const calendarId = await connectProviderCalendar(
+    user.id,
+    spaceId,
+    { externalId, name, writable },
+    providerName,
+  );
+  if (!calendarId) return;
+
+  const result = await pullCalendar(user.id, calendarId);
+  revalidatePath('/', 'layout');
+  // One template literal, not a concatenation: typed routes lose the literal
+  // type through `+` and the build stops being able to check the path.
+  redirect(
+    `/calendar/import?added=${result.added}&changed=${result.updated}&removed=${result.removed}&full=${result.wasFullPull ? 1 : 0}`,
+  );
+}
+
+/** Pull an already-connected calendar again, incrementally if we hold a token. */
+export async function syncCalendar(formData: FormData) {
+  const user = await requireUser();
+  const calendarId = String(formData.get('calendarId') ?? '');
+  if (!calendarId) return;
+
+  const result = await pullCalendar(user.id, calendarId);
+  revalidatePath('/', 'layout');
+  // One template literal, not a concatenation: typed routes lose the literal
+  // type through `+` and the build stops being able to check the path.
+  redirect(
+    `/calendar/import?added=${result.added}&changed=${result.updated}&removed=${result.removed}&full=${result.wasFullPull ? 1 : 0}`,
+  );
 }

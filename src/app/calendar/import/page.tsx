@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { listCalendarsBySpace } from '@/lib/queries/events';
-import { importIcs } from '@/app/actions';
-import { icsProvider, providerSummary } from '@/lib/integrations';
+import { connectCalendar, importIcs, syncCalendar } from '@/app/actions';
+import { calendarProvider, icsProvider, providerSummary } from '@/lib/integrations';
+import { listConnectedCalendars } from '@/lib/sync/calendar';
 import { FakeIcsProvider } from '@/lib/integrations/ics/fake';
 import { Icon } from '@/components/Icon';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
@@ -26,15 +27,25 @@ export const dynamic = 'force-dynamic';
 export default async function ImportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ imported?: string; updated?: string; rules?: string }>;
+  searchParams: Promise<{
+    imported?: string; updated?: string; rules?: string;
+    added?: string; changed?: string; removed?: string; full?: string;
+  }>;
 }) {
   const user = await requireUser();
-  const { imported, updated, rules } = await searchParams;
+  const { imported, updated, rules, added, changed, removed, full } = await searchParams;
 
-  const [spaces, calendars] = await Promise.all([
+  const calProvider = calendarProvider();
+  const [spaces, calendars, connected, remote] = await Promise.all([
     listSpaces(user.id),
     listCalendarsBySpace(user.id),
+    listConnectedCalendars(user.id),
+    // A provider that needs a credential throws here rather than at import, so
+    // the page still renders and says what went wrong.
+    calProvider.listCalendars().catch((err: unknown) => ({ error: String(err) }) as const),
   ]);
+  const remoteCalendars = Array.isArray(remote) ? remote : [];
+  const remoteError = Array.isArray(remote) ? null : remote.error;
 
   const provider = icsProvider();
   const fixtures = provider instanceof FakeIcsProvider ? provider.listFixtures() : [];
@@ -62,6 +73,17 @@ export default async function ImportPage({
         >
           Imported {plural(Number(imported), 'new event')}, updated {updated},
           {' '}stored {plural(Number(rules ?? 0), 'recurrence rule')}.
+        </div>
+      )}
+
+      {added != null && (
+        <div
+          className="hairline border-b px-5 py-2 text-[13px]"
+          role="status"
+          aria-live="polite"
+        >
+          {full === '1' ? 'Full pull' : 'Incremental pull'}: {plural(Number(added), 'new event')},
+          {' '}{changed} changed, {removed} cancelled.
         </div>
       )}
 
@@ -140,6 +162,98 @@ export default async function ImportPage({
             </div>
           </form>
         )}
+      </section>
+
+
+      <section className="hairline border-b px-5 py-4">
+        <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+          Connect a calendar
+        </h2>
+        <p className="muted mb-3 text-[12px]">
+          <Icon name="alert" size={11} className="mr-1 inline" />
+          {calProvider.isFake
+            ? 'Using the fixture-backed calendar provider (CALENDAR_PROVIDER=fake). Connecting one pulls its events in with no network and no credential. A second pull is incremental — it carries the sync token from the first and returns only what changed.'
+            : 'Using CALENDAR_PROVIDER=google. That implementation is written against the published API and has never been executed in this environment.'}
+        </p>
+
+        {remoteError ? (
+          <p className="muted text-[12px]" role="status">
+            The provider could not list its calendars: <code>{remoteError}</code>
+          </p>
+        ) : writableSpaces.length === 0 ? (
+          <p className="faint text-[12px]">You cannot write to any space, so there is nowhere to connect one.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {remoteCalendars.map((rc) => (
+              <li key={rc.externalId} className="surface flex flex-wrap items-center gap-2 rounded p-2">
+                <Icon name="calendar" size={12} className="muted" />
+                <span className="text-[13px]">{rc.name}</span>
+                <span className="faint text-[11px]">
+                  {rc.writable ? 'read and write' : 'read only'}
+                </span>
+                <form action={connectCalendar} className="ml-auto flex items-center gap-2">
+                  <input type="hidden" name="externalId" value={rc.externalId} />
+                  <input type="hidden" name="name" value={rc.name} />
+                  <input type="hidden" name="writable" value={String(rc.writable)} />
+                  <label className="flex items-center gap-1">
+                    <span className="sr-only">Space for {rc.name}</span>
+                    <select name="spaceId" className="input" defaultValue={writableSpaces[0]!.id}>
+                      {writableSpaces.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="submit"
+                    className="hairline row-hover rounded border px-2 py-1 text-[12px]"
+                  >
+                    Connect and pull
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="hairline border-b px-5 py-4">
+        <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+          Calendars in your spaces
+        </h2>
+        <ul className="flex flex-col gap-1">
+          {connected.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-center gap-2 text-[12px]">
+              <SpaceIndicator
+                space={
+                  spaces.find((s) => s.id === c.spaceId) ?? {
+                    id: c.spaceId, name: c.spaceLabel, shortLabel: c.spaceLabel,
+                    colour: 'slate', icon: 'calendar',
+                  }
+                }
+              />
+              <span className="text-[13px]">{c.name}</span>
+              <span className="faint">{c.provider}</span>
+              <span className="faint">{plural(c.eventCount, 'event')}</span>
+              {c.lastStatus && (
+                <span className="faint">
+                  last pull {c.lastStatus}
+                  {c.hasToken ? ', token held' : ''}
+                </span>
+              )}
+              {c.externalId && (
+                <form action={syncCalendar} className="ml-auto">
+                  <input type="hidden" name="calendarId" value={c.id} />
+                  <button
+                    type="submit"
+                    className="hairline row-hover rounded border px-2 py-0.5 text-[11px]"
+                  >
+                    Pull again
+                  </button>
+                </form>
+              )}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="px-5 py-4">

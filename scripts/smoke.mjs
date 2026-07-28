@@ -584,6 +584,78 @@ try {
     await ctx.close();
   }
 
+
+  // ------------------------------------- calendar provider: connect and pull
+  //
+  // The CalendarProvider interface, exercised through the fake. The real
+  // Google implementation runs this same code path and has never been executed
+  // here — what this proves is the plumbing, not Google.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/calendar/import');
+
+    const connectForms = await page.locator('form[action] >> nth=0').count();
+    check('the provider lists its calendars without a credential', connectForms > 0);
+
+    const firstConnect = page
+      .locator('li', { hasText: 'Family (fixture)' })
+      .locator('button', { hasText: 'Connect and pull' });
+    await firstConnect.click();
+    await settle(page);
+
+    const first = await page.locator('[role="status"]').innerText();
+    check(
+      'connecting a fixture calendar does a full pull',
+      /Full pull: \d+ new events?/.test(first),
+      first,
+    );
+
+    // Second pull carries the token from the first, so it is incremental and
+    // returns only what changed — the shape a real API has, modelled honestly.
+    await page.locator('li', { hasText: 'Family (fixture)' })
+      .locator('button', { hasText: 'Pull again' }).first().click();
+    await settle(page);
+    const second = await page.locator('[role="status"]').innerText();
+    check(
+      'a second pull is incremental rather than another full one',
+      /Incremental pull:/.test(second),
+      second,
+    );
+
+    check(
+      'the calendar list shows that a sync token is held',
+      (await page.locator('main').innerText()).includes('token held'),
+    );
+
+    // The fake deletes one event on the second pull; a deletion cancels the
+    // row rather than removing it, and a cancelled event leaves the calendar.
+    await page.locator('li', { hasText: 'Work (fixture)' })
+      .locator('button', { hasText: 'Connect and pull' }).click();
+    await settle(page);
+    await page.locator('li', { hasText: 'Work (fixture)' })
+      .locator('button', { hasText: 'Pull again' }).first().click();
+    await settle(page);
+    const third = await page.locator('[role="status"]').innerText();
+    check(
+      'a deletion from the provider cancels the local event rather than deleting it',
+      /1 cancelled/.test(third),
+      third,
+    );
+
+    await page.goto('/calendar/week');
+    const budget = await page
+      .locator('main a[href^="/calendar/event/"]', { hasText: 'Budget review' })
+      .count();
+    check('and the cancelled event is gone from the calendar', budget === 0);
+
+    const swimming = await page
+      .locator('main a[href^="/calendar/event/"]', { hasText: 'Swimming lesson' })
+      .count();
+    check('while a pulled recurring event is drawn from its rule', swimming > 0, `${swimming} drawn`);
+
+    await ctx.close();
+  }
+
   // ------------------------------------------- calendar: editing and moving
   {
     const { ctx, page } = await pageAs(PRIYA);
