@@ -9,6 +9,8 @@
     "start": "next start",
     "seed": "tsx supabase/seed/seed.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:reset": "./scripts/db-reset.sh",
     "db:test": "./scripts/db-test.sh"
   },
@@ -27,6 +29,7 @@
     "postcss": "^8.5.23",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   }
 }
