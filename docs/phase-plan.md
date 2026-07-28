@@ -10,17 +10,17 @@ the next one starts. Work in vertical slices that run.
 **Stopping here is a good outcome.** It leaves a private tasks + notes app where
 spaces, membership, and the space indicator are genuinely working, not mocked.
 
-- [ ] Schema: all tables, RLS on all of them, `app.*` helper functions
-- [ ] `scripts/db-reset.sh` — idempotent, from zero
-- [ ] pgTAP `rls_isolation_test.sql` green, run by `scripts/db-test.sh`
-- [ ] `pnpm seed` — 2 users, household space, ~40 people, ~200 events, ~80 tasks,
+- [x] Schema: all tables, RLS on all of them, `app.*` helper functions
+- [x] `scripts/db-reset.sh` — idempotent, from zero
+- [x] pgTAP `rls_isolation_test.sql` green, run by `scripts/db-test.sh`
+- [x] `pnpm seed` — 2 users, household space, ~40 people, ~200 events, ~80 tasks,
       ~30 notes, ~15 places, Birmingham-flavoured
-- [ ] RLS-scoped data access from the app (no service role at request time)
+- [x] RLS-scoped data access from the app (no service role at request time)
 - [ ] Tasks: list, smart lists, create, complete, edit
 - [ ] Notes: list, read, create, edit, links to entities
-- [ ] Space indicator on every row and compose surface
-- [ ] `app.space_move_preview()` behind every move confirmation
-- [ ] Dark mode, UK conventions, neutral chrome
+- [x] Space indicator on every row and compose surface
+- [x] `app.space_move_preview()` behind every move confirmation
+- [x] Dark mode, UK conventions, neutral chrome
 
 ## Phase 1 — People
 

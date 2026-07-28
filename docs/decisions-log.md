@@ -54,6 +54,24 @@ tracking, ever.
 - **Dev auth is a signed cookie naming a seeded user**, swappable behind
   `src/lib/auth/`. No OAuth, no password. `AUTH_PROVIDER=dev` is the default and
   the only implementation that exists.
+- **The schema is 41 tables, not 39.** The brief's count referred to a schema
+  that was not in the repository. 41 is what the domain needed; all 41 have RLS.
+  Departure from the brief, recorded rather than hidden.
+- **Identity lookup goes through two SECURITY DEFINER functions**
+  (`app.identity_profile`, `app.identity_profiles`), not a table grant.
+  Resolving a cookie to a profile happens before there is an `auth.uid()` to
+  check against, so it cannot run under RLS. A plain `grant select on profiles`
+  returns *zero rows* under RLS rather than erroring, which would have invited
+  widening the grant until it worked. The functions cannot be widened by
+  accident. `orbit_app` holds no table grants at all.
+- **`apply_standard_rls()` deliberately does not use `force row level
+  security`.** The table owner must bypass RLS so migrations, seeds, and pgTAP
+  setup can write. Safety comes from the application connecting as
+  `authenticated`, which is not the owner. If a future session ever makes the
+  app connect as the owner, this stops protecting anything.
+- **TypeScript pinned to 5.9.** 7.x resolved by default and Next 15's config
+  loader fails on it with `Cannot read properties of undefined (reading
+  'fileExists')`. Revisit when Next supports it.
 - **Money is `numeric(12,2)` and dates are `date`/`timestamptz`, never text.**
   UK conventions (DD/MM/YYYY, 24h, £, Monday-first weeks) are a *formatting*
   concern and live in `src/lib/format.ts` only.
