@@ -336,3 +336,229 @@ export async function moveTaskToSpace(formData: FormData) {
 
   revalidatePath('/', 'layout');
 }
+
+// ---------------------------------------------------------------------------
+// People
+//
+// Same-person linking is decision 4: two records, linked permanently, never
+// collapsed and never auto-merged. Nothing below writes to both records; the
+// link is its own row and unlinking leaves both people exactly as they were.
+// ---------------------------------------------------------------------------
+
+export async function createPerson(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const displayName = String(formData.get('displayName') ?? '').trim();
+  const categoryId = String(formData.get('categoryId') ?? '') || null;
+  if (!spaceId || !displayName) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.people (space_id, owner_id, category_id, display_name)
+      values (
+        ${spaceId}::uuid, ${user.id}::uuid,
+        (select c.id from public.categories c
+          where c.id = ${categoryId}::uuid and c.space_id = ${spaceId}::uuid),
+        ${displayName})
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function updatePerson(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('personId') ?? '');
+  const displayName = String(formData.get('displayName') ?? '').trim();
+  if (!id || !displayName) return;
+
+  const nickname = String(formData.get('nickname') ?? '').trim() || null;
+  const pronouns = String(formData.get('pronouns') ?? '').trim() || null;
+  const notesMd = String(formData.get('notesMd') ?? '');
+  const categoryId = String(formData.get('categoryId') ?? '') || null;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      update public.people p set
+        display_name = ${displayName},
+        nickname     = ${nickname},
+        pronouns     = ${pronouns},
+        notes_md     = ${notesMd},
+        category_id  = (
+          select c.id from public.categories c
+          where c.id = ${categoryId}::uuid and c.space_id = p.space_id
+        ),
+        updated_at   = now()
+      where p.id = ${id}::uuid and not p.is_locked
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function archivePerson(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('personId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`update public.people set archived_at = now() where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+  redirect('/people');
+}
+
+export async function addPersonContact(formData: FormData) {
+  const user = await requireUser();
+  const personId = String(formData.get('personId') ?? '');
+  const kind = String(formData.get('kind') ?? 'other');
+  const label = String(formData.get('label') ?? '').trim() || kind;
+  const value = String(formData.get('value') ?? '').trim();
+  if (!personId || !value) return;
+
+  await asUser(user.id, async (tx) => {
+    // space_id and owner_id come from the person, never from the form.
+    await tx`
+      insert into public.person_contacts (space_id, owner_id, person_id, kind, label, value)
+      select p.space_id, ${user.id}::uuid, p.id, ${kind}, ${label}, ${value}
+      from public.people p where p.id = ${personId}::uuid
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function removePersonContact(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('contactId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`delete from public.person_contacts where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function addPersonDate(formData: FormData) {
+  const user = await requireUser();
+  const personId = String(formData.get('personId') ?? '');
+  const kind = String(formData.get('kind') ?? 'birthday');
+  const label = String(formData.get('label') ?? '').trim() || null;
+  const onDate = String(formData.get('onDate') ?? '');
+  const yearKnown = String(formData.get('yearKnown') ?? '') === 'on';
+  if (!personId || !onDate) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.person_dates
+        (space_id, owner_id, person_id, kind, label, on_date, year_known)
+      select p.space_id, ${user.id}::uuid, p.id, ${kind}, ${label},
+             ${onDate}::date, ${yearKnown}
+      from public.people p where p.id = ${personId}::uuid
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function removePersonDate(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('dateId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`delete from public.person_dates where id = ${id}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Link two records that are the same person.
+ *
+ * The row is stored once, in canonical id order — the table's check constraint
+ * requires `person_a_id < person_b_id`, so which record you started from must
+ * not change what gets written. Both spaces are read off the people rows rather
+ * than the form, and the policy independently requires write access to both:
+ * you cannot link somebody into a space you are only a visitor in.
+ */
+export async function linkPeople(formData: FormData) {
+  const user = await requireUser();
+  const personId = String(formData.get('personId') ?? '');
+  const otherId = String(formData.get('otherId') ?? '');
+  if (!personId || !otherId || personId === otherId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.person_links
+        (space_id, owner_id, person_a_id, person_b_id, person_b_space)
+      select
+        case when a.id < b.id then a.space_id else b.space_id end,
+        ${user.id}::uuid,
+        least(a.id, b.id),
+        greatest(a.id, b.id),
+        case when a.id < b.id then b.space_id else a.space_id end
+      from public.people a, public.people b
+      where a.id = ${personId}::uuid and b.id = ${otherId}::uuid and a.id <> b.id
+      on conflict do nothing
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function unlinkPeople(formData: FormData) {
+  const user = await requireUser();
+  const linkId = String(formData.get('linkId') ?? '');
+  if (!linkId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`delete from public.person_links where id = ${linkId}::uuid`;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Move a person to another space.
+ *
+ * Same shape as moveTaskToSpace: the preview has already been shown, and it is
+ * re-run server-side here so the move cannot be submitted against a stale
+ * picture of who is in each space.
+ */
+export async function movePersonToSpace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('personId') ?? '');
+  const targetSpaceId = String(formData.get('targetSpaceId') ?? '');
+  if (!id || !targetSpaceId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      select 1 from app.space_move_preview('person'::app.entity_kind,
+        ${id}::uuid, ${targetSpaceId}::uuid) limit 1
+    `;
+    // Categories, contacts and dates all belong to a space. The category cannot
+    // follow; the contacts and dates are the person's own and move with them.
+    await tx`
+      update public.people
+      set space_id = ${targetSpaceId}::uuid, category_id = null
+      where id = ${id}::uuid
+    `;
+    for (const table of ['person_contacts', 'person_dates']) {
+      await tx.unsafe(
+        `update public.${table} set space_id = $1 where person_id = $2`,
+        [targetSpaceId, id],
+      );
+    }
+    await tx`
+      insert into public.activity_log
+        (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
+      values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'person',
+              ${id}::uuid, 'moved', 'Moved between spaces')
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}

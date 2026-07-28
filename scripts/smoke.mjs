@@ -15,7 +15,10 @@
  *   ORBIT_URL          default http://localhost:3000
  *   CHROMIUM_PATH      default /opt/pw-browsers/chromium-1194/chrome-linux/chrome
  *
- * It restores everything it changes. Run `pnpm seed` if a run is interrupted.
+ * It restores what it edits, but the people run leaves one archived person
+ * behind per invocation — archiving is the reversible option and deleting a
+ * person is not offered in the UI. Run `pnpm seed` to clear them, or if a run
+ * is interrupted part-way.
  */
 
 import { chromium } from 'playwright';
@@ -242,6 +245,104 @@ try {
       'and the far side points back — the link is symmetric',
       (await page.locator('section:has-text("Also recorded elsewhere") a').count()) === 1,
     );
+    await ctx.close();
+  }
+
+  // ------------------------------------------- people: create, edit, link, move
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    const stamp = `Smoke Test ${Date.now()}`;
+
+    await page.goto('/people');
+    await page.fill('form[aria-label="Add a person"] input[name=displayName]', stamp);
+    await page.click('form[aria-label="Add a person"] button:has-text("Add")');
+    await settle(page);
+    await page.goto(`/people?q=${encodeURIComponent(stamp)}`);
+    const created = await page.locator('main ul li').count();
+    check('a person can be created from the compose bar', created === 1, `${created} matches`);
+
+    const href = await page.locator('main ul li a').first().getAttribute('href');
+    await page.goto(href);
+
+    // Edit
+    await page.fill('#person-nickname', 'Smokey');
+    await page.fill('#person-pronouns', 'they/them');
+    await page.fill('#person-notes', 'Ring **before** nine.');
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    await page.reload();
+    check(
+      'a person edit round-trips to Postgres',
+      (await page.locator('#person-nickname').inputValue()) === 'Smokey' &&
+        (await page.locator('#person-pronouns').inputValue()) === 'they/them',
+    );
+    check(
+      'and the notes render as Markdown',
+      (await page.locator('section:has-text("Notes, rendered") strong').innerText()) === 'before',
+    );
+
+    // A contact and a date
+    await page.selectOption('#contact-kind', 'email');
+    await page.fill('#contact-value', 'smoke@orbit.test');
+    await page.click('section:has-text("Contact") button:has-text("Add")');
+    await settle(page);
+    check(
+      'a contact can be added and renders as a mailto link',
+      (await page.locator('a[href="mailto:smoke@orbit.test"]').count()) === 1,
+    );
+
+    await page.fill('#date-on', '1990-04-11');
+    await page.click('section:has-text("Important dates") button:has-text("Add")');
+    await settle(page);
+    check(
+      'an important date can be added',
+      (await page.locator('section:has-text("Important dates") li').count()) >= 1,
+    );
+
+    // Link it to a person in another space, then follow the link and unlink.
+    const options = page.locator('#link-other option:not([disabled])');
+    const optionCount = await options.count();
+    check('link candidates are offered', optionCount > 0, `${optionCount} candidates`);
+    const otherValue = await options.first().getAttribute('value');
+    await page.selectOption('#link-other', otherValue);
+    await page.click('button:has-text("Link")');
+    await settle(page);
+
+    const linkRow = page.locator('section:has-text("Also recorded elsewhere") li');
+    check('two records can be linked', (await linkRow.count()) === 1);
+    check(
+      'and linking leaves two records rather than merging them',
+      (await page.locator('h1').innerText()) === stamp,
+    );
+
+    await page.locator('button[aria-label^="Unlink"]').first().click();
+    await settle(page);
+    check('and unlinking leaves both records alone', (await linkRow.count()) === 0);
+
+    // Move, with the preview first.
+    await page.locator('a[aria-label^="Preview moving this person"]').first().click();
+    await settle(page);
+    const moveText = await page
+      .locator('section:has-text("Move to another space") .surface')
+      .innerText();
+    check(
+      'the person move preview states who is affected and what is lost',
+      /access/i.test(moveText) && /Contact details and dates move with them/.test(moveText),
+    );
+    await page.click('button:has-text("Move to")');
+    await settle(page);
+    const movedSpace = await page.locator('header span[title^="Space:"]').first().innerText();
+    check('the move completes', movedSpace.length > 0, `now in ${movedSpace}`);
+
+    // Clean up after ourselves.
+    await page.click('button:has-text("Archive this person")');
+    await settle(page);
+    await page.goto(`/people?q=${encodeURIComponent(stamp)}`);
+    check(
+      'archiving removes them from the list',
+      (await page.locator('main ul li').count()) === 0,
+    );
+
     await ctx.close();
   }
 

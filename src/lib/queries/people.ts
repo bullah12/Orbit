@@ -82,6 +82,7 @@ export async function listPeople(
 }
 
 export type PersonContact = {
+  id: string;
   kind: string;
   label: string;
   value: string;
@@ -89,6 +90,7 @@ export type PersonContact = {
 };
 
 export type PersonDate = {
+  id: string;
   kind: string;
   label: string | null;
   onDate: string;
@@ -104,6 +106,7 @@ export type PersonDate = {
  * details — which is the honest answer, not a hidden row.
  */
 export type PersonLink = {
+  id: string;
   otherId: string | null;
   otherName: string | null;
   otherSpace: SpaceRef | null;
@@ -141,14 +144,14 @@ export async function getPerson(
     if (!person) return null;
 
     const contacts = await tx<PersonContact[]>`
-      select kind, label, value, is_primary as "isPrimary"
+      select id, kind, label, value, is_primary as "isPrimary"
       from public.person_contacts
       where person_id = ${id}::uuid
       order by is_primary desc, kind, label
     `;
 
     const dates = await tx<PersonDate[]>`
-      select kind, label, on_date as "onDate", year_known as "yearKnown"
+      select id, kind, label, on_date as "onDate", year_known as "yearKnown"
       from public.person_dates
       where person_id = ${id}::uuid
       order by on_date
@@ -159,6 +162,7 @@ export async function getPerson(
     // null name rather than dropping the link entirely.
     const links = await tx<PersonLink[]>`
       select
+        l.id,
         other.id as "otherId",
         other.display_name as "otherName",
         case when os.id is null then null else
@@ -252,6 +256,50 @@ export async function upcomingDates(
       from next
       where occurs_on - (select d from today) between 0 and ${withinDays}
       order by occurs_on, "displayName"
+    `;
+  });
+}
+
+/**
+ * People this record could be linked to.
+ *
+ * Only from spaces the caller can *write* — the policy on `person_links`
+ * requires write access to both sides, so offering a candidate you could not
+ * link would be offering a refusal. Excludes the person themselves, anyone
+ * already linked to them, and locked records (whose names do not exist).
+ */
+export type LinkCandidate = { id: string; displayName: string; space: SpaceRef };
+
+export async function listLinkCandidates(
+  userId: string,
+  personId: string,
+): Promise<LinkCandidate[]> {
+  return asUser(userId, async (tx) => {
+    return tx<LinkCandidate[]>`
+      select
+        p.id,
+        p.display_name as "displayName",
+        jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
+                           'colour', s.colour, 'icon', s.icon) as space
+      from public.people p
+      join public.spaces s on s.id = p.space_id
+      join public.space_members m
+        on m.space_id = p.space_id and m.user_id = ${userId}::uuid
+       and m.status = 'active' and m.role in ('owner','admin','member')
+      where p.id <> ${personId}::uuid
+        and p.archived_at is null
+        and not p.is_locked
+        and not exists (
+          select 1 from public.person_links l
+          where (l.person_a_id = ${personId}::uuid and l.person_b_id = p.id)
+             or (l.person_b_id = ${personId}::uuid and l.person_a_id = p.id)
+        )
+      order by
+        -- Someone with the same name in another space is almost always what
+        -- you are looking for, so float those to the top.
+        (p.display_name = (select display_name from public.people where id = ${personId}::uuid)) desc,
+        p.display_name
+      limit 300
     `;
   });
 }

@@ -130,3 +130,29 @@ tracking, ever.
   Rendering every space's categories at once and letting the server sort it out
   is how a task ends up silently uncategorised — which is exactly the bug
   session 1 recorded as rough edge 6.
+- **Linking is written in canonical id order, resolved in SQL.** The table's
+  check constraint requires `person_a_id < person_b_id`, so if the application
+  passed the two ids in the order the user happened to click them, half the
+  links would fail. `least()`/`greatest()` in the insert makes "link A to B" and
+  "link B to A" produce the same row, which is also what makes the unique
+  constraint mean anything.
+- **Link candidates come only from spaces the caller can write.** The policy
+  requires write access on both sides, so offering a candidate you cannot link
+  would be offering a refusal. Same-name candidates in another space float to
+  the top, because that is nearly always the intended one.
+- **A person is archived, never deleted.** Tasks delete outright — `dropped`
+  already exists for the reversible case and a task is a small thing to lose. A
+  person carries contacts, dates, links and a history of mentions; losing that
+  by accident is not recoverable, so the UI does not offer it at all.
+- **The pgTAP empty-table ledger is a subset check, not equality.** The first
+  version compared the empty-table list for equality, which meant that *using
+  the app* failed the suite: a move writes to `activity_log`, and this file runs
+  against the live database rather than a fixture. A ledger table filling up is
+  good news. What must fail is a table *outside* the ledger being empty, because
+  that means either the seed did not run or a table has shipped that nothing
+  writes to — and the outsider check cannot fail on an empty table. Recorded
+  because the equality version looked stricter and was in fact worse.
+- **The seed writes one `activity_log` row.** So that table gets outsider
+  coverage from a fresh seed rather than only after somebody performs a move.
+  Note what is deliberately absent from it: nothing records that a thing was
+  *viewed*. There is a check constraint refusing it and a test asserting so.

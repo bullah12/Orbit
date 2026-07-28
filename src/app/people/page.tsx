@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { listPeople } from '@/lib/queries/people';
+import { categoriesBySpace } from '@/lib/queries/tasks';
+import { ComposePerson } from '@/components/ComposePerson';
 import { SpaceIndicator, CategoryChip } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { formatDueDate, plural } from '@/lib/format';
@@ -15,8 +17,9 @@ export default async function PeoplePage({
 }) {
   const { space: spaceId, q } = await searchParams;
   const user = await requireUser();
-  const [spaces, people] = await Promise.all([
+  const [spaces, categories, people] = await Promise.all([
     listSpaces(user.id),
+    categoriesBySpace(user.id),
     listPeople(user.id, { spaceId: spaceId ?? null, query: q ?? '' }),
   ]);
 
@@ -35,6 +38,8 @@ export default async function PeoplePage({
           and are linked, never merged.
         </p>
       </header>
+
+      <ComposePerson spaces={spaces} categories={categories} defaultSpaceId={spaceId} />
 
       {/* GET, not a server action: a search you can bookmark and go back to. */}
       <form
