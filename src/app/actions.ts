@@ -739,6 +739,57 @@ export async function moveEventToSpace(formData: FormData) {
 }
 
 /**
+ * Move a note to another space.
+ *
+ * The fourth entity to get a move confirmation, and the one with the most to
+ * lose: a note's links point at tasks, people, events and places that are all
+ * space-scoped, so a link that would cross the new boundary cannot survive the
+ * move. They are dropped here rather than left dangling, and the confirmation
+ * says how many will go before anything is written.
+ */
+export async function moveNoteToSpace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('noteId') ?? '');
+  const targetSpaceId = String(formData.get('targetSpaceId') ?? '');
+  if (!id || !targetSpaceId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      select 1 from app.space_move_preview('note'::app.entity_kind,
+        ${id}::uuid, ${targetSpaceId}::uuid) limit 1
+    `;
+    await tx`
+      update public.notes set space_id = ${targetSpaceId}::uuid
+      where id = ${id}::uuid
+    `;
+    // A link to something in the old space is now a link across a boundary.
+    // app.entity_space() resolves under the caller's own privileges, so an
+    // item they cannot read resolves to no rows and the link goes.
+    await tx`
+      delete from public.note_links l
+      where l.note_id = ${id}::uuid
+        and coalesce(
+          (select space_id from app.entity_space(l.entity_kind, l.entity_id)),
+          '00000000-0000-0000-0000-000000000000'::uuid
+        ) <> ${targetSpaceId}::uuid
+    `;
+    // Version history is the note's own and travels with it.
+    await tx`
+      update public.note_versions set space_id = ${targetSpaceId}::uuid
+      where note_id = ${id}::uuid
+    `;
+    await tx`
+      insert into public.activity_log
+        (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
+      values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'note',
+              ${id}::uuid, 'moved', 'Moved between spaces')
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
  * Import an .ics feed into a calendar.
  *
  * The provider only fetches bytes; parsing, recurrence and the write are all

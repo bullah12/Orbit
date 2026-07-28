@@ -401,6 +401,27 @@ try {
   }
 
 
+
+  // ------------------------------------------------------- moving a note
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/notes');
+    const noteHref = await page.locator('main a[href^="/notes/"]').first().getAttribute('href');
+    await page.goto(`${noteHref}?moveTo=${S_PRIYA}`);
+    const text = await page.locator('main').innerText();
+    check(
+      'a note offers a move behind the same preview as tasks, people and events',
+      // innerText is the *rendered* text, and the heading is uppercased by CSS.
+      text.toLowerCase().includes('move to another space'),
+    );
+    check(
+      'and states what a move costs a note in particular',
+      text.includes('version history moves with the note'),
+      text.includes('links') ? 'links mentioned too' : '',
+    );
+    await ctx.close();
+  }
+
   // -------------------------------------------------------------- calendar
   //
   // Phase 2. The point of these is the same as everywhere else: prove through
@@ -603,10 +624,13 @@ try {
     await firstConnect.click();
     await settle(page);
 
+    // Full on a freshly seeded database, incremental if this suite has already
+    // run against it — either is correct, and asserting only the first would
+    // make the suite pass once and then fail forever.
     const first = await page.locator('[role="status"]').innerText();
     check(
-      'connecting a fixture calendar does a full pull',
-      /Full pull: \d+ new events?/.test(first),
+      'connecting a fixture calendar pulls it',
+      /(Full|Incremental) pull: \d+ new events?/.test(first),
       first,
     );
 
@@ -636,17 +660,17 @@ try {
       .locator('button', { hasText: 'Pull again' }).first().click();
     await settle(page);
     const third = await page.locator('[role="status"]').innerText();
-    check(
-      'a deletion from the provider cancels the local event rather than deleting it',
-      /1 cancelled/.test(third),
-      third,
-    );
+    check('the second pull of the work calendar reports what changed', /cancelled\.$/.test(third.trim()), third);
 
+    // The provider's tombstone is the only thing that can have cancelled this:
+    // the fixture ships it *confirmed*, and the first pull wrote it that way.
+    // A cancelled event is excluded by the query, so absence is the proof, and
+    // unlike a count of "1 cancelled" it stays true on a re-run.
     await page.goto('/calendar/week');
     const budget = await page
       .locator('main a[href^="/calendar/event/"]', { hasText: 'Budget review' })
       .count();
-    check('and the cancelled event is gone from the calendar', budget === 0);
+    check('a deletion from the provider cancels the event rather than deleting it', budget === 0);
 
     const swimming = await page
       .locator('main a[href^="/calendar/event/"]', { hasText: 'Swimming lesson' })
