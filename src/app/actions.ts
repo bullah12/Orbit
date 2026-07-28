@@ -5,6 +5,13 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { asUser } from '@/lib/db';
 import { listSelectableUsers, requireUser, USER_COOKIE } from '@/lib/auth';
+import { addDaysISO, londonInstant } from '@/lib/format';
+import { calendarProvider, icsProvider, parseIcs } from '@/lib/integrations';
+import {
+  connectProviderCalendar,
+  pullCalendar,
+  upsertExternalEvent,
+} from '@/lib/sync/calendar';
 
 /**
  * Server actions.
@@ -561,4 +568,332 @@ export async function movePersonToSpace(formData: FormData) {
   });
 
   revalidatePath('/', 'layout');
+}
+
+// ---------------------------------------------------------------------------
+// Calendar
+//
+// Times arrive from the form as a wall clock — a date and an HH:MM — and are
+// turned into instants here, in London, by londonInstant(). The browser's
+// timezone is never consulted: a user in another timezone editing a UK
+// household calendar means 09:00 UK, not 09:00 wherever they are sitting.
+// ---------------------------------------------------------------------------
+
+/** A date and an optional time from a form, as a UTC instant. Refuses junk rather than guessing. */
+function instantFromForm(onDate: string, time: string | null): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(onDate)) return null;
+  if (time !== null && !/^\d{2}:\d{2}$/.test(time)) return null;
+  return londonInstant(onDate, time ?? '00:00');
+}
+
+export async function createEvent(formData: FormData) {
+  const user = await requireUser();
+  const title = String(formData.get('title') ?? '').trim();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const onDate = String(formData.get('onDate') ?? '');
+  const allDay = String(formData.get('allDay') ?? '') === 'true';
+  const categoryId = String(formData.get('categoryId') ?? '') || null;
+  const calendarId = String(formData.get('calendarId') ?? '') || null;
+
+  const startsAt = instantFromForm(onDate, allDay ? null : String(formData.get('startTime') ?? ''));
+  if (!title || !spaceId || !startsAt) return;
+
+  const endsAt = allDay
+    ? londonInstant(addDaysISO(onDate, 1), '00:00')
+    : (instantFromForm(onDate, String(formData.get('endTime') ?? '')) ?? startsAt);
+
+  // An end before the start would fail the check constraint; treat it as an
+  // event running into the next day, which is what the person meant.
+  const finalEnd = endsAt < startsAt ? new Date(endsAt.getTime() + 86_400_000) : endsAt;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      insert into public.events
+        (space_id, owner_id, calendar_id, category_id, title, starts_at, ends_at, all_day)
+      values (
+        ${spaceId}::uuid, ${user.id}::uuid,
+        -- Both references are resolved against the chosen space rather than
+        -- trusted from the form, so a stale picker cannot write across a space
+        -- boundary. Falling back to the space's first calendar keeps the
+        -- compose bar to one decision.
+        coalesce(
+          (select c.id from public.calendars c
+            where c.id = ${calendarId}::uuid and c.space_id = ${spaceId}::uuid),
+          (select c.id from public.calendars c
+            where c.space_id = ${spaceId}::uuid and c.is_writable
+            order by c.sort_order, c.name limit 1)
+        ),
+        (select k.id from public.categories k
+          where k.id = ${categoryId}::uuid and k.space_id = ${spaceId}::uuid),
+        ${title}, ${startsAt}, ${finalEnd}, ${allDay}
+      )
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function updateEvent(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('eventId') ?? '');
+  if (!id) return;
+
+  const title = String(formData.get('title') ?? '').trim();
+  const bodyMd = String(formData.get('bodyMd') ?? '');
+  const locationText = String(formData.get('locationText') ?? '').trim() || null;
+  const status = String(formData.get('status') ?? 'confirmed');
+  const allDay = String(formData.get('allDay') ?? '') === 'true';
+  const onDate = String(formData.get('onDate') ?? '');
+  const categoryId = String(formData.get('categoryId') ?? '') || null;
+
+  const startsAt = instantFromForm(onDate, allDay ? null : String(formData.get('startTime') ?? ''));
+  if (!startsAt) return;
+  const endsAt = allDay
+    ? londonInstant(addDaysISO(onDate, 1), '00:00')
+    : (instantFromForm(onDate, String(formData.get('endTime') ?? '')) ?? startsAt);
+  const finalEnd = endsAt < startsAt ? new Date(endsAt.getTime() + 86_400_000) : endsAt;
+
+  await asUser(user.id, async (tx) => {
+    // The category is resolved against the event's *own* space, in SQL, so a
+    // stale form cannot attach a category from somewhere else.
+    await tx`
+      update public.events e
+      set title = ${title},
+          body_md = ${bodyMd},
+          location_text = ${locationText},
+          starts_at = ${startsAt},
+          ends_at = ${finalEnd},
+          all_day = ${allDay},
+          status = ${['confirmed', 'tentative', 'cancelled'].includes(status) ? status : 'confirmed'},
+          category_id = (
+            select k.id from public.categories k
+            where k.id = ${categoryId}::uuid and k.space_id = e.space_id
+          ),
+          -- Locally edited, so a later push knows there is something to send.
+          is_dirty = (e.external_id is not null)
+      where e.id = ${id}::uuid and not e.is_locked
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+export async function deleteEvent(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('eventId') ?? '');
+  if (!id) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`delete from public.events where id = ${id}::uuid`;
+  });
+
+  redirect('/calendar/week');
+}
+
+/**
+ * Move an event to another space.
+ *
+ * The space indicator requirement says every entity that can move does so
+ * behind app.space_move_preview(). This is the event one: same contract as
+ * tasks and people, with the extra consequence that the calendar cannot follow
+ * — calendars belong to a space, so the event lands in the target space's
+ * default calendar or in none at all.
+ */
+export async function moveEventToSpace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('eventId') ?? '');
+  const targetSpaceId = String(formData.get('targetSpaceId') ?? '');
+  if (!id || !targetSpaceId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      select 1 from app.space_move_preview('event'::app.entity_kind,
+        ${id}::uuid, ${targetSpaceId}::uuid) limit 1
+    `;
+    await tx`
+      update public.events
+      set space_id = ${targetSpaceId}::uuid,
+          category_id = null,
+          place_id = null,
+          calendar_id = (
+            select c.id from public.calendars c
+            where c.space_id = ${targetSpaceId}::uuid and c.is_writable
+            order by c.sort_order, c.name limit 1
+          )
+      where id = ${id}::uuid
+    `;
+    // Attendees belong to the event and travel with it.
+    await tx`
+      update public.event_attendees set space_id = ${targetSpaceId}::uuid
+      where event_id = ${id}::uuid
+    `;
+    await tx`
+      insert into public.activity_log
+        (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
+      values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'event',
+              ${id}::uuid, 'moved', 'Moved between spaces')
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Move a note to another space.
+ *
+ * The fourth entity to get a move confirmation, and the one with the most to
+ * lose: a note's links point at tasks, people, events and places that are all
+ * space-scoped, so a link that would cross the new boundary cannot survive the
+ * move. They are dropped here rather than left dangling, and the confirmation
+ * says how many will go before anything is written.
+ */
+export async function moveNoteToSpace(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('noteId') ?? '');
+  const targetSpaceId = String(formData.get('targetSpaceId') ?? '');
+  if (!id || !targetSpaceId) return;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      select 1 from app.space_move_preview('note'::app.entity_kind,
+        ${id}::uuid, ${targetSpaceId}::uuid) limit 1
+    `;
+    await tx`
+      update public.notes set space_id = ${targetSpaceId}::uuid
+      where id = ${id}::uuid
+    `;
+    // A link to something in the old space is now a link across a boundary.
+    // app.entity_space() resolves under the caller's own privileges, so an
+    // item they cannot read resolves to no rows and the link goes.
+    await tx`
+      delete from public.note_links l
+      where l.note_id = ${id}::uuid
+        and coalesce(
+          (select space_id from app.entity_space(l.entity_kind, l.entity_id)),
+          '00000000-0000-0000-0000-000000000000'::uuid
+        ) <> ${targetSpaceId}::uuid
+    `;
+    // Version history is the note's own and travels with it.
+    await tx`
+      update public.note_versions set space_id = ${targetSpaceId}::uuid
+      where note_id = ${id}::uuid
+    `;
+    await tx`
+      insert into public.activity_log
+        (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
+      values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'note',
+              ${id}::uuid, 'moved', 'Moved between spaces')
+    `;
+  });
+
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * Import an .ics feed into a calendar.
+ *
+ * The provider only fetches bytes; parsing, recurrence and the write are all
+ * ours, and the write is the same `upsertExternalEvent` a Google pull uses —
+ * one implementation, so an ICS event and a pulled event cannot end up shaped
+ * differently.
+ *
+ * Re-importing the same feed updates rather than duplicates: the unique
+ * constraint on (space_id, calendar_id, external_id) is what makes that safe,
+ * and the UID from the feed is the external id.
+ */
+export async function importIcs(formData: FormData) {
+  const user = await requireUser();
+  const calendarId = String(formData.get('calendarId') ?? '');
+  const ref = String(formData.get('ref') ?? '').trim();
+  if (!calendarId || !ref) return;
+
+  const text = await icsProvider().fetchText({ ref });
+  const parsed = parseIcs(text);
+
+  const result = await asUser(user.id, async (tx) => {
+    const target = await tx<{ id: string; spaceId: string }[]>`
+      select id, space_id as "spaceId" from public.calendars
+      where id = ${calendarId}::uuid and is_writable
+    `;
+    const calendar = target[0];
+    // No row means the policy refused it, which is the correct answer to
+    // "import into somebody else's calendar".
+    if (!calendar) return { imported: 0, updated: 0, rules: 0 };
+
+    let imported = 0;
+    let updated = 0;
+    let rules = 0;
+
+    for (const event of parsed.events) {
+      const res = await upsertExternalEvent(
+        tx,
+        { userId: user.id, spaceId: calendar.spaceId, calendarId: calendar.id },
+        event,
+      );
+      if (res.inserted) imported += 1;
+      else if (res.id) updated += 1;
+      if (res.wroteRule) rules += 1;
+    }
+
+    await tx`
+      update public.calendar_accounts set last_synced_at = now()
+      where id = (select account_id from public.calendars where id = ${calendar.id}::uuid)
+    `;
+
+    return { imported, updated, rules };
+  });
+
+  revalidatePath('/', 'layout');
+  redirect(
+    `/calendar/import?imported=${result.imported}&updated=${result.updated}&rules=${result.rules}`,
+  );
+}
+
+/**
+ * Connect one of the calendar provider's calendars to a space, and pull it.
+ *
+ * With CALENDAR_PROVIDER=fake (the default) this runs end to end with no
+ * credential — that is the whole point of the interface. With
+ * CALENDAR_PROVIDER=google it runs the same code against an implementation
+ * that has never been executed here.
+ */
+export async function connectCalendar(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const externalId = String(formData.get('externalId') ?? '');
+  const name = String(formData.get('name') ?? '').trim() || externalId;
+  const writable = String(formData.get('writable') ?? '') === 'true';
+  if (!spaceId || !externalId) return;
+
+  const providerName = calendarProvider().isFake ? 'local' : 'google';
+  const calendarId = await connectProviderCalendar(
+    user.id,
+    spaceId,
+    { externalId, name, writable },
+    providerName,
+  );
+  if (!calendarId) return;
+
+  const result = await pullCalendar(user.id, calendarId);
+  revalidatePath('/', 'layout');
+  // One template literal, not a concatenation: typed routes lose the literal
+  // type through `+` and the build stops being able to check the path.
+  redirect(
+    `/calendar/import?added=${result.added}&changed=${result.updated}&removed=${result.removed}&full=${result.wasFullPull ? 1 : 0}`,
+  );
+}
+
+/** Pull an already-connected calendar again, incrementally if we hold a token. */
+export async function syncCalendar(formData: FormData) {
+  const user = await requireUser();
+  const calendarId = String(formData.get('calendarId') ?? '');
+  if (!calendarId) return;
+
+  const result = await pullCalendar(user.id, calendarId);
+  revalidatePath('/', 'layout');
+  // One template literal, not a concatenation: typed routes lose the literal
+  // type through `+` and the build stops being able to check the path.
+  redirect(
+    `/calendar/import?added=${result.added}&changed=${result.updated}&removed=${result.removed}&full=${result.wasFullPull ? 1 : 0}`,
+  );
 }

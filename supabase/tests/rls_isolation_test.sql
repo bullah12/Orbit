@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(52);
+select plan(55);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -99,6 +99,15 @@ insert into public.events (id, space_id, owner_id, title, starts_at, ends_at) va
   ('dddddddd-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'Dentist',
    '2026-08-03 09:00+01', '2026-08-03 09:30+01');
+
+-- Recurrence rules. One in the shared space, one in Alice's own — a repeat is
+-- one row plus a rule, never expanded copies, so the *rule* is the thing that
+-- leaks if its policy is wrong.
+insert into public.recurrence_rules (id, space_id, owner_id, rrule, dtstart) values
+  ('ffffffff-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'FREQ=WEEKLY;BYDAY=MO', '2026-08-03 09:00+01'),
+  ('ffffffff-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'FREQ=MONTHLY;BYMONTHDAY=31', '2026-08-31 18:00+01');
 
 insert into public.people (id, space_id, owner_id, display_name) values
   ('eeeeeeee-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001',
@@ -210,6 +219,27 @@ select is(
     '2026-08-01 00:00+01', '2026-08-05 00:00+01')),
   0,
   'free_busy blocks are not readable for a space with no grant');
+
+-- A recurrence rule is a fact about somebody's week: how often, and from when.
+-- It must be no more visible than the event that carries it.
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+select is(
+  (select count(*)::int from public.recurrence_rules),
+  1,
+  'the partner sees the shared space''s recurrence rule and not the private one');
+
+select is(
+  (select rrule from public.recurrence_rules),
+  'FREQ=WEEKLY;BYDAY=MO',
+  'and the one they see is the shared one');
+
+select tests.act_as('33333333-3333-3333-3333-333333333333');
+
+select is(
+  (select count(*)::int from public.recurrence_rules),
+  0,
+  'a free_busy participant sees no recurrence rules — the shape of a week is content');
 
 -- ===========================================================================
 -- 4. Writing
@@ -580,9 +610,9 @@ select is(
    from unnest(string_to_array(tests.tables_with_rows(), ', ')) as t
    where t <> ''
      and t <> all (array[
-       'ai_runs', 'attachments', 'calendar_sync_state', 'note_versions',
+       'ai_runs', 'attachments', 'note_versions',
        'notification_deliveries', 'person_relationships', 'place_visits',
-       'recurrence_rules', 'rule_runs', 'space_invites', 'sync_cursors',
+       'rule_runs', 'space_invites', 'sync_cursors',
        'travel_legs', 'travel_sessions'
      ])),
   '',

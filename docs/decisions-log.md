@@ -156,3 +156,84 @@ tracking, ever.
   coverage from a fresh seed rather than only after somebody performs a move.
   Note what is deliberately absent from it: nothing records that a thing was
   *viewed*. There is a check constraint refusing it and a test asserting so.
+
+## Session 3 — 2026-07-28
+
+- **The branch is `claude/orbit-build-phase-2-vu20kw`**, not
+  `claude/orbit-build-8ybx2s`. The task description named session 2's branch,
+  which has already been merged into `main` via PR #3; the session's designated
+  branch is the former, and pushing elsewhere is not permitted. Same work,
+  different name — the same thing happened in session 1.
+- **Every `*_PROVIDER` value that is not known is a hard error**, not a fall
+  back to the fake. `GEOCODING_PROVIDER=nominatim` fails at selection with the
+  list of what exists. Quietly serving fixture data to somebody who asked for a
+  real service is the exact failure the interface-plus-fake pattern exists to
+  prevent, and a silent default is how that happens.
+- **A real implementation must not throw at construction.** `new
+  GoogleCalendarProvider({})` succeeds with no credentials and fails when
+  *called*. The app has to boot and render with zero credentials whatever the
+  env says, including a settings page that lists which provider is live.
+- **Only two real implementations exist: Google Calendar and HTTP ICS.**
+  Geocoding, travel time, push and AI have interfaces and fakes only; their
+  real implementations belong to the phases that use them (3 and 5). Recorded
+  rather than filled with classes that throw "not implemented", which would be
+  a stub pretending to be a decision.
+- **ICS providers fetch bytes; parsing is ours and shared.** Both the fake and
+  the HTTP fetcher hand their text to the same `parseIcs`, so the two cannot
+  disagree about what a feed means — and parsing is the only half of ICS import
+  this container can actually execute.
+- **Recurrence is expanded in the application, never in Postgres and never by
+  a provider.** Google's `singleEvents=true` would have given us a second
+  implementation of what a repeat means that no test here could reach. One
+  implementation, in `src/lib/recurrence.ts`, with 26 cases on it.
+- **An invalid recurrence date is skipped, not clamped.** "The 31st of every
+  month" produces nothing in April. Clamping to the 30th is the intuitive
+  implementation and it invents an event on a day nobody chose. RFC 5545 §3.3.10
+  agrees; the test names the rule.
+- **A repeat repeats on the wall clock.** Expansion works on local dates and
+  times and rebuilds an instant per occurrence, so 09:00 every Monday is 09:00
+  in March and 09:00 in April even though the UTC instant moves. `zonedInstant`
+  in `format.ts` solves `t + offset(t) = naive` with one refinement rather than
+  hard-coding when the clocks change.
+- **The spring gap resolves forward and the autumn repeat resolves late.**
+  01:30 on 29 March 2026 does not exist and becomes 02:30 BST; 01:30 on 25
+  October happens twice and takes the second, GMT, one. Both are arbitrary but
+  both are now *chosen*, tested and documented rather than emergent.
+- **Grid positions are fractions of `londonDayMinutes(day)`, not of 1440.**
+  29 March is 1380 minutes long and 25 October is 1500. A hard-coded day length
+  puts every block on those two days in the wrong place, and the test that
+  catches it asserts a 12:00 event sits past the middle of the long day.
+- **An event belongs to every day it touches.** `daySpan()` clips it per day,
+  so a 23:00–01:00 event draws on both. Filtering by start date alone is what
+  makes a Monday morning look empty.
+- **The space indicator stays on narrow week-column blocks**, moving inline
+  with the time rather than being dropped when the block is small. A merged
+  calendar where you cannot tell whose event it is at a glance is precisely
+  what that requirement exists to prevent. The category and attendee count are
+  what get dropped instead.
+- **A `free_busy` block is a different type, not an event with fields hidden.**
+  `BusyBlock` has no id, no title and no category, and it comes from a
+  different query. There is no prop that turns an event into an anonymous
+  block, so a component cannot leak one by forgetting to check.
+- **A provider deletion cancels the local event; it never deletes it.** A
+  tombstone is recoverable and a delete is not, and a cancelled event is
+  already excluded from every calendar query.
+- **Migration 0010 adds `recurrence_rules.exdates`.** The schema had nowhere to
+  put RFC 5545 EXDATE, so an imported feed that cancelled one occurrence grew
+  it back on every render. Stored as instants rather than appended to the RRULE
+  text, because they are compared as instants. First extension of the schema
+  since session 1, and it was a feature genuinely needing a column.
+- **The seed writes two recurring events and a `calendar_sync_state` row per
+  calendar**, so `recurrence_rules` and `calendar_sync_state` leave the pgTAP
+  known-empty ledger. The outsider check iterates `pg_tables` and cannot fail
+  on an empty table; a table nothing writes to has an untested policy. Three
+  new assertions pin recurrence-rule visibility from the partner's and the
+  free/busy participant's side — the shape of somebody's week is content.
+- **A note's links do not survive a move that would make them cross a space
+  boundary.** They are deleted, decided by `app.entity_space()` under the
+  caller's own privileges, and the confirmation says so before the write. The
+  alternative is a link pointing at something the reader can no longer see.
+- **`pnpm smoke` must pass twice in a row without reseeding.** A "full pull" is
+  only full against a fresh database, so the checks assert the *sequence* — a
+  pull, then an incremental one — rather than the absolute state. A check that
+  passes once and then fails forever is worse than no check.

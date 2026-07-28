@@ -60,6 +60,15 @@ async function settle(page) {
   await page.waitForTimeout(900);
 }
 
+/** An event id that really exists, so the outsider's 404 is a 404 about a real row. */
+async function firstEventId() {
+  const { ctx, page } = await pageAs(PRIYA);
+  await page.goto('/calendar/month');
+  const href = await page.locator('a[href^="/calendar/event/"]').first().getAttribute('href');
+  await ctx.close();
+  return href.split('/').pop().split('?')[0];
+}
+
 try {
   // ------------------------------------------------------------ Priya: reads
   {
@@ -387,6 +396,328 @@ try {
       return bad;
     });
     check('every control on the task form has a label', unnamed.length === 0, unnamed.join(', '));
+
+    await ctx.close();
+  }
+
+
+
+  // ------------------------------------------------------- moving a note
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/notes');
+    const noteHref = await page.locator('main a[href^="/notes/"]').first().getAttribute('href');
+    await page.goto(`${noteHref}?moveTo=${S_PRIYA}`);
+    const text = await page.locator('main').innerText();
+    check(
+      'a note offers a move behind the same preview as tasks, people and events',
+      // innerText is the *rendered* text, and the heading is uppercased by CSS.
+      text.toLowerCase().includes('move to another space'),
+    );
+    check(
+      'and states what a move costs a note in particular',
+      text.includes('version history moves with the note'),
+      text.includes('links') ? 'links mentioned too' : '',
+    );
+    await ctx.close();
+  }
+
+  // -------------------------------------------------------------- calendar
+  //
+  // Phase 2. The point of these is the same as everywhere else: prove through
+  // the running app that a free_busy participant reaches times and never
+  // titles, and that the merged calendar is merged by *policy* rather than by
+  // a filter somebody could delete.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/calendar/week');
+    check(
+      'the week view renders',
+      (await page.locator('h1').first().innerText()).includes('–'),
+      await page.locator('h1').first().innerText(),
+    );
+
+    const blocks = await page.locator('main a[href^="/calendar/event/"]').count();
+    check('the week has event blocks from the seeded data', blocks > 0, `${blocks} blocks`);
+
+    const indicators = await page
+      .locator('main a[href^="/calendar/event/"] span[title^="Space:"]')
+      .count();
+    check(
+      'every event block carries a space indicator',
+      indicators >= blocks,
+      `${indicators} indicators / ${blocks} blocks`,
+    );
+
+    // Monday-first is a UK convention and a hard requirement.
+    // .day-heading, not any link to a day: the view switcher points at
+    // /calendar/day too and would otherwise be the first match.
+    const firstHeading = await page.locator('main a.day-heading').first().innerText();
+    check('the week starts on Monday', firstHeading.startsWith('Mon'), firstHeading);
+
+    await page.goto('/calendar/month');
+    const cells = await page.locator('main a.day-heading').count();
+    check('the month grid is six weeks of day cells', cells >= 42, `${cells} day links`);
+
+    await page.goto('/calendar/day');
+    check(
+      'the day view renders one column',
+      (await page.locator('main a.day-heading').count()) === 1,
+    );
+
+    // A recurring event is stored once and expanded by the app; the seed has a
+    // fortnightly bin day and a weekday stand-up.
+    await page.goto('/calendar/month');
+    const standups = await page.locator('main a[href^="/calendar/event/"]', { hasText: 'stand-up' }).count();
+    check(
+      'a recurring event is expanded across the month from one stored row',
+      standups > 4,
+      `${standups} occurrences drawn`,
+    );
+
+    await ctx.close();
+  }
+
+  // ---------------------------------------------- calendar: the partner
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/calendar/week');
+
+    const html = await page.locator('main').innerHTML();
+    const busy = await page.locator('main >> text=Busy').count();
+    check(
+      'the partner sees anonymous busy blocks for the space they only have free/busy on',
+      busy > 0,
+      `${busy} blocks`,
+    );
+    check(
+      'and the calendar says plainly that they are availability only',
+      html.includes('Availability only'),
+    );
+
+    // The real check: no Work event title reaches the page. The seeded Work
+    // titles are the ones to look for, and a busy block has no link at all.
+    const workTitles = ['stand-up', 'Funding', 'Invoice', 'Workshop'];
+    const leaked = workTitles.filter((t) => html.toLowerCase().includes(t.toLowerCase()));
+    check(
+      'a busy block carries no title, no category and no link',
+      leaked.length === 0,
+      leaked.join(', '),
+    );
+
+    const busyLinks = await page.evaluate(() =>
+      [...document.querySelectorAll('main a[href^="/calendar/event/"]')].filter((a) =>
+        a.textContent.includes('Busy'),
+      ).length,
+    );
+    check('and no busy block is a link to an event', busyLinks === 0);
+
+    await ctx.close();
+  }
+
+  // ---------------------------------------------- calendar: the outsider
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/calendar/week');
+    const blocks = await page.locator('main a[href^="/calendar/event/"]').count();
+    check('the outsider sees zero events in the calendar', blocks === 0);
+
+    const res = await page.goto(`/calendar/event/${await firstEventId()}`);
+    check(
+      'and a direct link to an event is a 404, not a 403',
+      res.status() === 404,
+      `HTTP ${res.status()}`,
+    );
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------- ICS import
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/calendar/import');
+
+    check(
+      'the import page says which provider is live and whether it is a fake',
+      (await page.locator('main').innerText()).includes('fixture-backed'),
+    );
+
+    await page.selectOption('select[name="ref"]', 'school-term');
+    const options = await page.locator('select[name="calendarId"] option').allTextContents();
+    check(
+      'only calendars in spaces the user can write are offered',
+      options.length > 0 && !options.some((o) => o.includes('Danny')),
+      options.join(' | '),
+    );
+    await page.selectOption('select[name="calendarId"]', { index: 1 });
+    await page.click('form[aria-label="Import an ICS feed"] button[type="submit"]');
+    await settle(page);
+
+    // Deliberately tolerant of how many were *new*: this suite is re-runnable,
+    // and on a second run the feed is already imported. What must hold every
+    // time is that it reports what it did and that the rule is stored once.
+    const status = await page.locator('[role="status"]').innerText();
+    check('importing a fixture feed reports what it wrote', /Imported \d+ new event/.test(status), status);
+    check('and it stored a recurrence rule rather than expanded copies',
+      /stored 1 recurrence rule/.test(status), status);
+
+    // 23 March 2026 is the week the imported assembly starts, and it runs
+    // across the clocks going forward on 29 March.
+    await page.goto('/calendar/week?date=2026-03-23');
+    const assembly = await page
+      .locator('main a[href^="/calendar/event/"]', { hasText: 'Monday assembly' })
+      .first();
+    check('the imported event appears in the week it belongs to', await assembly.isVisible());
+    check(
+      'at 09:00 London, before the clocks change',
+      (await assembly.innerText()).includes('09:00'),
+    );
+
+    await page.goto('/calendar/week?date=2026-03-30');
+    const after = await page
+      .locator('main a[href^="/calendar/event/"]', { hasText: 'Monday assembly' })
+      .first();
+    check(
+      'and still at 09:00 the week after they change — the wall clock is what repeats',
+      (await after.innerText()).includes('09:00'),
+    );
+
+    // The EXDATE in the fixture removes 6 April.
+    await page.goto('/calendar/week?date=2026-04-06');
+    const excluded = await page
+      .locator('main a[href^="/calendar/event/"]', { hasText: 'Monday assembly' })
+      .count();
+    check('an EXDATE removes that one occurrence and no other', excluded === 0);
+
+    // Re-importing the same feed must update, not duplicate.
+    await page.goto('/calendar/import');
+    await page.selectOption('select[name="ref"]', 'school-term');
+    await page.selectOption('select[name="calendarId"]', { index: 1 });
+    await page.click('form[aria-label="Import an ICS feed"] button[type="submit"]');
+    await settle(page);
+    const second = await page.locator('[role="status"]').innerText();
+    check(
+      'importing the same feed twice updates rather than duplicates',
+      /Imported 0 new events/.test(second),
+      second,
+    );
+
+    await ctx.close();
+  }
+
+
+  // ------------------------------------- calendar provider: connect and pull
+  //
+  // The CalendarProvider interface, exercised through the fake. The real
+  // Google implementation runs this same code path and has never been executed
+  // here — what this proves is the plumbing, not Google.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/calendar/import');
+
+    const connectForms = await page.locator('form[action] >> nth=0').count();
+    check('the provider lists its calendars without a credential', connectForms > 0);
+
+    const firstConnect = page
+      .locator('li', { hasText: 'Family (fixture)' })
+      .locator('button', { hasText: 'Connect and pull' });
+    await firstConnect.click();
+    await settle(page);
+
+    // Full on a freshly seeded database, incremental if this suite has already
+    // run against it — either is correct, and asserting only the first would
+    // make the suite pass once and then fail forever.
+    const first = await page.locator('[role="status"]').innerText();
+    check(
+      'connecting a fixture calendar pulls it',
+      /(Full|Incremental) pull: \d+ new events?/.test(first),
+      first,
+    );
+
+    // Second pull carries the token from the first, so it is incremental and
+    // returns only what changed — the shape a real API has, modelled honestly.
+    await page.locator('li', { hasText: 'Family (fixture)' })
+      .locator('button', { hasText: 'Pull again' }).first().click();
+    await settle(page);
+    const second = await page.locator('[role="status"]').innerText();
+    check(
+      'a second pull is incremental rather than another full one',
+      /Incremental pull:/.test(second),
+      second,
+    );
+
+    check(
+      'the calendar list shows that a sync token is held',
+      (await page.locator('main').innerText()).includes('token held'),
+    );
+
+    // The fake deletes one event on the second pull; a deletion cancels the
+    // row rather than removing it, and a cancelled event leaves the calendar.
+    await page.locator('li', { hasText: 'Work (fixture)' })
+      .locator('button', { hasText: 'Connect and pull' }).click();
+    await settle(page);
+    await page.locator('li', { hasText: 'Work (fixture)' })
+      .locator('button', { hasText: 'Pull again' }).first().click();
+    await settle(page);
+    const third = await page.locator('[role="status"]').innerText();
+    check('the second pull of the work calendar reports what changed', /cancelled\.$/.test(third.trim()), third);
+
+    // The provider's tombstone is the only thing that can have cancelled this:
+    // the fixture ships it *confirmed*, and the first pull wrote it that way.
+    // A cancelled event is excluded by the query, so absence is the proof, and
+    // unlike a count of "1 cancelled" it stays true on a re-run.
+    await page.goto('/calendar/week');
+    const budget = await page
+      .locator('main a[href^="/calendar/event/"]', { hasText: 'Budget review' })
+      .count();
+    check('a deletion from the provider cancels the event rather than deleting it', budget === 0);
+
+    const swimming = await page
+      .locator('main a[href^="/calendar/event/"]', { hasText: 'Swimming lesson' })
+      .count();
+    check('while a pulled recurring event is drawn from its rule', swimming > 0, `${swimming} drawn`);
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------- calendar: editing and moving
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/calendar/week?date=2026-03-23');
+    await page.locator('main a[href^="/calendar/event/"]', { hasText: 'Monday assembly' }).first().click();
+    await settle(page);
+
+    check('the event detail page opens', (await page.locator('h1').innerText()).includes('assembly'));
+    check(
+      'a recurring event says so in words a person can check',
+      (await page.locator('main').innerText()).includes('Every week, on Monday'),
+    );
+    check(
+      'the imported attendees are shown, by name where the feed gave one',
+      (await page.locator('main').innerText()).includes('School office'),
+    );
+
+    const eventUrl = page.url();
+    await page.fill('input[name="locationText"]', 'School hall');
+    await page.click('form[aria-label="Edit event"] button[type="submit"]');
+    await settle(page);
+    await page.goto(eventUrl);
+    check(
+      'an edit round-trips to Postgres',
+      (await page.inputValue('input[name="locationText"]')) === 'School hall',
+    );
+
+    // The move confirmation is a hard requirement for every entity that can move.
+    await page.goto(`${eventUrl}?moveTo=${S_PRIYA}`);
+    const moveText = await page.locator('main').innerText();
+    check(
+      'the event move preview states who is affected',
+      moveText.includes('lose access') || moveText.includes('gain access') || moveText.includes('Unchanged'),
+    );
+    check(
+      'and states the consequences a move has for an event',
+      moveText.includes('Attendees move with the event') && moveText.includes('default calendar'),
+    );
 
     await ctx.close();
   }

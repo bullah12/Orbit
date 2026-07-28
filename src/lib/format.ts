@@ -55,10 +55,114 @@ export function londonMidnight(iso: DateOnly): Date {
   return new Date(`${day}T00:00:00Z`);
 }
 
-function londonTimeHHMM(d: Date): string {
+export function londonTimeHHMM(d: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(d);
+}
+
+const partsCache = new Map<string, Intl.DateTimeFormat>();
+
+/** What the wall clock in `tz` reads at this instant, minus UTC, in milliseconds. */
+function zoneOffsetMs(tz: string, at: Date): number {
+  let fmt = partsCache.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    partsCache.set(tz, fmt);
+  }
+  const parts = fmt.formatToParts(at);
+  const n = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  // Some engines render midnight as hour 24; % 24 makes that the same instant.
+  const asIfUtc = Date.UTC(n('year'), n('month') - 1, n('day'), n('hour') % 24, n('minute'), n('second'));
+  return asIfUtc - at.getTime();
+}
+
+/**
+ * A wall-clock time in a named zone, as a UTC instant.
+ *
+ * This is what recurrence expansion and ICS import need: "09:00 every Monday"
+ * means 09:00 *London*, which is 08:00Z in summer and 09:00Z in winter. Getting
+ * this wrong shifts half the year's events by an hour — the single most likely
+ * bug in the calendar.
+ *
+ * Edges, both deliberate:
+ *  - The spring gap (01:00–01:59 on the last Sunday in March does not exist)
+ *    resolves forward, so 01:30 becomes 02:30 BST.
+ *  - The autumn repeat (01:00–01:59 on the last Sunday in October happens
+ *    twice) resolves to the *second*, GMT, occurrence.
+ */
+export function zonedInstant(
+  iso: DateOnly,
+  hhmmss: string,
+  timeZone: string = TZ,
+): Date {
+  const [y, mo, d] = iso.slice(0, 10).split('-').map(Number);
+  const [h, mi, s] = `${hhmmss}:00:00`.split(':').map(Number);
+  const naive = Date.UTC(y!, mo! - 1, d!, h!, mi ?? 0, s ?? 0);
+  // Solve t + offset(t) = naive. One refinement is enough: offsets change by at
+  // most an hour and never twice within an hour.
+  let guess = naive - zoneOffsetMs(timeZone, new Date(naive));
+  guess = naive - zoneOffsetMs(timeZone, new Date(guess));
+  return new Date(guess);
+}
+
+/**
+ * The wall clock a named zone shows at this instant, split into date and time.
+ *
+ * The inverse of `zonedInstant`. Recurrence expansion needs both directions:
+ * it reads the start's local time once, then rebuilds an instant per
+ * occurrence, which is what keeps "09:00 every Monday" at 09:00 all year.
+ */
+export function zonedWallClock(
+  instant: Date | string,
+  timeZone: string = TZ,
+): { date: DateOnly; time: string } {
+  const d = typeof instant === 'string' ? new Date(instant) : instant;
+  let fmt = partsCache.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    partsCache.set(timeZone, fmt);
+  }
+  const parts = fmt.formatToParts(d);
+  const v = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  const hh = String(Number(v('hour')) % 24).padStart(2, '0');
+  return {
+    date: `${v('year')}-${v('month')}-${v('day')}`,
+    time: `${hh}:${v('minute')}:${v('second')}`,
+  };
+}
+
+/** `zonedInstant` fixed to Europe/London, which is what Orbit means by "09:00". */
+export function londonInstant(iso: DateOnly, hhmm: string): Date {
+  return zonedInstant(iso, hhmm, TZ);
+}
+
+/** Minutes from London midnight on the day this instant falls in. Handles 23- and 25-hour days. */
+export function minutesIntoLondonDay(instant: Date | string): number {
+  const d = typeof instant === 'string' ? new Date(instant) : instant;
+  const midnight = londonMidnight(londonDayISO(d));
+  return Math.round((d.getTime() - midnight.getTime()) / 60_000);
+}
+
+/**
+ * How long a London calendar day is, in minutes.
+ *
+ * 1440 on 363 days a year, 1380 on the last Sunday in March and 1500 on the
+ * last Sunday in October. The week grid divides by this, so a hard-coded 1440
+ * would put every block on those two days in slightly the wrong place.
+ */
+export function londonDayMinutes(iso: DateOnly): number {
+  const start = londonMidnight(iso);
+  const end = londonMidnight(addDaysISO(iso, 1));
+  return Math.round((end.getTime() - start.getTime()) / 60_000);
 }
 
 /** Monday-first, UK convention. Returns the ISO date of that week's Monday. */
