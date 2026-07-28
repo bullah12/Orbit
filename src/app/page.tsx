@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
-import { listTasks } from '@/lib/queries/tasks';
+import { categoriesBySpace, listTasks } from '@/lib/queries/tasks';
 import { yesterdaySummary } from '@/lib/queries/notes';
 import { TaskRow } from '@/components/TaskRow';
 import { ComposeTask } from '@/components/ComposeTask';
@@ -12,8 +12,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function TodayPage() {
   const user = await requireUser();
-  const [spaces, today, overdue, yesterday] = await Promise.all([
+  const [spaces, categories, today, overdue, yesterday] = await Promise.all([
     listSpaces(user.id),
+    categoriesBySpace(user.id),
     listTasks(user.id, 'today', { limit: 50 }),
     listTasks(user.id, 'overdue', { limit: 50 }),
     yesterdaySummary(user.id),
@@ -31,7 +32,7 @@ export default async function TodayPage() {
         </p>
       </header>
 
-      <ComposeTask spaces={spaces} />
+      <ComposeTask spaces={spaces} categories={categories} />
 
       {/*
         The whole post-event feature (decision 10). A quiet row, stated once,

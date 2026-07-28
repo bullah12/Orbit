@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
-import { listTasks, SMART_LISTS, isSmartListKey } from '@/lib/queries/tasks';
+import { categoriesBySpace, listTasks, SMART_LISTS, isSmartListKey } from '@/lib/queries/tasks';
 import { TaskRow } from '@/components/TaskRow';
 import { ComposeTask } from '@/components/ComposeTask';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
@@ -21,8 +21,9 @@ export default async function TaskListPage({
   if (!isSmartListKey(list)) notFound();
 
   const user = await requireUser();
-  const [spaces, tasks] = await Promise.all([
+  const [spaces, categories, tasks] = await Promise.all([
     listSpaces(user.id),
+    categoriesBySpace(user.id),
     listTasks(user.id, list, { spaceId: spaceId ?? null }),
   ]);
 
@@ -40,7 +41,7 @@ export default async function TaskListPage({
         <p className="muted mt-0.5 text-[12px]">{meta.blurb}</p>
       </header>
 
-      <ComposeTask spaces={spaces} defaultSpaceId={spaceId} />
+      <ComposeTask spaces={spaces} categories={categories} defaultSpaceId={spaceId} />
 
       {tasks.length === 0 ? (
         <p className="faint px-5 py-10 text-[13px]">Nothing here.</p>

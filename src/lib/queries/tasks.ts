@@ -40,6 +40,8 @@ export type TaskRow = {
   waitingOn: string | null;
   estimateMinutes: number | null;
   assigneeName: string | null;
+  assigneeId: string | null;
+  categoryId: string | null;
   isMine: boolean;
   space: SpaceRef;
   category: { name: string; colour: string; icon: string } | null;
@@ -111,6 +113,8 @@ export async function listTasks(
         t.waiting_on         as "waitingOn",
         t.estimate_minutes   as "estimateMinutes",
         a.display_name       as "assigneeName",
+        t.assignee_id        as "assigneeId",
+        t.category_id        as "categoryId",
         (t.assignee_id = ${userId}::uuid) as "isMine",
         jsonb_build_object(
           'id', s.id, 'name', s.name, 'shortLabel', s.short_label,
@@ -190,6 +194,7 @@ export async function getTask(userId: string, id: string): Promise<TaskRow | nul
         t.deferred_until as "deferredUntil", t.completed_at as "completedAt",
         t.waiting_on as "waitingOn", t.estimate_minutes as "estimateMinutes",
         a.display_name as "assigneeName",
+        t.assignee_id as "assigneeId", t.category_id as "categoryId",
         (t.assignee_id = ${userId}::uuid) as "isMine",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space,
@@ -219,4 +224,30 @@ export async function listCategories(
       order by sort_order, name
     `;
   });
+}
+
+/**
+ * Every category the caller can see, grouped by space.
+ *
+ * The compose bar needs this in one round trip: it offers the categories of
+ * whichever space is selected, and the selection changes without a navigation.
+ * No `where space_id in (...)` — the policy on `categories` already restricts
+ * this to spaces the caller is a member of.
+ */
+export async function categoriesBySpace(
+  userId: string,
+): Promise<Record<string, CategoryOption[]>> {
+  const rows = await asUser(userId, async (tx) => {
+    return tx<(CategoryOption & { spaceId: string })[]>`
+      select id, space_id as "spaceId", name, colour, icon
+      from public.categories
+      order by sort_order, name
+    `;
+  });
+
+  const out: Record<string, CategoryOption[]> = {};
+  for (const r of rows) {
+    (out[r.spaceId] ??= []).push({ id: r.id, name: r.name, colour: r.colour, icon: r.icon });
+  }
+  return out;
 }

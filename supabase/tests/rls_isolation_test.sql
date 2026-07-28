@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(42);
+select plan(46);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -416,6 +416,47 @@ select throws_ok(
   null,
   'previewing a move into a space you cannot write to is refused'
 );
+
+-- ===========================================================================
+-- 9b. app.entity_space — SECURITY INVOKER, so RLS decides
+--
+-- Note linking calls this to refuse a link across a space boundary. If it ever
+-- became SECURITY DEFINER it would hand a space id for an item the caller
+-- cannot read, which is a membership disclosure.
+-- ===========================================================================
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+select is(
+  (select space_id from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000002')),
+  'aaaaaaaa-0000-0000-0000-000000000002'::uuid,
+  'entity_space resolves the space of an item you can read');
+
+select tests.act_as('44444444-4444-4444-4444-444444444444');
+
+select is(
+  (select count(*)::int from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000002')),
+  0,
+  'and returns nothing at all to an outsider');
+
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+select is(
+  (select count(*)::int from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000003')),
+  0,
+  'a private task in a shared space is invisible to entity_space too');
+
+-- A note cannot be linked to something in another space: the insert selects the
+-- target's space through entity_space and matches it against the note's.
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+select is(
+  (select count(*)::int
+   from public.notes n
+   where n.id = 'cccccccc-0000-0000-0000-000000000001'
+     and exists (select 1 from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000001') es
+                 where es.space_id = n.space_id)),
+  0,
+  'linking a Home note to a task in Alice''s personal space matches nothing');
 
 -- ===========================================================================
 -- 10. Structural invariants — these catch a careless new table

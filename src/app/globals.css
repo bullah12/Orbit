@@ -110,6 +110,44 @@ body {
   border-radius: 3px;
 }
 
+/*
+ * Skip link. Every page puts the sidebar first in the DOM, so a keyboard user
+ * would otherwise tab through the whole nav on every navigation.
+ */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 50;
+}
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 13px;
+}
+
+/*
+ * Form controls. Native elements, styled — a custom select would have to
+ * reimplement keyboard behaviour that the browser already gets right.
+ */
+.input {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.3rem 0.45rem;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+}
+.input:hover { border-color: var(--line-strong); }
+select.input { appearance: auto; }
+
 @layer utilities {
   .surface     { background: var(--bg-raised); border: 1px solid var(--line); }
   .hairline    { border-color: var(--line); }
