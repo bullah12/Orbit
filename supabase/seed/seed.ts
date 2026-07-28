@@ -10,6 +10,10 @@
  *   pnpm seed
  */
 import postgres from 'postgres';
+import { evaluateAll, type TaskFact } from '../../src/lib/rules';
+
+/** One task as the rules evaluator wants it. Mirrors the query in src/lib/queries/rules.ts. */
+type RuleFactRow = Omit<TaskFact, 'kind'>;
 
 const SEED_DATABASE_URL =
   process.env.SEED_DATABASE_URL ??
@@ -787,15 +791,18 @@ async function main() {
        ${sql.json({ category: 'admin', status: ['todo', 'blocked'] })}, 0)
   `;
 
+  const RULE_BINS = '00000000-0000-4000-8000-0000000000b1';
+  const RULE_ADMIN = '00000000-0000-4000-8000-0000000000b2';
+  const RULE_WORK = '00000000-0000-4000-8000-0000000000b3';
   await sql`
-    insert into public.rules (space_id, owner_id, name, slug, description, trigger, conditions, actions, is_enabled, last_dry_run_at) values
-      (${S_HOME}, ${PRIYA}, 'Bins go to Danny', 'bins-to-danny',
+    insert into public.rules (id, space_id, owner_id, name, slug, description, trigger, conditions, actions, is_enabled, last_dry_run_at) values
+      (${RULE_BINS}, ${S_HOME}, ${PRIYA}, 'Bins go to Danny', 'bins-to-danny',
        'Anything mentioning the bins gets assigned to Danny.',
        ${sql.json({ kind: 'task.created' })},
        ${sql.json([{ field: 'title', op: 'contains', value: 'bin' }])},
        ${sql.json([{ kind: 'task.assign', to: 'partner' }])},
        false, null),
-      (${S_HOME}, ${PRIYA}, 'Overdue admin becomes high priority', 'overdue-admin-high',
+      (${RULE_ADMIN}, ${S_HOME}, ${PRIYA}, 'Overdue admin becomes high priority', 'overdue-admin-high',
        'Admin tasks more than a week overdue move to high priority.',
        ${sql.json({ kind: 'schedule', cron: '0 7 * * *' })},
        ${sql.json([
@@ -803,8 +810,119 @@ async function main() {
          { field: 'days_overdue', op: 'gte', value: 7 },
        ])},
        ${sql.json([{ kind: 'task.set_priority', priority: 'high' }])},
+       false, null),
+      -- One rule in Work, so "the partner sees Home rules and not Work ones"
+      -- has something on the Work side to fail on. Same reason there is one
+      -- place seeded into Work.
+      (${RULE_WORK}, ${S_WORK}, ${PRIYA}, 'Invoices are urgent after a fortnight', 'invoices-urgent',
+       'Unpaid invoices become urgent once they are two weeks overdue.',
+       ${sql.json({ kind: 'schedule', cron: '0 8 * * 1' })},
+       ${sql.json([
+         { field: 'title', op: 'contains', value: 'invoice' },
+         { field: 'days_overdue', op: 'gte', value: 14 },
+       ])},
+       ${sql.json([{ kind: 'task.set_priority', priority: 'urgent' }])},
        false, null)
   `;
+
+  // -- Phase 4: something for the rules to actually chew on ----------------
+  //
+  // Both seeded rules live in Home, and until this block existed Home had
+  // nothing either of them matched: the "bin" tasks and the locked one were all
+  // in Priya's own space, so a dry run of the demo rule previewed 31 tasks and
+  // no changes. These five are fixed rather than random, so `/rules` shows the
+  // same preview on a cold container every time.
+  console.log('▸ rule fixtures');
+  const BIN_TASK = '00000000-0000-4000-8000-0000000000c1';
+  const LOCKED_HOME_TASK = '00000000-0000-4000-8000-0000000000c2';
+  await sql`
+    insert into public.tasks
+      (id, space_id, owner_id, category_id, title, body_md, status, priority, due_on, assignee_id, sort_order)
+    values
+      (${BIN_TASK}, ${S_HOME}, ${PRIYA}, ${catId[S_HOME]!.home ?? null},
+       'Put the bins out', 'Green bin this week.', 'todo', 'none',
+       ${isoDate(dayOffset(1))}, null, 900),
+      (${uid()}, ${S_HOME}, ${PRIYA}, ${catId[S_HOME]!.admin ?? null},
+       'File the VAT return', '', 'todo', 'normal', ${isoDate(dayOffset(-12))}, ${PRIYA}, 901),
+      (${uid()}, ${S_HOME}, ${PRIYA}, ${catId[S_HOME]!.admin ?? null},
+       'Chase the electrician''s invoice', '', 'todo', 'low', ${isoDate(dayOffset(-9))}, ${PRIYA}, 902),
+      (${uid()}, ${S_HOME}, ${PRIYA}, ${catId[S_HOME]!.admin ?? null},
+       'Renew the parking permit', '', 'todo', 'normal', ${isoDate(dayOffset(-2))}, ${PRIYA}, 903)
+  `;
+
+  // A locked task in Home, so a dry run demonstrates the refusal rather than
+  // only asserting it: the preview lists it as skipped and never as a match.
+  // Its title is empty by check constraint — the server has no plaintext.
+  await sql`
+    insert into public.tasks (id, space_id, owner_id, title, body_md, is_locked, due_on, sort_order)
+    values (${LOCKED_HOME_TASK}, ${S_HOME}, ${PRIYA}, '', '', true, ${isoDate(dayOffset(-14))}, 904)
+  `;
+  await sql`
+    insert into public.encrypted_blobs
+      (space_id, owner_id, entity_kind, entity_id, ciphertext, nonce, algorithm)
+    values (${S_HOME}, ${PRIYA}, 'task', ${LOCKED_HOME_TASK},
+            ${Buffer.from('seed placeholder ciphertext').toString('base64')},
+            ${Buffer.from('seednonce4567').toString('base64')}, 'xchacha20poly1305')
+  `;
+
+  // A dry run of each rule, computed by the real evaluator against the rows
+  // above — not a hand-written fixture. `rule_runs` therefore leaves the pgTAP
+  // known-empty ledger holding rows that say what the engine really does.
+  for (const [ruleId, trigger, conditions, actions] of [
+    [RULE_BINS, { kind: 'task.created' as const },
+     [{ field: 'title' as const, op: 'contains' as const, value: 'bin' }],
+     [{ kind: 'task.assign' as const, to: 'partner' as const }]],
+    [RULE_ADMIN, { kind: 'schedule' as const, cron: '0 7 * * *' },
+     [{ field: 'category.slug' as const, op: 'eq' as const, value: 'admin' },
+      { field: 'days_overdue' as const, op: 'gte' as const, value: 7 }],
+     [{ kind: 'task.set_priority' as const, priority: 'high' as const }]],
+  ] as const) {
+    const facts = await sql<RuleFactRow[]>`
+      select t.id, t.space_id as "spaceId", t.is_locked as "isLocked", t.title,
+             t.body_md as body, t.status::text as status, t.priority::text as priority,
+             c.slug as "categorySlug", a.display_name as "assigneeName",
+             t.assignee_id as "assigneeId", t.due_on as "dueOn",
+             t.deferred_until as "deferredUntil", t.estimate_minutes as "estimateMinutes"
+      from public.tasks t
+      left join public.categories c on c.id = t.category_id
+      left join public.profiles a on a.id = t.assignee_id
+      where t.space_id = ${S_HOME} and t.status in ('todo','doing','blocked')
+      order by t.due_on nulls last, t.created_at
+    `;
+    const summary = evaluateAll(
+      { id: ruleId, spaceId: S_HOME, name: '', trigger, conditions: [...conditions], actions: [...actions], isEnabled: false },
+      // This connection has no date-to-string override (the app's pool does, see
+      // src/lib/db/index.ts), so a date arrives as a Date and the evaluator
+      // wants the calendar date it stands for.
+      facts.map((f) => ({
+        ...f,
+        kind: 'task' as const,
+        dueOn: f.dueOn ? isoDate(new Date(f.dueOn)) : null,
+        deferredUntil: f.deferredUntil ? new Date(f.deferredUntil).toISOString() : null,
+      })),
+      { me: { id: PRIYA, name: 'Priya Raghavan' }, partner: { id: DANNY, name: 'Danny Whitehouse' } },
+    );
+    const effects = summary.items.map((i) => ({
+      entity: i.fact.id,
+      title: i.fact.isLocked ? '(locked)' : i.fact.title,
+      matched: i.outcome.matched,
+      skipped: i.outcome.skipped,
+      reason: i.outcome.reason,
+      changes: i.outcome.effects.map((e) => ({
+        kind: e.kind,
+        description: e.description,
+        before: e.kind === 'task.update' ? e.before : null,
+        after: e.kind === 'task.update' ? e.after : null,
+      })),
+    }));
+    await sql`
+      insert into public.rule_runs
+        (space_id, owner_id, rule_id, is_dry_run, trigger_kind, matched, effects, duration_ms)
+      values (${S_HOME}, ${PRIYA}, ${ruleId}, true, ${trigger.kind},
+              ${summary.matched > 0}, ${sql.json(effects)}, 1)
+    `;
+    await sql`update public.rules set last_dry_run_at = now() where id = ${ruleId}`;
+  }
 
   const dueSoon = await sql<{ id: string; space_id: string; owner_id: string }[]>`
     select id, space_id, owner_id from public.tasks
@@ -816,6 +934,43 @@ async function main() {
       insert into public.reminders (space_id, owner_id, entity_kind, entity_id, remind_at, message)
       values (${t.space_id}, ${t.owner_id}, 'task', ${t.id}, ${at(int(0, 5), 8)}, '')
     `;
+  }
+
+  // One queued push delivery, so `notification_deliveries` holds a row and its
+  // policy is covered. Queued is the honest state: nothing has sent it. A
+  // delivery is written whatever the provider says, which is the only way to
+  // tell "the rule never fired" from "it fired and the push went nowhere".
+  {
+    const [r] = await sql<{ id: string; space_id: string; owner_id: string }[]>`
+      select id, space_id, owner_id from public.reminders
+      where space_id = ${S_HOME} order by remind_at limit 1
+    `;
+    const [d] = await sql<{ id: string }[]>`
+      select id from public.devices where space_id = ${S_HOME} limit 1
+    `;
+    if (r) {
+      await sql`
+        insert into public.notification_deliveries
+          (space_id, owner_id, reminder_id, device_id, channel, status, provider)
+        values (${r.space_id}, ${r.owner_id}, ${r.id}, ${d?.id ?? null}, 'push', 'queued', 'push:fake')
+      `;
+    }
+  }
+
+  // One note version, so `note_versions` holds a row from a cold seed. The app
+  // writes one on every edit; nothing had ever edited a seeded note.
+  {
+    const [n] = await sql<{ id: string; space_id: string; owner_id: string; title: string; body_md: string }[]>`
+      select id, space_id, owner_id, title, body_md from public.notes
+      where space_id = ${S_HOME} and not is_locked order by created_at limit 1
+    `;
+    if (n) {
+      await sql`
+        insert into public.note_versions (space_id, owner_id, note_id, version, title, body_md)
+        values (${n.space_id}, ${n.owner_id}, ${n.id}, 1, ${n.title},
+                ${n.body_md + '\n\nFirst draft, kept by the seed so version history is not empty.'})
+      `;
+    }
   }
 
   // -- devices, AI consent --------------------------------------------------
@@ -852,6 +1007,8 @@ async function main() {
     union all select 'place_visits', count(*)::int from public.place_visits
     union all select 'travel_legs', count(*)::int from public.travel_legs
     union all select 'travel_sessions', count(*)::int from public.travel_sessions
+    union all select 'rules', count(*)::int from public.rules
+    union all select 'rule_runs', count(*)::int from public.rule_runs
     order by 1
   `;
   console.log('▸ seeded:');

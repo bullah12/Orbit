@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(63);
+select plan(70);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -156,6 +156,39 @@ insert into public.travel_legs
    '11111111-1111-1111-1111-111111111111', 'a3a3a3a3-0000-0000-0000-000000000002',
    'a1a1a1a1-0000-0000-0000-000000000002', null, 'train',
    '2026-08-14 08:00+01', '2026-08-14 11:00+01', 180);
+
+-- Rules, their runs and their notifications — Phase 4.
+--
+-- A rule is a program that rewrites somebody's tasks unattended, and its runs
+-- record the titles of everything it looked at. Both are strictly more than
+-- "busy", so Carol must see neither. Two of each: one in the shared space, one
+-- in Alice's own.
+insert into public.rules (id, space_id, owner_id, name, slug, trigger, conditions, actions) values
+  ('a5a5a5a5-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'Shared rule', 'shared-rule',
+   '{"kind":"task.created"}'::jsonb, '[]'::jsonb,
+   '[{"kind":"task.set_priority","priority":"high"}]'::jsonb),
+  ('a5a5a5a5-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'Alice''s own rule', 'alices-own-rule',
+   '{"kind":"schedule","cron":"0 7 * * *"}'::jsonb, '[]'::jsonb,
+   '[{"kind":"notify"}]'::jsonb);
+
+insert into public.rule_runs
+  (id, space_id, owner_id, rule_id, is_dry_run, trigger_kind, matched, effects) values
+  ('a6a6a6a6-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'a5a5a5a5-0000-0000-0000-000000000001',
+   true, 'task.created', true,
+   '[{"entity":"x","title":"Shared task","matched":true,"skipped":null,"reason":"Matched, 1 change.","changes":[]}]'::jsonb),
+  ('a6a6a6a6-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'a5a5a5a5-0000-0000-0000-000000000002',
+   false, 'schedule', false, '[]'::jsonb);
+
+insert into public.notification_deliveries
+  (id, space_id, owner_id, channel, status, provider) values
+  ('a7a7a7a7-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'push', 'sent', 'push:fake'),
+  ('a7a7a7a7-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'push', 'queued', 'push:fake');
 
 -- ===========================================================================
 -- 1. RLS is on, everywhere
@@ -335,6 +368,61 @@ select is(
   (select count(*)::int from public.travel_sessions),
   0,
   'and no trips — that you are away is not the same as that you are busy');
+
+-- Rules and their audit trail, from both sides of the membership.
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+select is(
+  (select count(*)::int from public.rules
+   where id in ('a5a5a5a5-0000-0000-0000-000000000001',
+                'a5a5a5a5-0000-0000-0000-000000000002')),
+  1,
+  'the partner sees the rule in the shared space and not the one in Alice''s own');
+
+select is(
+  (select count(*)::int from public.rule_runs
+   where id in ('a6a6a6a6-0000-0000-0000-000000000001',
+                'a6a6a6a6-0000-0000-0000-000000000002')),
+  1,
+  'and only the run belonging to it — a run names every task it looked at');
+
+select is(
+  (select count(*)::int from public.notification_deliveries
+   where id in ('a7a7a7a7-0000-0000-0000-000000000001',
+                'a7a7a7a7-0000-0000-0000-000000000002')),
+  1,
+  'and only the delivery in the shared space');
+
+select tests.act_as('33333333-3333-3333-3333-333333333333');
+
+select is(
+  (select count(*)::int from public.rules),
+  0,
+  'a free_busy participant sees no rules — a rule is a program over content');
+
+select is(
+  (select count(*)::int from public.rule_runs),
+  0,
+  'and no runs: a run records the titles of everything the rule considered');
+
+select is(
+  (select count(*)::int from public.notification_deliveries),
+  0,
+  'and no notification deliveries');
+
+-- A rule cannot be pointed at another space. The FK is to spaces, so the write
+-- that matters is the one where space_id says one thing and the rule's own
+-- policy says another: the partner writing a rule into Alice's private space.
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+select throws_ok(
+  $$insert into public.rules (space_id, owner_id, name, slug, trigger)
+    values ('aaaaaaaa-0000-0000-0000-000000000001',
+            '22222222-2222-2222-2222-222222222222', 'Reach', 'reach',
+            '{"kind":"task.created"}'::jsonb)$$,
+  '42501',
+  null,
+  'the partner cannot create a rule inside a space they are not in');
 
 -- ===========================================================================
 -- 4. Writing
@@ -705,9 +793,8 @@ select is(
    from unnest(string_to_array(tests.tables_with_rows(), ', ')) as t
    where t <> ''
      and t <> all (array[
-       'ai_runs', 'attachments', 'note_versions',
-       'notification_deliveries', 'person_relationships',
-       'rule_runs', 'space_invites', 'sync_cursors'
+       'ai_runs', 'attachments', 'person_relationships',
+       'space_invites', 'sync_cursors'
      ])),
   '',
   'every table outside the known-empty ledger holds rows, so the outsider check is not vacuous'

@@ -7,6 +7,7 @@ import { HttpIcsProvider } from '@/lib/integrations/ics/http';
 import { GoogleCalendarProvider } from '@/lib/integrations/calendar/google';
 import { NominatimGeocodingProvider } from '@/lib/integrations/geocoding/nominatim';
 import { OpenRouteServiceTravelTimeProvider } from '@/lib/integrations/travel/openrouteservice';
+import { WebPushProvider } from '@/lib/integrations/push/webpush';
 import { parseIcs, parseIcsDuration } from '@/lib/integrations/ics/parse';
 import {
   IntegrationError,
@@ -20,6 +21,14 @@ import {
   UnknownProviderError,
 } from '@/lib/integrations';
 import { expandRecurrence } from '@/lib/recurrence';
+
+/** What a browser's PushSubscription.toJSON() looks like. Shape only — no real keys. */
+function subscriptionJson(): string {
+  return JSON.stringify({
+    endpoint: 'https://push.example.invalid/subscription/abc',
+    keys: { p256dh: 'BF'.padEnd(87, 'A'), auth: 'AAAAAAAAAAAAAAAAAAAAAA' },
+  });
+}
 import { londonInstant, londonTimeHHMM } from '@/lib/format';
 
 /**
@@ -56,7 +65,8 @@ describe('provider selection', () => {
     expect(() => selectCalendarProvider({ CALENDAR_PROVIDER: 'outlook' })).toThrow(UnknownProviderError);
     expect(() => selectGeocodingProvider({ GEOCODING_PROVIDER: 'google' })).toThrow(UnknownProviderError);
     expect(() => selectTravelTimeProvider({ TRAVEL_TIME_PROVIDER: 'google' })).toThrow(UnknownProviderError);
-    expect(() => selectPushProvider({ PUSH_PROVIDER: 'webpush' })).toThrow(UnknownProviderError);
+    expect(() => selectPushProvider({ PUSH_PROVIDER: 'apns' })).toThrow(UnknownProviderError);
+    expect(() => selectAiProvider({ AI_PROVIDER: 'anthropic' })).toThrow(UnknownProviderError);
   });
 
   it('constructing a real provider without credentials does not throw', () => {
@@ -91,6 +101,53 @@ describe('provider selection', () => {
         { lat: 52.4, lon: -1.9 }, { lat: 52.5, lon: -1.8 }, 'drive',
       ),
     ).rejects.toMatchObject({ name: 'IntegrationError', kind: 'missing_credential' });
+  });
+
+  it('the real push provider constructs with nothing and refuses when called', async () => {
+    // Phase 4's real implementation, written from RFC 8030 / 8291 / 8292 and
+    // never executed against a push service. What is provable here is the same
+    // thing that is provable for Nominatim and ORS: it boots without a
+    // credential and will not act without one.
+    expect(() => new WebPushProvider({})).not.toThrow();
+    await expect(
+      new WebPushProvider({}).send(subscriptionJson(), { title: 'Orbit', body: 'Bins' }),
+    ).rejects.toMatchObject({ name: 'IntegrationError', kind: 'missing_credential' });
+  });
+
+  it('the real push provider refuses a subscription that is not one', async () => {
+    const vapid = {
+      VAPID_PUBLIC_KEY: 'not-a-real-key',
+      VAPID_PRIVATE_KEY: 'not-a-real-key',
+      VAPID_SUBJECT: 'mailto:nobody@example.invalid',
+    };
+    for (const ref of ['', 'not json', '{}', '{"endpoint":"http://insecure.example/x"}']) {
+      await expect(
+        new WebPushProvider(vapid).send(ref, { title: 'Orbit', body: 'Bins' }),
+      ).rejects.toMatchObject({ name: 'IntegrationError', kind: 'malformed' });
+    }
+  });
+
+  it('a push message never carries an external URL', async () => {
+    // The one place a link becomes something somebody taps from a lock screen.
+    // Refused before a credential is even read, so the check cannot be skipped
+    // by an environment that happens to have one.
+    await expect(
+      new WebPushProvider({}).send(subscriptionJson(), {
+        title: 'Orbit',
+        body: 'Bins',
+        href: 'https://example.invalid/phish',
+      }),
+    ).rejects.toMatchObject({ kind: 'malformed' });
+  });
+
+  it('the push provider selected by default is the in-memory outbox', async () => {
+    const provider = selectPushProvider({});
+    expect(provider.isFake).toBe(true);
+    expect(provider.name).toBe('push:fake');
+    await provider.send('device-1', { title: 'Orbit', body: 'Bins tonight', href: '/tasks/1' });
+    expect(providerSummary({ PUSH_PROVIDER: 'webpush' })).toContainEqual({
+      variable: 'PUSH_PROVIDER', name: 'push:webpush', isFake: false,
+    });
   });
 
   it('an empty geocode query is answered without a request or a credential', async () => {

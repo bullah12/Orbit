@@ -1,29 +1,29 @@
 # STATUS — handoff contract
 
-Last rewritten: **session 4**, 2026-07-28. Branch:
-`claude/orbit-phase-3-places-7x37yk`.
+Last rewritten: **session 5**, 2026-07-28. Branch:
+`claude/orbit-phase-4-rules-gey60v`.
 
 This file takes precedence over your assumptions about what is done. Read it,
 then `docs/decisions-log.md`, then get the database up and pick from **Next
 three things** at the bottom.
 
-**Where the project is:** Phases 0, 1, 2 and **3** are complete and shippable.
-Phases 4–6 have not started.
+**Where the project is:** Phases 0, 1, 2, 3 and **4** are complete and
+shippable. Phases 5 and 6 have not started.
 
 **Five commands are the whole truth about this repo.** All five were run from a
-rebuilt database at the end of session 4 and all five were green:
+rebuilt database at the end of session 5 and all five were green:
 
 ```
-./scripts/db-test.sh   63/63 pgTAP assertions
+./scripts/db-test.sh   70/70 pgTAP assertions
 pnpm build             clean
 pnpm typecheck         clean (needs the build first on a fresh clone)
-pnpm test              276 Vitest tests in 8 files
-pnpm smoke             127/127 against the running app     (needs pnpm start)
+pnpm test              349 Vitest tests in 9 files
+pnpm smoke             155/155 against the running app     (needs pnpm start)
 ```
 
-`pnpm smoke` was run **three times in a row** without reseeding after that
-rebuild, and passed every time. Two of those runs found a latent flake in the
-session-3 checks — see rough edge 7 — which is fixed rather than tolerated.
+`pnpm smoke` was run **twice in a row without reseeding** after that rebuild
+and passed both times. The rules section it gained this session creates a rule
+and deletes it again, so it leaves the list exactly as it found it.
 
 ---
 
@@ -37,88 +37,84 @@ Everything here was executed and watched.
   seeds. It **fails the run** if any table lacks RLS.
 - 41 tables, 41 with RLS. `space_id` + `owner_id` on every space-scoped table;
   every unique constraint leads with `space_id`. Both asserted structurally.
-- **No migration was added this session.** Phase 3 needed no column the schema
-  did not already have. `0010_recurrence_exdates.sql` is still the only
-  extension since session 1.
+- **One migration this session:** `0011_travel_leg_identity.sql`, a partial
+  unique index giving a derived travel leg an identity. That is the second
+  schema extension in five sessions; Phase 4 itself needed no column the schema
+  did not already have.
 - `app.space_move_preview()`, `app.free_busy_blocks()`, `app.entity_space()` —
   unchanged, all still pinned by pgTAP.
 
-**pgTAP — `./scripts/db-test.sh`, 63/63**
+**pgTAP — `./scripts/db-test.sh`, 70/70**
 - Runs as `authenticated`, not the table owner.
 - **"The outsider sees zero rows in every table in the database"** iterates
   `pg_tables` rather than a hand-written list.
-- The known-empty ledger is down to eight tables: `ai_runs`, `attachments`,
-  `note_versions`, `notification_deliveries`, `person_relationships`,
-  `rule_runs`, `space_invites`, `sync_cursors`. **`place_visits`,
-  `travel_legs` and `travel_sessions` left it this session** — the seed writes
-  all three now.
-- **New this session (8 assertions):** the partner sees the shared place,
-  visit, journey and trip and not the ones in Priya's own space; a `free_busy`
-  participant sees **none** of those four tables. Where somebody went, and when
-  they left to get there, is content — strictly more than "busy".
+- **New this session (7 assertions):** the partner sees the rule, the run and
+  the notification delivery in the shared space and none of the ones in
+  Alice's own; a free/busy participant sees none of the three, because a run
+  records the titles of everything the rule considered and that is strictly
+  more than "busy"; and the partner cannot create a rule inside a space they
+  are not in.
+- The known-empty ledger is down to **five** tables. `rule_runs`,
+  `notification_deliveries` and `note_versions` left it this session — the seed
+  writes all three now. What remains: `ai_runs` (Phase 5), `sync_cursors`
+  (Phase 6), and `attachments`, `person_relationships`, `space_invites`, which
+  **stay unused on purpose** — the reasoning is a paragraph in
+  `docs/decisions-log.md`, not silence.
 
-**TypeScript tests — `pnpm test`, 276 Vitest tests in 8 files**
-- `tests/travel.test.ts` (46) — **new this session.** Mode mapping and buffers,
-  door-to-door times, departure instants, whether a journey fits the gap,
-  derivation from a day's events, sessions from multi-day ones, day fractions.
-  Every clock case is on the real 2026 boundaries: the 23-hour day on 29 March
-  and the 25-hour day on 25 October, in both directions.
-- `tests/integrations.test.ts` (32, was 29) — adds the two Phase 3 real
-  providers: both construct with no credential, both refuse when called, an
-  empty geocode query never becomes a request, and ORS refuses `transit`.
-- `tests/format.test.ts` (42), `tests/calendar.test.ts` (42),
-  `tests/recurrence.test.ts` (26), `tests/smartlists.test.ts` (32),
-  `tests/markdown.test.ts` (30), `tests/contrast.test.ts` (26) — unchanged.
+**TypeScript tests — `pnpm test`, 349 Vitest tests in 9 files**
+- `tests/rules.test.ts` (69) — **new this session.** Parsing what jsonb hands
+  back, every condition operator including the boundaries, `-0`, and a value
+  typed as a string; every action, including the ones that correctly do
+  nothing; both refusals from several directions; a whole run's counts and its
+  sentence; days overdue across both 2026 clock changes; and that evaluating
+  twice mutates nothing.
+- `tests/integrations.test.ts` (36, was 32) — adds the real Web Push provider:
+  it constructs with no credential, refuses when called without one, refuses a
+  subscription that is not one, and refuses a message whose link is external.
+- `tests/travel.test.ts` (46), `tests/format.test.ts` (42),
+  `tests/calendar.test.ts` (42), `tests/smartlists.test.ts` (32),
+  `tests/markdown.test.ts` (30), `tests/recurrence.test.ts` (26),
+  `tests/contrast.test.ts` (26) — unchanged.
 
-**Smoke — `pnpm smoke`, 127 checks against the running app**
-`scripts/smoke.mjs` drives Chromium against `pnpm start`. This is how "verify
-RLS through the running app, not only in pgTAP" gets done. 50 checks are new
-this session.
+**Smoke — `pnpm smoke`, 155 checks against the running app**
+`scripts/smoke.mjs` drives Chromium against `pnpm start`. 28 checks are new
+this session, and they assert a *sequence* rather than a state.
 
 | Acting as | Result |
 |---|---|
-| Priya | 16 places listed with a space indicator on every row; place edit, geocode, visit log, event↔place link, journey save/re-estimate/delete all round-trip to Postgres; the move preview for a place |
-| Danny (partner) | sees the 15 Home places and **not** the one in Priya's own space (direct link is a **404**); sees the Home trip and **not** the Work one he only has free/busy on |
-| Sam Okafor (outsider) | **0 places**, **no trips**, **no journeys**, **no events to derive one from**; direct links are 404s |
+| Priya | the rules list with a space indicator on every row; a new rule refuses to switch on with no action, refuses again with an action but no preview, previews, switches on, runs for real, and loses its permission to run the moment it is edited; the locked task appears as skipped; both new pages pass the label audit; the rule is deleted and the list is as it was found |
+| Danny (partner) | sees the rules in the space he shares and **not** the one in the space he only has free/busy on |
+| Sam Okafor (outsider) | **0 rules**, no runs; a direct link to a real rule is a **404** |
 
-**App — Phases 0, 1 and 2** (unchanged, all still green in smoke)
+**App — Phase 4, new this session**
+- **`/rules`** — every rule with its space indicator, what it would do in one
+  sentence (`describeRule`), whether it is on, when it was last previewed and
+  how often it has run. Recent runs and recent notification deliveries below.
+- **`/rules/[id]`** — the whole rule, in the order somebody works. Rename it,
+  change its trigger, add and remove conditions and actions from closed lists;
+  dry-run it; read the preview item by item; switch it on; run it for real;
+  read the audit trail; delete it.
+- **The dry run names everything.** "Assign “Put the bins out” to Danny
+  Whitehouse (it is with nobody now)". Items with a change or a skip are listed
+  first; the tasks it looked at and left alone are behind a disclosure.
+- **A locked task is listed as skipped**, with the reason, and its title is
+  never shown — it has none. Verified in the running app, not only in Vitest.
+- **A rule cannot be switched on until it has been dry-run**, and any
+  structural edit switches it off and clears the preview.
+- **Rules fire by themselves.** Creating, changing or completing a task runs
+  the enabled rules for that trigger. Verified: creating "Take the bin bags to
+  the shed" in Home assigned it to Danny and wrote a `rule_runs` row.
+- **Notifications go through the `PushProvider` fake** and write a
+  `notification_deliveries` row whatever the provider says. Verified: a `notify`
+  action produced a `sent` row against `push:fake`.
+
+**App — Phases 0–3** (unchanged, all still green in smoke)
 Today with the quiet "N events yesterday, no notes" row; eight smart lists;
 tasks, notes with versions and Markdown, people with contacts, dates and
 linking; the merged week/day/month calendar with anonymous free/busy blocks,
-recurrence expanded from one row plus an RRULE, ICS import and provider pull.
-
-**App — Phase 3, new this session**
-- **`/places`** — the 15 seeded Birmingham places (plus one seeded into Work)
-  with the space indicator on every row and on the compose bar. Search by name,
-  address or postcode; show/hide archived; a coordinate summary or a "no point"
-  flag per row.
-- **`/places/[id]`** — edit name, address, postcode, city, category,
-  coordinates and Markdown notes; log and remove visits; see the events, notes
-  and people attached. **People are derived from event attendees** and the page
-  says so.
-- **Geocoding from the running app with no network.** "Find coordinates" calls
-  the selected `GeocodingProvider`; with the default fake it resolves against a
-  table of Birmingham locations and writes `geocode_source`, so a place always
-  says where its point came from. The section names the provider that will
-  answer, and the outcome is announced through a live region.
-- **Places can be moved between spaces**, behind `app.space_move_preview()`.
-  **That completes the hard requirement**: tasks, people, events, notes and now
-  places all state who gains and who loses before anything is written.
-- **An event can name a place** from its own space, on the event detail page.
-- **`/travel`** — trips and journeys.
-  - *Trips*: started by hand, or lifted from a multi-day calendar event with
-    one click. Day counts are computed by counting London midnights, so the
-    clock-change weekends are right.
-  - *Journeys*: typed in, or derived from two events at different places. The
-    derived list states the door-to-door estimate with the moving part and the
-    buffer shown separately, and whether it fits: "68 min spare" or "2 min
-    short". Saving one works the departure instant back from the arrival and
-    asks the provider for a real estimate at that moment.
-  - A saved journey can be re-estimated in another mode; the space indicator is
-    on every journey and every trip row.
-- **The seed writes a fixed travel day, 29 July 2026** — three placed Home
-  events arranged so the first hop has room and the second does not. `/travel`
-  demonstrates both verdicts on a cold container.
+recurrence expanded from one row plus an RRULE, ICS import and provider pull;
+places with geocoding, visits and links; travel with trips and derived
+journeys.
 
 ---
 
@@ -132,33 +128,34 @@ error rather than a silent fall back.
 |---|---|---|
 | `CalendarProvider` | `calendar:fake` | `calendar:google` — **written, never run** |
 | `IcsProvider` | `ics:fake` | `ics:http` — **written, never run** |
-| `GeocodingProvider` | `geocoding:fake` — Birmingham fixtures, substring match | `geocoding:nominatim` — **written, never run** (new) |
-| `TravelTimeProvider` | `travel:fake` — haversine × mode speed | `travel:openrouteservice` — **written, never run** (new) |
-| `PushProvider` | `push:fake` — in-memory outbox | **not written** — Phase 4 |
+| `GeocodingProvider` | `geocoding:fake` | `geocoding:nominatim` — **written, never run** |
+| `TravelTimeProvider` | `travel:fake` | `travel:openrouteservice` — **written, never run** |
+| `PushProvider` | `push:fake` — in-memory outbox | `push:webpush` — **written, never run** (new) |
 | `AiProvider` | `ai:fake` — deterministic, offline | **not written** — Phase 5 |
 
-**"Written, never run" means exactly that.** `NominatimGeocodingProvider` and
-`OpenRouteServiceTravelTimeProvider` have never executed a request — there is
-no network and no credential in this environment and there never will be. They
-are written against the published APIs and usage policies. **Do not describe
-either as working, and do not let the fake stand in for one in a "Works"
-claim.** What *is* verified: both construct with no credential, both refuse
-when called, an empty geocode query never becomes a request, and ORS refuses
-`transit` rather than answering a bus question with a driving time.
+**"Written, never run" means exactly that.** `WebPushProvider` has never sent a
+request: RFC 8030 delivery, RFC 8292 VAPID signing and RFC 8291 `aes128gcm`
+payload encryption, all written from the specifications and none of it
+executed against a push service. **Do not describe it as working, and do not
+let the fake stand in for it in a "Works" claim.** What *is* verified: it
+constructs with no credential, refuses when called without one, refuses a
+malformed subscription, and refuses a message whose link is not an in-app path.
 
 Also still fixture-backed or absent:
 - **Auth** is a cookie naming a seeded profile. `AUTH_PROVIDER=dev` is the only
   implementation; the cookie is unsigned despite `AUTH_COOKIE_SECRET` existing.
-- **Locked items** are modelled and enforced end to end in the database but
-  there is **no client-side crypto**. The UI refuses to show or edit them.
-- **Rules engine**: tables and two seeded rules, both disabled. No evaluator.
+- **Locked items** are modelled and enforced end to end in the database, and now
+  in the rules engine, but there is **no client-side crypto**. The UI refuses to
+  show or edit them.
+- **There is no scheduler.** A `schedule` rule is evaluated by exactly the same
+  code as every other rule and runs when somebody presses "Run now, for real".
 
 ---
 
 ## Not started
 
-Phases 4–6 in `docs/phase-plan.md`: the rules evaluator, search, NL capture,
-AI, sync and offline.
+Phases 5 and 6 in `docs/phase-plan.md`: search, NL capture, AI; sync and
+offline.
 
 ---
 
@@ -166,84 +163,84 @@ AI, sync and offline.
 
 Including the ones I introduced this session and did not fix.
 
-### Introduced or newly noticed in session 4
+### Introduced or newly noticed in session 5
 
-1. **A trip has no detail page.** It is a row on `/travel` with a delete
-   button. There is no way to edit its dates, its title or its notes once
-   created, and `travel_sessions.is_active` is written at creation and never
-   updated afterwards — a trip that is running now is shown as running by
-   computing it from the dates (`sessionIsActive`), not by reading the column.
-2. **Derived journeys are re-derived on every render**, like recurrence. It is
-   one day's events at a time so it is far smaller than the calendar's problem,
-   but it is the same shape.
-3. **The derived-journey mode is guessed from the distance** (under 1.5 km
-   walks, otherwise drives) and the guess is not remembered. Change it in the
-   picker, save, and the *next* derived journey guesses again.
-4. **A duplicate journey is refused by the insert, not by a constraint.**
-   `saveDerivedLeg` writes with a `where not exists` on
-   `(from, to, arrival)`, so two tabs or a double click cannot produce two
-   rows — but `travel_legs` still has no unique constraint, so anything that
-   writes a leg without going through that action could.
-5. **`estimateBetween()` swallows a provider failure.** A real provider without
-   a credential leaves the leg saved with `estimate_source = 'none'` and no
-   message on the screen. That is deliberate — the journey is still worth
-   recording — but the user is not told the provider refused.
-6. **A place's visits and events are capped at 25–50 rows** with no paging and
-   no "showing the most recent" label.
-7. **`pnpm smoke` still leaves state behind**: one archived person per run,
-   the fixture calendars connected, the school-term feed imported, and now one
-   place named "Smoke private place" in Priya's own space. All harmless, all
-   cleared by `pnpm seed`. **This was worse than session 3 recorded**: the ICS
-   import chose its target calendar by *index*, and connecting the fixture
-   calendars in run 1 added options that shifted that index, so run 2 imported
-   the same feed into a different space and left two "Monday assembly" rows.
-   The suite now chooses the calendar by name and reads the move destination
-   off the page rather than hard-coding a space id. If you find a duplicated
-   imported event in a database somebody ran the old suite against, `pnpm seed`
-   clears it.
+1. **Nothing runs a `schedule` rule on a schedule.** There is no background
+   worker and adding one is a deployment decision, which is out of scope. The
+   rule stores and shows its cron and runs when you press the button.
+   Consciously accepted — see `docs/decisions-log.md`.
+2. **A rule's conditions and actions are appended and removed, never edited.**
+   To change "contains bin" to "contains bins" you remove it and add it again.
+   Also: there is no reordering, which matters for actions and not for
+   conditions.
+3. **The action form is one select and one free-text box**, so the box means a
+   priority for one action and a number of days for another. The label lists
+   what it can be, and a wrong value is refused with a sentence, but it is a
+   form that knows more than it shows.
+4. **The rules engine only knows about tasks.** `entity_kind` on `rule_runs`
+   allows more and the fact type is a discriminated union ready for it, but
+   there is no event, note, person or place fact today.
+5. **A sweep is capped at 500 open tasks** in one space, silently. At this data
+   size it is not close, and there is no "showing the first 500" label.
+6. **`pnpm smoke` still leaves state behind**: one archived person per run, the
+   fixture calendars connected, the school-term feed imported, one place named
+   "Smoke private place", and now a handful of `notification_deliveries` rows.
+   All harmless, all cleared by `pnpm seed`. The rule the suite creates *is*
+   deleted, and the suite passes twice in a row — verified this session.
+7. **`rule_runs` is never pruned.** Every dry run is a row holding a JSON
+   summary of every task it considered. Nothing deletes old ones, and a rule
+   deleted takes its runs with it.
 
 ### Carried over, still true
 
-8. **A recurring event has one detail page for the whole series.** Editing it
-   changes every occurrence; the page says so. There is no "edit this
-   occurrence only" and **no UI at all for creating a repeat**.
-9. **Recurrence expansion re-runs on every render.** Bounded (400 occurrences
+8. **A trip has no detail page.** It is a row on `/travel` with a delete
+   button; its dates, title and notes cannot be edited after creation, and
+   `travel_sessions.is_active` is written once and never updated (the UI
+   computes it from the dates instead). Accepted in writing in session 4.
+9. **Derived journeys are re-derived on every render**, and **the derived mode
+   is guessed from the distance and the guess is not remembered**, and
+   **`estimateBetween()` swallows a provider failure** without saying so on the
+   screen. All three accepted in writing in session 4.
+10. **A recurring event has one detail page for the whole series.** Editing it
+    changes every occurrence; the page says so. There is no "edit this
+    occurrence only" and **no UI at all for creating a repeat**.
+11. **Recurrence expansion re-runs on every render.** Bounded (400 occurrences
     per rule, 4000 candidate periods) and imperceptible at this data size.
-10. **The calendar pull window is fixed at −180/+365 days**, in
+12. **The calendar pull window is fixed at −180/+365 days**, in
     `src/lib/sync/calendar.ts`.
-11. **Nothing pushes back.** Only `'pull'` is ever written to
+13. **Nothing pushes back.** Only `'pull'` is ever written to
     `calendar_sync_state.direction`, and `events.is_dirty` is set and never
     cleared.
-12. **The compose bar cannot set an event's location, attendees or notes.**
-13. **`switchUser` is impersonation by design.** Any seeded profile can be
+14. **The compose bar cannot set an event's location, attendees or notes.**
+15. **`switchUser` is impersonation by design.** Any seeded profile can be
     assumed with one click. **This build must not be exposed to a network you
     do not control.**
-14. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Typed
+16. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Typed
     routes are generated into `.next/types`. Also: a `redirect()` path built by
     concatenating strings loses its literal type — use one template literal.
-15. **The Markdown subset has no tables, no images, no task lists.**
-16. **The people list's "next date" is computed twice**, in SQL for the
+17. **The Markdown subset has no tables, no images, no task lists.**
+18. **The people list's "next date" is computed twice**, in SQL for the
     ordering and in TypeScript for the label, and neither is covered by Vitest.
-17. **A person's category is resolved back from its *name*** on the detail
-    page. The place page does the same thing, for the same reason, and it is
-    the same lookup that should not need to exist.
-18. **Contacts cannot be edited, only added and removed**; `is_primary` is
+19. **A person's category is resolved back from its *name*** on the detail
+    page. The place page does the same thing, for the same reason.
+20. **Contacts cannot be edited, only added and removed**; `is_primary` is
     never set from the UI.
-19. **Postgres does not survive container restarts.** `./scripts/db-reset.sh`
+21. **Postgres does not survive container restarts.** `./scripts/db-reset.sh`
     restarts it, or `service postgresql start` to keep the data.
-20. **`pkill -f next-server`, not `pkill -f "next start"`** — and beware that
-    `pkill -f next-server` **can match the shell running it**, which kills your
-    own command with exit 144 and sometimes takes the server with it. Start the
+22. **`pkill -f next-server` can match the shell running it**, which kills your
+    own command with exit 144 and sometimes takes the server with it. Prefer
+    `pgrep -f next-server | while read pid; do kill "$pid"; done`, start the
     server with `setsid nohup … & disown`, and if `pnpm start` logs
     `EADDRINUSE`, an old server is serving an old build and every check you run
     is testing yesterday's code.
-21. **No linting.** Out of scope by instruction.
-22. **`pnpm smoke` needs a running server** and Chromium at
+23. **No linting.** Out of scope by instruction.
+24. **`pnpm smoke` needs a running server** and Chromium at
     `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. Override with
     `CHROMIUM_PATH`.
 
-Fixed in session 4, previously listed here: move not being implemented for
-places (it is now, which completes the requirement for every entity type).
+Fixed in session 5, previously listed here: `travel_legs` had no unique
+constraint (migration 0011 gives a derived leg an identity), and a place's
+capped lists did not say they were capped.
 
 ---
 
@@ -255,12 +252,12 @@ From a cold container:
 cd /home/user/Orbit
 pnpm install
 ./scripts/db-reset.sh          # installs extensions if needed, migrates, seeds
-./scripts/db-test.sh           # 63/63 must be green
+./scripts/db-test.sh           # 70/70 must be green
 pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
-pnpm test                      # 276 Vitest tests
+pnpm test                      # 349 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm smoke                     # 127 checks against the running app
+pnpm smoke                     # 155 checks against the running app
 ```
 
 Start the server so it survives the shell that launched it:
@@ -282,9 +279,10 @@ and **no credential is required**.
 | `AUTH_PROVIDER` | `dev` | Only implementation. |
 | `CALENDAR_PROVIDER` | `fake` | `fake` \| `google`. Google needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`. Never run. |
 | `ICS_PROVIDER` | `fake` | `fake` \| `http`. |
-| `GEOCODING_PROVIDER` | `fake` | `fake` \| `nominatim`. Nominatim needs `NOMINATIM_CONTACT` and has never been run. |
-| `TRAVEL_TIME_PROVIDER` | `fake` | `fake` \| `openrouteservice`. ORS needs `ORS_API_KEY` and has never been run. |
-| `PUSH_PROVIDER` `AI_PROVIDER` | `fake` | `fake` is the only accepted value today; anything else is a hard error. |
+| `GEOCODING_PROVIDER` | `fake` | `fake` \| `nominatim`. Nominatim needs `NOMINATIM_CONTACT`. Never run. |
+| `TRAVEL_TIME_PROVIDER` | `fake` | `fake` \| `openrouteservice`. ORS needs `ORS_API_KEY`. Never run. |
+| `PUSH_PROVIDER` | `fake` | `fake` \| `webpush`. Web Push needs `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Never run. |
+| `AI_PROVIDER` | `fake` | `fake` is the only accepted value today; anything else is a hard error. |
 | `ORBIT_DB_NAME` | `orbit` | Read by both scripts. |
 | `ORBIT_URL` | `http://localhost:3000` | `pnpm smoke` only. |
 | `CHROMIUM_PATH` | `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` | `pnpm smoke` only. |
@@ -301,41 +299,43 @@ migrations and tests).
 | Danny Whitehouse | `…0002` | Danny, Home; `free_busy` on Work — the partner |
 | Sam Okafor | `…00ff` | nothing at all — the outsider |
 
-**A five-minute demo:** as Priya, open **Places** — 16 rows, each with a space
-indicator. Open Cannon Hill Park, clear its latitude and longitude, save, then
-press **Find coordinates**: it resolves with no network and says the point came
-from `geocoding:fake`. Open **Travel** and go to **29 July 2026**: the calendar
-implies two journeys, the first with 68 minutes spare and the second 2 minutes
-short. Save the first — it works the departure time back from the arrival —
-then re-estimate it as a walk and watch the duration change. Switch to Danny:
-the Pembrokeshire trip is there, the Leeds one is not. Switch to Sam: nothing
-at all, and a direct link to a place is a 404.
+**A five-minute demo:** as Priya, open **Rules**. Three rules, all off, each
+saying in one sentence what it would do. Open **Bins go to Danny** and press
+**Dry run — change nothing**: it lists the one task it would act on — "Assign
+“Put the bins out” to Danny Whitehouse (it is with nobody now)" — and the
+locked task, which it declined to read. Only now is **Switch on** offered.
+Switch it on, press **Run now, for real**, and the task is assigned. Add a
+**Notify me** action and the next run writes a delivery, listed at the bottom
+of `/rules` with the provider that answered. Then change the trigger and press
+Save: the rule switches itself off and says why. Switch to Danny — the Work
+rule is not there. Switch to Sam — nothing at all, and a direct link to a rule
+is a 404.
 
 ---
 
 ## Next three things, in order
 
-1. **Phase 4 — the rules engine.** Tables and two disabled seeded rules exist;
-   there is no evaluator. Dry-run preview before enabling, and a `rule_runs`
-   audit trail (`rule_runs` is one of the last tables in the pgTAP known-empty
-   ledger — take it out as you start writing to it). The brief calls it a bug
-   farm and it is: write the evaluator as a pure module against the
-   `PushProvider` fake, the way `src/lib/travel.ts` and `src/lib/recurrence.ts`
-   were done, with the tests before any UI.
+1. **Phase 5 — search, capture and AI.** Server-side search across everything
+   **except** locked items — the partial indexes are already on the tables
+   (`tasks_search_idx … where not is_locked` and its siblings), so the work is
+   a search view and a page, not new columns. NL capture parsed **locally**, in
+   a pure module under `src/lib/capture/`, never over the network, with the
+   parsing tests covering UK date phrasing across a BST boundary. AI off by
+   default, per-feature opt-in; `ai_feature_consents` is already seeded with
+   three disclosures and `is_enabled` false. `ai_runs` leaves the pgTAP ledger
+   this phase. No pgvector. Write the real `AiProvider`, mark it written, never
+   run it.
 
-2. **Close the Phase 3 gaps that are worth closing** (rough edges 1 and 4) — a
-   trip detail page that can edit its title, dates and notes, and a unique
-   constraint on `travel_legs` so the duplicate guard does not depend on every
-   writer going through `saveDerivedLeg`. Neither blocks Phase 4; do them when
-   travel next annoys you. Rough edges 2, 3, 5 and 6 are consciously accepted
-   for now — each is recorded in `docs/decisions-log.md` as accepted rather
-   than forgotten.
+2. **Phase 6 — sync and offline.** Sync cursors, conflict handling, optimistic
+   local writes; `sync_cursors` leaves the ledger. Two Phase 2 gaps belong
+   here: nothing pushes a local edit back to a provider (rough edge 13), and
+   there is still no UI for creating a recurring event (rough edge 10).
 
-3. **Recurrence in the UI, and pushing back** (rough edges 9 and 12). Still
-   open from Phase 2: there is no way to *create* a repeat from the app, and
-   nothing ever sends a local edit back to a provider. Both are small vertical
-   slices — a repeat picker using `describeRrule()` for the confirmation line,
-   and a push direction in `calendar_sync_state` that clears `events.is_dirty`.
+3. **The Phase 4 rough edges worth closing** (1–4 above), in this order:
+   editing a condition in place rather than removing and re-adding it; a trip
+   detail page while you are in the neighbourhood (rough edge 8); and, if a
+   later phase ever gives Orbit somewhere to run background work, a scheduler
+   so a `schedule` rule means what it says.
 
 ### Before you finish your session
 

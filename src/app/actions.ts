@@ -24,6 +24,19 @@ import {
   sessionIsActive,
   type LegMode,
 } from '@/lib/travel';
+import { isTriggerKind, type Trigger } from '@/lib/rules';
+import {
+  addAction,
+  fireForTask,
+  addCondition,
+  createRule,
+  deleteRule,
+  removeAction,
+  removeCondition,
+  runRule,
+  setRuleEnabled,
+  updateRuleParts,
+} from '@/lib/queries/rules';
 import {
   connectProviderCalendar,
   pullCalendar,
@@ -78,6 +91,8 @@ export async function toggleTaskDone(formData: FormData) {
     }
   });
 
+  await fireForTask(user.id, done ? 'task.completed' : 'task.updated', id);
+
   revalidatePath('/', 'layout');
 }
 
@@ -90,19 +105,25 @@ export async function createTask(formData: FormData) {
 
   if (!title || !spaceId) return;
 
-  await asUser(user.id, async (tx) => {
+  const created = await asUser(user.id, async (tx) => {
     // The category is resolved against the chosen space rather than trusted:
     // a stale form could otherwise carry a category from a space the task is
     // not going into.
-    await tx`
+    const [row] = await tx<{ id: string }[]>`
       insert into public.tasks (space_id, owner_id, category_id, title, due_on, assignee_id)
       values (
         ${spaceId}::uuid, ${user.id}::uuid,
         (select c.id from public.categories c
           where c.id = ${categoryId}::uuid and c.space_id = ${spaceId}::uuid),
         ${title}, ${dueOn}::date, ${user.id}::uuid)
+      returning id
     `;
+    return row;
   });
+
+  // Rules fire after the write, never inside it: a malformed rule somebody
+  // wrote last month must not be able to lose the task they just typed.
+  if (created) await fireForTask(user.id, 'task.created', created.id);
 
   revalidatePath('/', 'layout');
 }
@@ -169,6 +190,8 @@ export async function updateTask(formData: FormData) {
       where t.id = ${id}::uuid and not t.is_locked
     `;
   });
+
+  await fireForTask(user.id, status === 'done' ? 'task.completed' : 'task.updated', id);
 
   revalidatePath('/', 'layout');
 }
@@ -1536,4 +1559,157 @@ export async function deleteTravelSession(formData: FormData) {
   });
 
   revalidatePath('/', 'layout');
+}
+
+// ===========================================================================
+// Rules — Phase 4
+//
+// Nothing here decides what a rule does; that is src/lib/rules.ts, which is
+// pure and tested. These actions are the plumbing: read a form, ask the query
+// module, redirect somewhere that shows the result.
+//
+// Every failure is carried in the URL rather than thrown, because a rule that
+// refuses to enable has something to say and a stack trace is not it.
+// ===========================================================================
+
+function ruleRedirect(id: string, params: Record<string, string | undefined>): never {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);
+  const suffix = qs.toString();
+  redirect(suffix ? `/rules/${id}?${suffix}` : `/rules/${id}`);
+}
+
+export async function createRuleAction(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const name = String(formData.get('name') ?? '');
+  const description = String(formData.get('description') ?? '');
+  const kind = String(formData.get('triggerKind') ?? 'task.created');
+  const cron = String(formData.get('cron') ?? '0 7 * * *');
+
+  if (!isTriggerKind(kind)) return;
+  const trigger: Trigger = kind === 'schedule' ? { kind, cron } : { kind };
+
+  const result = await createRule(user.id, { spaceId, name, description, trigger });
+  revalidatePath('/', 'layout');
+  if ('error' in result) redirect(`/rules?error=${encodeURIComponent(result.error)}`);
+  ruleRedirect(result.id, { created: '1' });
+}
+
+export async function updateRuleAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const kind = String(formData.get('triggerKind') ?? '');
+  const cron = String(formData.get('cron') ?? '0 7 * * *');
+  const trigger: Trigger | undefined = !isTriggerKind(kind)
+    ? undefined
+    : kind === 'schedule'
+      ? { kind, cron }
+      : { kind };
+
+  const result = await updateRuleParts(user.id, id, {
+    name: String(formData.get('name') ?? ''),
+    description: String(formData.get('description') ?? ''),
+    trigger,
+  });
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined, saved: '1' });
+}
+
+export async function addRuleConditionAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const raw = {
+    field: String(formData.get('field') ?? ''),
+    op: String(formData.get('op') ?? ''),
+    value: String(formData.get('value') ?? ''),
+  };
+  const result = await addCondition(user.id, id, raw);
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
+export async function removeRuleConditionAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const result = await removeCondition(user.id, id, Number(formData.get('index')));
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
+export async function addRuleActionAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const kind = String(formData.get('kind') ?? '');
+  const value = String(formData.get('value') ?? '').trim();
+
+  // Each action kind names its parameter differently; one select plus one
+  // free-text box is the whole form, so this is where the two meet.
+  const raw: Record<string, unknown> = { kind };
+  if (kind === 'task.set_priority') raw.priority = value;
+  else if (kind === 'task.set_status') raw.status = value;
+  else if (kind === 'task.assign') raw.to = value;
+  else if (kind === 'task.defer_days' || kind === 'task.due_in_days') raw.days = Number(value || '0');
+  else if (kind === 'notify') raw.message = value;
+
+  const result = await addAction(user.id, id, raw);
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
+export async function removeRuleActionAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const result = await removeAction(user.id, id, Number(formData.get('index')));
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
+/**
+ * Dry-run a rule.
+ *
+ * The result is not returned to the caller — it is written to `rule_runs` and
+ * the page reads it back. That is deliberate: the preview somebody acts on is
+ * the row in the audit trail, not a value that existed for one render.
+ */
+export async function dryRunRuleAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const result = await runRule(user.id, id, { dryRun: true });
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined, preview: '1' });
+}
+
+export async function runRuleNowAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const result = await runRule(user.id, id, { dryRun: false });
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined, ran: '1' });
+}
+
+export async function setRuleEnabledAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const enabled = String(formData.get('enabled') ?? '') === '1';
+  const result = await setRuleEnabled(user.id, id, enabled);
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
+export async function deleteRuleAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  await deleteRule(user.id, id);
+  revalidatePath('/', 'layout');
+  redirect('/rules');
 }
