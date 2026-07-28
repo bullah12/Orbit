@@ -72,9 +72,24 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
 
 ## Phase 4 — Rules engine
 
-- Declarative rules: trigger, condition, action
-- Dry-run preview before enabling; `rule_runs` audit trail
-- Heavy test coverage — this is a bug farm
+- [x] Declarative rules: trigger, condition, action. `src/lib/rules.ts` is pure
+      and holds the whole engine — four triggers, ten condition fields, ten
+      operators, six actions — with the tests written before any UI reached it
+- [x] Dry-run preview before enabling, naming every item and every change in a
+      sentence; a rule cannot be switched on until it has been previewed, and
+      any structural edit switches it off and clears the preview
+- [x] `rule_runs` audit trail, dry runs included, recording every item a run
+      considered and not only the ones it acted on
+- [x] A rule never acts on a locked item and never across a space boundary —
+      both refused in the evaluator with a stated reason, both asserted in
+      Vitest, both visible in the preview
+- [x] Notifications through `PushProvider`; the fake is the default and the
+      real Web Push provider is **written, never run**
+- [x] Heavy test coverage — 69 Vitest cases in `tests/rules.test.ts`, 7 new
+      pgTAP assertions from both sides of the membership, 28 smoke checks
+      driving the whole sequence through the running app
+- [x] `rule_runs`, `notification_deliveries` and `note_versions` out of the
+      pgTAP known-empty ledger
 
 ## Phase 5 — Search, capture, and AI
 

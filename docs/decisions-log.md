@@ -355,3 +355,142 @@ tracking, ever.
   it was run against and not of a freshly reset one. Both checks now name what
   they want: the calendar by label, and the move destination read off the
   page's own list of offered targets.
+
+## Session 5 — 2026-07-28
+
+- **The branch is `claude/orbit-phase-4-rules-gey60v`.** Same as every session
+  so far: the task description named the previous session's branch and the
+  designated one won. Session 4's branch is merged into `main` as PR #5.
+- **The evaluator is pure and takes a *fact*, not a row.** `src/lib/rules.ts`
+  never touches Postgres, the network or a provider. It is handed a flat
+  snapshot of one entity and a rule, and answers two questions: did it match,
+  and what would it change. Applying anything is the caller's job. The tests
+  were written before the first line of UI, the way recurrence and travel were,
+  and both of those stayed solid.
+- **A dry run and a real run are the same code path with one boolean
+  different.** There is no dry-run branch in the evaluator at all. A preview
+  computed differently from the run is a preview of something else.
+- **A rule never acts on a locked item, and the refusal lives in the
+  evaluator.** The server holds ciphertext for a locked task — the check
+  constraint guarantees `title` and `body_md` are empty — so a condition that
+  matched one would be matching on the absence of a title. It is a *skip with a
+  stated reason* rather than a silent non-match, so the audit trail records
+  that the engine saw the item and declined it, and the preview shows it as
+  "(locked) — skipped" rather than making it vanish.
+- **A rule never acts across a space boundary, and that is checked twice.** RLS
+  decides which rules exist and which tasks can be gathered; the query filters
+  on the rule's own `space_id`; the evaluator refuses a mismatched fact anyway;
+  and every `update` names the space again. A rule firing in a space its owner
+  cannot read is the same disclosure a bad policy would be, so it is worth
+  saying four times.
+- **A rule cannot be enabled until it has been dry-run.** The schema said so in
+  a comment and left it to the application. This is the application. It is the
+  whole safety story of the phase: nothing rewrites somebody's tasks unattended
+  until they have read, in sentences, what it will do to each one.
+- **Any structural edit switches a rule off and clears its preview.** Change a
+  trigger, a condition or an action and the sentences somebody read no longer
+  describe the rule. The cost is one extra click; the alternative is a rule
+  running on the strength of a preview of a different rule.
+- **An action that would change nothing produces no effect.** A scheduled rule
+  sweeps the same rows every morning. If setting a priority that is already
+  high counted, the audit trail would fill with changes that changed nothing
+  and the run count would measure how long the rule had existed.
+- **Conditions are ANDed, with no OR and no nesting.** Two rules are clearer
+  than one rule with a branch in it, and a form that can express a boolean tree
+  is a form nobody can read back. The condition fields are a closed list rather
+  than "any column": an open list means a typo is a rule that silently never
+  matches, and an unknown field is reported as a malformed rule instead.
+- **`me` and `partner` are resolved against membership at run time, never
+  stored as an id in the rule.** An id in a rule outlives the membership it
+  referred to. `partner` in a space with nobody else in it does nothing at all,
+  rather than quietly assigning to the owner — that would be the rule doing
+  something it does not say.
+- **Numeric conditions on an unset field are always false.** An undated task is
+  not zero days overdue. This is the difference between "overdue by a week"
+  matching nothing and matching the whole inbox. `days_overdue` reads `null`,
+  not `0`, when there is no date.
+- **Days are counted between calendar dates, never between instants.** Seven
+  days overdue means seven calendar days on the 23-hour day in March and the
+  25-hour one in October, and both are asserted. The arguments to
+  `daysFromToday` are swapped rather than the result negated, because negating
+  zero gives `-0`, which equals `0` everywhere except in a test assertion.
+- **A rule fires after the write, never inside it.** Creating, changing or
+  completing a task runs the enabled rules for that trigger once the row is
+  committed, and a failure is recorded on the run and swallowed by the caller.
+  Somebody typing a task must not lose it because an automation they wrote last
+  month is malformed.
+- **A dry run of an event-triggered rule sweeps its space.** A rule you can only
+  preview by creating a task is a rule you cannot preview. A real run of the
+  same rule is given the one task that changed.
+- **A delivery row is written whatever the provider says.** It is the only way
+  to tell "the rule never fired" from "it fired and the push went nowhere", and
+  the rules page names the provider that answered — so a sent notification is
+  never quietly the in-memory outbox pretending to be a phone.
+- **The seed gives the rules something to chew on.** Both seeded rules live in
+  Home and Home held nothing either matched: the "bin" tasks and the only
+  locked task were all in Priya's own space, so a dry run previewed 31 tasks
+  and no changes. Five fixed tasks and a locked one now live in Home, and one
+  rule is seeded into Work so "the partner sees Home rules and not Work ones"
+  has something on the Work side to fail on — the same reason there is one
+  place in Work.
+- **The seeded `rule_runs` rows are computed by the real evaluator**, importing
+  `src/lib/rules.ts` into the seed rather than hand-writing a fixture. A
+  fabricated audit row that disagreed with the engine would be worse than an
+  empty table. Doing it exposed a real difference: the seed's connection has no
+  date-to-string override, so a `date` arrives as a `Date` there and as a
+  string in the app.
+- **`rule_runs`, `notification_deliveries` and `note_versions` leave the pgTAP
+  known-empty ledger.** plan(63) → plan(70): the partner sees the rule, the run
+  and the delivery in the shared space and none of Alice's own; a free/busy
+  participant sees none of the three, because a run records the titles of
+  everything the rule considered and that is strictly more than "busy"; and the
+  partner cannot create a rule inside a space they are not in.
+- **`attachments`, `person_relationships` and `space_invites` stay unused, on
+  purpose.** No phase owns them and none should claim them to tick a box.
+  *attachments* needs file storage, which Orbit does not have and which is a
+  decision about where bytes live, not a feature. *person_relationships* would
+  encode "Sadia is Priya's sister" — the same call session 4 made about a
+  person↔place table: the honest version is a fact somebody stated, and until a
+  screen needs it, adding one is a schema change for a hypothetical.
+  *space_invites* needs an auth system that can invite a stranger; auth here is
+  a cookie naming a seeded profile, so an invite would be a row nothing could
+  redeem. All three keep their policies and their RLS coverage; what they lack
+  is rows, and the ledger says so rather than pretending otherwise.
+- **The real `PushProvider` is Web Push, written and never run.** RFC 8030
+  delivery, RFC 8292 VAPID signing over WebCrypto, RFC 8291 `aes128gcm` payload
+  encryption in the RFC 8188 content coding. No retry ladder, by standing rule:
+  a failed delivery is recorded as failed and the row is the record; a
+  notification arriving three times because a retry could not tell "delivered"
+  from "timed out" is worse than one that did not arrive. A 404 or 410 means
+  the subscription is gone rather than that the message failed. A message whose
+  link is not an in-app path is refused before a credential is even read — a
+  push payload is the one place a link becomes something tapped from a lock
+  screen.
+- **There is no scheduler, and `schedule` rules are run by hand.** Orbit has no
+  background worker and adding one is a deployment decision, which is out of
+  scope by instruction. A scheduled rule stores and shows its cron, is
+  evaluated by exactly the same code as every other rule, and runs when
+  somebody presses "Run now, for real". Recorded as accepted rather than
+  forgotten: the honest fix is a worker, and a worker needs somewhere to run.
+- **Migration 0011 gives a derived travel leg an identity.** Session 4 recorded
+  the missing unique constraint as a rough edge rather than guessing at it. The
+  answer is a *partial* unique index on `(space_id, from_place_id, to_place_id,
+  arrive_at)` where all three are present: a leg with no places is legitimately
+  repeatable — "I drove somewhere for two hours" twice in a day is two journeys
+  — and a derived one is not. Second schema extension in five sessions.
+- **On/off and dry-run/applied chips are neutral chrome, not colour.** Category
+  colour is the only strong colour by standing rule, so the state chips carry
+  an icon, a label and a border instead. Amber and rose stay for warnings and
+  errors, which is the precedent the travel page already set.
+- **A preview puts what happened first.** The one task a rule changes must not
+  be the thirty-first row. Everything with a change or a skip is listed above
+  the fold; the tasks it looked at and left alone are behind a disclosure —
+  still there, because "why did it not fire on that one" is the question the
+  audit trail exists to answer, but not in front of the answer.
+- **A smoke section that creates something deletes it.** The rules section
+  builds a rule, drives it through the whole refuse-preview-enable-run-edit
+  sequence, and deletes it, so the suite still passes twice in a row against
+  the same database — verified twice this session. Its action is a
+  notification rather than a task change, deliberately: it exercises the push
+  path without rewriting a seeded task, so running it twice leaves the same
+  tasks behind as running it once.
