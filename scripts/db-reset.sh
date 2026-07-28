@@ -97,6 +97,13 @@ grant connect on database "$DB_NAME" to orbit_app;
 grant usage on schema public, app, auth to orbit_app;
 grant authenticated, anon to orbit_app;
 
+-- The identity-provider seam. See supabase/migrations/0008_identity_lookup.sql:
+-- resolving a cookie to a profile happens before there is an auth.uid() to
+-- check, so it goes through two narrow SECURITY DEFINER functions rather than a
+-- table grant. orbit_app gets NO direct select on any table.
+grant execute on function app.identity_profile(uuid) to orbit_app;
+grant execute on function app.identity_profiles() to orbit_app;
+
 grant connect on database "$DB_NAME" to orbit_seed;
 grant usage on schema public, app, auth to orbit_seed;
 grant all on all tables in schema public to orbit_seed;
