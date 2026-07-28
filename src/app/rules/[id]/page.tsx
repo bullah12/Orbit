@@ -1,0 +1,450 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { requireUser } from '@/lib/auth';
+import { getRule, listRuleRuns, parseRuleRow } from '@/lib/queries/rules';
+import { SpaceIndicator } from '@/components/SpaceIndicator';
+import { Icon } from '@/components/Icon';
+import { RunDetail, RunKindChip, RunSummaryLine } from '@/components/RuleParts';
+import {
+  ACTION_KINDS,
+  ASSIGNEE_REFS,
+  CONDITION_FIELDS,
+  CONDITION_OPS,
+  PRIORITIES,
+  STATUSES,
+  TRIGGER_KINDS,
+  TRIGGER_LABEL,
+  describeAction,
+  describeCondition,
+  describeRule,
+} from '@/lib/rules';
+import { formatRelative, plural } from '@/lib/format';
+import {
+  addRuleActionAction,
+  addRuleConditionAction,
+  deleteRuleAction,
+  dryRunRuleAction,
+  removeRuleActionAction,
+  removeRuleConditionAction,
+  runRuleNowAction,
+  setRuleEnabledAction,
+  updateRuleAction,
+} from '@/app/actions';
+
+export const dynamic = 'force-dynamic';
+
+/**
+ * One rule.
+ *
+ * The page is arranged in the order somebody actually works: read what it
+ * does, change it, preview it, then — and only then — switch it on. The
+ * enable control is deliberately below the preview and refuses until a dry run
+ * exists, because the whole safety story of this phase is that nothing runs
+ * unattended on your tasks until you have read a sentence saying what it will
+ * do to each one.
+ */
+export default async function RulePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string; preview?: string; ran?: string; created?: string; saved?: string }>;
+}) {
+  const { id } = await params;
+  const { error, preview, ran, created, saved } = await searchParams;
+  const user = await requireUser();
+
+  const row = await getRule(user.id, id);
+  if (!row) notFound();
+
+  const { rule, problems } = parseRuleRow(row);
+  const runs = await listRuleRuns(user.id, { ruleId: id, limit: 12 });
+  const latest = runs[0] ?? null;
+  const conditions = rule?.conditions ?? [];
+  const actions = rule?.actions ?? [];
+  const canEnable = Boolean(rule) && Boolean(row.lastDryRunAt) && actions.length > 0;
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <header className="hairline border-b px-5 py-4">
+        <p className="faint text-[11px]">
+          <Link href="/rules" className="underline-offset-2 hover:underline">
+            Rules
+          </Link>
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <SpaceIndicator space={row.space} size="md" />
+          <h1 className="text-[15px] font-semibold">{row.name}</h1>
+          <span
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+            style={
+              row.isEnabled
+                ? { background: 'var(--bg-sunken)', color: 'var(--text)', border: '1px solid var(--line-strong)' }
+                : { background: 'var(--bg-sunken)', color: 'var(--text-faint)' }
+            }
+          >
+            <Icon name={row.isEnabled ? 'check' : 'pause'} size={11} />
+            {row.isEnabled ? 'On' : 'Off'}
+          </span>
+        </div>
+        <p className="muted mt-1 text-[12px]">
+          {rule ? describeRule(rule) : problems.join('; ')}
+        </p>
+        <p className="faint mt-0.5 text-[11px]">
+          This rule can only see and change things in {row.space.name}.
+        </p>
+      </header>
+
+      {/*
+        One live region for everything the page has to say back. Enabling,
+        previewing and every edit land here, so a screen reader hears the
+        outcome without hunting for where it appeared.
+      */}
+      <div aria-live="polite" className="empty:hidden">
+        {error && (
+          <p
+            role="alert"
+            className="hairline border-b px-5 py-2 text-[12px]"
+            style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
+          >
+            {error}
+          </p>
+        )}
+        {!error && (created || saved || preview || ran) && (
+          <p className="hairline muted border-b px-5 py-2 text-[12px]">
+            {created && 'Rule created, switched off. Give it conditions and actions, then preview it.'}
+            {saved && 'Saved. Changing a rule switches it off and clears its preview — the sentences you read described the old one.'}
+            {preview && 'Dry run finished. Nothing was changed; the preview below is what would happen.'}
+            {ran && 'Run finished. The changes below were applied.'}
+          </p>
+        )}
+      </div>
+
+      <div className="grid gap-5 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+        <div className="flex flex-col gap-5">
+          {/* ---------------------------------------------------------- */}
+          <section className="surface rounded p-3">
+            <h2 className="text-[13px] font-semibold">What it watches for</h2>
+            <form action={updateRuleAction} className="mt-2 flex flex-col gap-2">
+              <input type="hidden" name="ruleId" value={row.id} />
+
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">Name</span>
+                <input name="name" defaultValue={row.name} required className="input text-[13px]" />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">What it is for</span>
+                <input
+                  name="description"
+                  defaultValue={row.description}
+                  className="input text-[12px]"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">Trigger</span>
+                <select
+                  name="triggerKind"
+                  defaultValue={rule?.trigger.kind ?? 'task.created'}
+                  className="input text-[12px]"
+                >
+                  {TRIGGER_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {TRIGGER_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">
+                  Schedule, as cron — used only when the trigger is a schedule
+                </span>
+                <input
+                  name="cron"
+                  defaultValue={rule?.trigger.kind === 'schedule' ? rule.trigger.cron : '0 7 * * *'}
+                  className="input font-mono text-[12px]"
+                />
+              </label>
+
+              <button type="submit" className="hairline self-start rounded border px-2 py-1 text-[12px]">
+                Save
+              </button>
+            </form>
+          </section>
+
+          {/* ---------------------------------------------------------- */}
+          <section className="surface rounded p-3">
+            <h2 className="text-[13px] font-semibold">Conditions</h2>
+            <p className="muted mt-0.5 text-[12px]">
+              All of them have to be true. There is no “or” — two rules are
+              clearer than one rule with a branch in it.
+            </p>
+
+            <ul className="mt-2 flex flex-col gap-1">
+              {conditions.map((c, i) => (
+                <li key={i} className="hairline flex items-center gap-2 rounded border px-2 py-1.5">
+                  <span className="flex-1 text-[12px]">{describeCondition(c)}</span>
+                  <form action={removeRuleConditionAction}>
+                    <input type="hidden" name="ruleId" value={row.id} />
+                    <input type="hidden" name="index" value={i} />
+                    <button
+                      type="submit"
+                      className="faint rounded p-1"
+                      aria-label={`Remove condition: ${describeCondition(c)}`}
+                    >
+                      <Icon name="x" size={12} />
+                    </button>
+                  </form>
+                </li>
+              ))}
+              {conditions.length === 0 && (
+                <li className="faint text-[12px]">
+                  No conditions — this rule matches every open task in its space.
+                </li>
+              )}
+            </ul>
+
+            <form action={addRuleConditionAction} className="mt-2 flex flex-wrap items-end gap-2">
+              <input type="hidden" name="ruleId" value={row.id} />
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">Field</span>
+                <select name="field" className="input text-[12px]">
+                  {Object.entries(CONDITION_FIELDS).map(([key, meta]) => (
+                    <option key={key} value={key}>
+                      {meta.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">Is</span>
+                <select name="op" className="input text-[12px]">
+                  {Object.entries(CONDITION_OPS).map(([key, meta]) => (
+                    <option key={key} value={key}>
+                      {meta.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">Value</span>
+                <input name="value" className="input text-[12px]" autoComplete="off" />
+              </label>
+              <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
+                Add condition
+              </button>
+            </form>
+          </section>
+
+          {/* ---------------------------------------------------------- */}
+          <section className="surface rounded p-3">
+            <h2 className="text-[13px] font-semibold">Actions</h2>
+            <p className="muted mt-0.5 text-[12px]">
+              What it does to each task that matches. An action that would change
+              nothing is not performed and does not appear in the audit trail.
+            </p>
+
+            <ul className="mt-2 flex flex-col gap-1">
+              {actions.map((a, i) => (
+                <li key={i} className="hairline flex items-center gap-2 rounded border px-2 py-1.5">
+                  <span className="flex-1 text-[12px]">{describeAction(a)}</span>
+                  <form action={removeRuleActionAction}>
+                    <input type="hidden" name="ruleId" value={row.id} />
+                    <input type="hidden" name="index" value={i} />
+                    <button
+                      type="submit"
+                      className="faint rounded p-1"
+                      aria-label={`Remove action: ${describeAction(a)}`}
+                    >
+                      <Icon name="x" size={12} />
+                    </button>
+                  </form>
+                </li>
+              ))}
+              {actions.length === 0 && (
+                <li className="faint text-[12px]">
+                  No actions — this rule cannot be switched on until it has one.
+                </li>
+              )}
+            </ul>
+
+            <form action={addRuleActionAction} className="mt-2 flex flex-wrap items-end gap-2">
+              <input type="hidden" name="ruleId" value={row.id} />
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">Do this</span>
+                <select name="kind" className="input text-[12px]">
+                  {ACTION_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {ACTION_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="faint text-[11px]">
+                  Value — a priority, a status, {ASSIGNEE_REFS.join(' / ')}, a number of days, or a message
+                </span>
+                <input
+                  name="value"
+                  className="input text-[12px]"
+                  autoComplete="off"
+                  list="rule-action-values"
+                />
+              </label>
+              <datalist id="rule-action-values">
+                {[...PRIORITIES, ...STATUSES, ...ASSIGNEE_REFS].map((v) => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
+              <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
+                Add action
+              </button>
+            </form>
+          </section>
+
+          {/* ---------------------------------------------------------- */}
+          <section className="surface rounded p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-[13px] font-semibold">
+                {latest ? (latest.isDryRun ? 'Preview' : 'Last run') : 'Preview'}
+              </h2>
+              {latest && <RunSummaryLine run={latest} />}
+            </div>
+
+            <div className="mt-2">
+              {latest ? (
+                <RunDetail run={latest} />
+              ) : (
+                <p className="muted text-[12px]">
+                  Nothing has run yet. Dry-run it to see, task by task, exactly
+                  what it would do.
+                </p>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* ------------------------------------------------------------ */}
+        <aside className="flex flex-col gap-5">
+          <section className="surface rounded p-3">
+            <h2 className="text-[13px] font-semibold">Run it</h2>
+
+            <form action={dryRunRuleAction} className="mt-2">
+              <input type="hidden" name="ruleId" value={row.id} />
+              <button
+                type="submit"
+                className="w-full rounded px-2 py-1.5 text-[12px] font-medium"
+                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+              >
+                Dry run — change nothing
+              </button>
+            </form>
+            <p className="faint mt-1 text-[11px]">
+              Evaluates every open task in {row.space.name} and writes down what
+              it would do. Locked tasks are listed as skipped, never read.
+            </p>
+
+            <div className="hairline my-3 border-t" />
+
+            <form action={setRuleEnabledAction}>
+              <input type="hidden" name="ruleId" value={row.id} />
+              <input type="hidden" name="enabled" value={row.isEnabled ? '0' : '1'} />
+              <button
+                type="submit"
+                disabled={!row.isEnabled && !canEnable}
+                className="hairline w-full rounded border px-2 py-1.5 text-[12px] disabled:opacity-45"
+              >
+                {row.isEnabled ? 'Switch off' : 'Switch on'}
+              </button>
+            </form>
+            <p className="faint mt-1 text-[11px]">
+              {row.isEnabled
+                ? 'It runs by itself when its trigger happens.'
+                : !rule
+                  ? 'This rule will not parse, so it cannot be switched on.'
+                  : actions.length === 0
+                    ? 'Add an action first — a rule with none would do nothing.'
+                    : !row.lastDryRunAt
+                      ? 'Dry-run it first. Nothing runs unattended on your tasks until you have read what it would do.'
+                      : `Previewed ${formatRelative(row.lastDryRunAt)}. Ready to switch on.`}
+            </p>
+
+            {row.isEnabled && (
+              <>
+                <div className="hairline my-3 border-t" />
+                <form action={runRuleNowAction}>
+                  <input type="hidden" name="ruleId" value={row.id} />
+                  <button type="submit" className="hairline w-full rounded border px-2 py-1.5 text-[12px]">
+                    Run now, for real
+                  </button>
+                </form>
+                <p className="faint mt-1 text-[11px]">
+                  Applies the changes. Recorded in the audit trail below.
+                </p>
+              </>
+            )}
+          </section>
+
+          <section className="surface rounded p-3">
+            <h2 className="text-[13px] font-semibold">Audit trail</h2>
+            <p className="muted mt-0.5 text-[12px]">
+              {plural(runs.length, 'run')} recorded, dry ones included.
+            </p>
+            <ul className="mt-2 flex flex-col gap-1">
+              {runs.map((run) => (
+                <li key={run.id} className="hairline rounded border px-2 py-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <RunKindChip isDryRun={run.isDryRun} />
+                    <span className="faint text-[11px]">{formatRelative(run.ranAt)}</span>
+                    <span className="faint text-[11px]">
+                      {run.effects.length} considered ·{' '}
+                      {run.effects.reduce((n, e) => n + e.changes.length, 0)} changed
+                    </span>
+                    {run.durationMs !== null && (
+                      <span className="faint text-[11px]">{run.durationMs} ms</span>
+                    )}
+                  </div>
+                  {run.error && (
+                    <p className="mt-0.5 text-[11px]" style={{ color: 'var(--c-rose)' }}>
+                      {run.error}
+                    </p>
+                  )}
+                </li>
+              ))}
+              {runs.length === 0 && <li className="faint text-[12px]">Nothing yet.</li>}
+            </ul>
+          </section>
+
+          <section className="surface rounded p-3">
+            <h2 className="text-[13px] font-semibold">Delete</h2>
+            <p className="muted mt-0.5 text-[12px]">
+              Deleting a rule deletes its runs with it. Switching it off keeps
+              both.
+            </p>
+            <form action={deleteRuleAction} className="mt-2">
+              <input type="hidden" name="ruleId" value={row.id} />
+              <button
+                type="submit"
+                className="hairline w-full rounded border px-2 py-1.5 text-[12px]"
+                style={{ color: 'var(--danger)' }}
+              >
+                Delete this rule
+              </button>
+            </form>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+const ACTION_LABEL: Record<string, string> = {
+  'task.set_priority': 'Set the priority',
+  'task.set_status': 'Set the status',
+  'task.assign': 'Assign it',
+  'task.defer_days': 'Defer it, in days',
+  'task.due_in_days': 'Make it due, in days',
+  notify: 'Notify me',
+};
