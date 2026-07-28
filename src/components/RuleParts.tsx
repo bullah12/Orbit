@@ -66,32 +66,67 @@ export function RunDetail({ run }: { run: RuleRunRow }) {
     );
   }
 
+  // The one task a rule changes must not be the thirty-first row. Everything
+  // that happened comes first; the tasks the rule looked at and left alone are
+  // still here — that is the "why did it not fire on that one" case — but they
+  // are behind a disclosure rather than in front of the answer.
+  const notable = run.effects.filter((e) => e.changes.length > 0 || e.skipped);
+  const quiet = run.effects.filter((e) => !e.changes.length && !e.skipped);
+
   return (
-    <ul className="flex flex-col gap-1">
-      {run.effects.map((item) => (
-        <li
-          key={item.entity}
-          className="hairline rounded border px-2 py-1.5"
-          style={item.skipped ? { background: 'var(--bg-sunken)' } : undefined}
-        >
-          <div className="flex flex-wrap items-baseline gap-2">
-            <span style={{ color: item.matched ? 'var(--text)' : 'var(--text-faint)' }}>
-              <Icon name={item.skipped ? 'lock' : item.matched ? 'arrow_right' : 'x'} size={11} />
-            </span>
-            <span className="text-[12px] font-medium">{item.title}</span>
-            <span className="faint text-[11px]">{item.reason}</span>
-          </div>
-          {item.changes.length > 0 && (
-            <ul className="mt-1 flex flex-col gap-0.5 pl-4">
-              {item.changes.map((change, i) => (
-                <li key={i} className="text-[12px]">
-                  {change.description}
-                </li>
-              ))}
-            </ul>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-2">
+      {notable.length > 0 ? (
+        <ul className="flex flex-col gap-1">
+          {notable.map((item) => (
+            <Item key={item.entity} item={item} />
+          ))}
+        </ul>
+      ) : (
+        <p className="muted text-[12px]">
+          Nothing would change — every task this rule looked at is already the
+          way it wants it.
+        </p>
+      )}
+
+      {quiet.length > 0 && (
+        <details className="text-[12px]">
+          <summary className="faint cursor-pointer">
+            {quiet.length} {quiet.length === 1 ? 'task was' : 'tasks were'} looked
+            at and left alone
+          </summary>
+          <ul className="mt-1 flex flex-col gap-1">
+            {quiet.map((item) => (
+              <Item key={item.entity} item={item} />
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function Item({ item }: { item: RuleRunRow['effects'][number] }) {
+  return (
+    <li
+      className="hairline rounded border px-2 py-1.5"
+      style={item.skipped ? { background: 'var(--bg-sunken)' } : undefined}
+    >
+      <div className="flex flex-wrap items-baseline gap-2">
+        <span style={{ color: item.matched ? 'var(--text)' : 'var(--text-faint)' }}>
+          <Icon name={item.skipped ? 'lock' : item.matched ? 'arrow_right' : 'x'} size={11} />
+        </span>
+        <span className="text-[12px] font-medium">{item.title}</span>
+        <span className="faint text-[11px]">{item.reason}</span>
+      </div>
+      {item.changes.length > 0 && (
+        <ul className="mt-1 flex flex-col gap-0.5 pl-4">
+          {item.changes.map((change, i) => (
+            <li key={i} className="text-[12px]">
+              {change.description}
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }

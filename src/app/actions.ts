@@ -27,6 +27,7 @@ import {
 import { isTriggerKind, type Trigger } from '@/lib/rules';
 import {
   addAction,
+  fireForTask,
   addCondition,
   createRule,
   deleteRule,
@@ -90,6 +91,8 @@ export async function toggleTaskDone(formData: FormData) {
     }
   });
 
+  await fireForTask(user.id, done ? 'task.completed' : 'task.updated', id);
+
   revalidatePath('/', 'layout');
 }
 
@@ -102,19 +105,25 @@ export async function createTask(formData: FormData) {
 
   if (!title || !spaceId) return;
 
-  await asUser(user.id, async (tx) => {
+  const created = await asUser(user.id, async (tx) => {
     // The category is resolved against the chosen space rather than trusted:
     // a stale form could otherwise carry a category from a space the task is
     // not going into.
-    await tx`
+    const [row] = await tx<{ id: string }[]>`
       insert into public.tasks (space_id, owner_id, category_id, title, due_on, assignee_id)
       values (
         ${spaceId}::uuid, ${user.id}::uuid,
         (select c.id from public.categories c
           where c.id = ${categoryId}::uuid and c.space_id = ${spaceId}::uuid),
         ${title}, ${dueOn}::date, ${user.id}::uuid)
+      returning id
     `;
+    return row;
   });
+
+  // Rules fire after the write, never inside it: a malformed rule somebody
+  // wrote last month must not be able to lose the task they just typed.
+  if (created) await fireForTask(user.id, 'task.created', created.id);
 
   revalidatePath('/', 'layout');
 }
@@ -181,6 +190,8 @@ export async function updateTask(formData: FormData) {
       where t.id = ${id}::uuid and not t.is_locked
     `;
   });
+
+  await fireForTask(user.id, status === 'done' ? 'task.completed' : 'task.updated', id);
 
   revalidatePath('/', 'layout');
 }
