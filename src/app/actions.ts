@@ -38,6 +38,22 @@ import {
   updateRuleParts,
 } from '@/lib/queries/rules';
 import { createFromCapture } from '@/lib/queries/capture';
+import {
+  advanceCursor,
+  flushQueue,
+  isSyncableField,
+  readCurrent,
+  resetCursors,
+  resolveConflictWrite,
+  SYNC_ENTITY_KINDS,
+} from '@/lib/queries/sync';
+import {
+  isSyncEntityKind,
+  type Conflict,
+  type ConflictChoice,
+  type PendingWrite,
+} from '@/lib/sync/conflict';
+import type { FlushOutcome } from '@/lib/sync/outbox';
 import { runAiFeature, setConsent } from '@/lib/queries/ai';
 import {
   connectProviderCalendar,
@@ -1802,4 +1818,125 @@ export async function runAiOnNote(formData: FormData) {
     params.set('refused', result.reason ?? 'It did not run.');
   }
   redirect(`/ai?${params.toString()}`);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — sync
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a device's queue.
+ *
+ * Called from the client with the queue as data rather than as a form, because
+ * a queue is a list and a form is not. Everything it does still happens through
+ * `asUser`: **a queued write is still a write**, and one made offline into a
+ * space the account has since left is refused by the same policy that would
+ * have refused it online. There is no elevated path for catching up.
+ */
+export async function sendQueue(writes: PendingWrite[]): Promise<{
+  outcomes: FlushOutcome[];
+  dropped: string[];
+  serverNow: string;
+}> {
+  const user = await requireUser();
+
+  // The kind and the fields are checked here rather than trusted from the
+  // client, because this action is reachable with anything the client cares to
+  // send. A write naming a column that is not syncable is a bug or an attack,
+  // and either way it is refused before it reaches a query.
+  for (const w of writes) {
+    if (!isSyncEntityKind(w.entityKind)) throw new Error(`not a syncable kind: ${w.entityKind}`);
+    for (const f of Object.keys(w.changes)) {
+      if (!isSyncableField(w.entityKind, f)) {
+        throw new Error(`${f} is not a syncable field on a ${w.entityKind}`);
+      }
+    }
+  }
+
+  const result = await flushQueue(user.id, writes);
+  revalidatePath('/', 'layout');
+
+  return {
+    outcomes: result.results.map((r) => ({
+      opId: r.opId,
+      outcome: r.outcome,
+      note: r.outcome === 'conflict' ? r.conflict.reason : r.note,
+      conflict: r.outcome === 'conflict' ? r.conflict : null,
+    })),
+    dropped: result.droppedDuplicates,
+    serverNow: result.serverNow,
+  };
+}
+
+/**
+ * Answer a conflict.
+ *
+ * The answer is an ordinary write with a fresh base, not a privileged one. If
+ * the row moved again between reading the conflict and answering it, the answer
+ * conflicts in its turn rather than landing on top of a third edit nobody has
+ * seen.
+ */
+export async function answerConflict(
+  conflict: Conflict,
+  choice: ConflictChoice,
+): Promise<{ ok: boolean; note: string; conflict: Conflict | null }> {
+  const user = await requireUser();
+  if (!isSyncEntityKind(conflict.entityKind)) throw new Error('not a syncable kind');
+  for (const f of Object.keys(conflict.mergeable)) {
+    if (!isSyncableField(conflict.entityKind, f)) throw new Error('not a syncable field');
+  }
+  for (const c of conflict.clashes) {
+    if (!isSyncableField(conflict.entityKind, c.field)) throw new Error('not a syncable field');
+  }
+
+  const current = await readCurrent(user.id, conflict.entityKind, conflict.entityId);
+  if (!current) {
+    return {
+      ok: false,
+      note: 'That item is gone. Nothing has been written.',
+      conflict: { ...conflict, kind: 'deleted_elsewhere', clashes: [], mergeable: {} },
+    };
+  }
+
+  const outcome = await resolveConflictWrite(user.id, conflict, choice, current.updatedAt);
+  revalidatePath('/', 'layout');
+
+  if (outcome.outcome === 'conflict') {
+    return { ok: false, note: outcome.conflict.reason, conflict: outcome.conflict };
+  }
+  return {
+    ok: true,
+    note:
+      choice === 'mine'
+        ? 'Your version was written. The other one is in the item’s history, not lost.'
+        : 'The other version was kept. Everything nobody disagreed about was still applied.',
+    conflict: null,
+  };
+}
+
+/** Mark a device as having caught up with a space, to the instant the page was read. */
+export async function catchUpDevice(formData: FormData) {
+  const user = await requireUser();
+  const deviceId = String(formData.get('deviceId') ?? '');
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const upTo = String(formData.get('upTo') ?? '');
+  if (!deviceId || !spaceId || !upTo) return;
+
+  for (const kind of SYNC_ENTITY_KINDS) {
+    await advanceCursor(user.id, spaceId, deviceId, kind, upTo);
+  }
+  revalidatePath('/', 'layout');
+  redirect(`/sync?device=${deviceId}`);
+}
+
+/** Wind a device's cursors back to the epoch, so the next sync re-reads everything. */
+export async function rewindDevice(formData: FormData) {
+  const user = await requireUser();
+  const deviceId = String(formData.get('deviceId') ?? '');
+  const spaceId = String(formData.get('spaceId') ?? '');
+  if (!deviceId || !spaceId) return;
+
+  await resetCursors(user.id, spaceId, deviceId);
+  revalidatePath('/', 'layout');
+  redirect(`/sync?device=${deviceId}`);
 }

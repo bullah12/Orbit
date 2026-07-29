@@ -7,6 +7,7 @@ import { deleteTask, moveTaskToSpace, updateTask } from '@/app/actions';
 import { SpaceIndicator, CategoryChip } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { Markdown } from '@/components/Markdown';
+import { OfflineEdit } from '@/components/OfflineEdit';
 import { smartListsFor } from '@/lib/smartlists';
 import { SMART_LISTS, isSmartListKey } from '@/lib/queries/tasks';
 import { formatDate } from '@/lib/format';
@@ -133,6 +134,22 @@ export default async function TaskPage({
           <MoveConfirmation task={task} target={target} preview={preview ?? []} />
         )}
       </section>
+
+      {!task.isLocked && (
+        <OfflineEdit
+          entityKind="task"
+          entityId={task.id}
+          space={task.space}
+          updatedAt={task.updatedAt}
+          label={task.title}
+          fields={[
+            { name: 'title', value: task.title },
+            { name: 'status', value: task.status, options: STATUSES },
+            { name: 'priority', value: task.priority, options: PRIORITIES },
+            { name: 'waiting_on', value: task.waitingOn ?? '' },
+          ]}
+        />
+      )}
 
       <section className="hairline border-t px-5 py-4">
         <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">

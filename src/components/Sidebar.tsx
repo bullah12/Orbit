@@ -44,6 +44,7 @@ export function Sidebar({
         <NavLink href="/notes" icon="note" label="Notes" />
         <NavLink href="/rules" icon="route" label="Rules" />
         <NavLink href="/ai" icon="sparkle" label="AI" />
+        <NavLink href="/sync" icon="undo" label="Sync" />
       </div>
 
       <Section title="Lists">

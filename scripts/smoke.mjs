@@ -1714,6 +1714,237 @@ try {
     await ctx.close();
   }
 
+  // ------------------------------------------------------------------ sync
+  //
+  // Phase 6. The claim is that an edit made offline applies immediately, is
+  // visibly not sent, and then either lands or names the conflict — never a
+  // spinner that resolves into a lie. All of that is driven here in one browser
+  // context, because the queue lives in that context's localStorage.
+  //
+  // Everything it creates it deletes, and everything it switches it switches
+  // back, so the suite still passes twice against the same database.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/');
+    check('Sync is reachable from the sidebar', (await page.locator('nav a[href="/sync"]').count()) === 1);
+
+    await page.goto('/sync');
+    const deviceCount = await page.locator('#sync-devices li').count();
+    check('the sync page lists this account’s devices', deviceCount > 0, `${deviceCount}`);
+    check(
+      'every device row says which space it is for',
+      (await page.locator('#sync-devices li span[title^="Space:"]').count()) === deviceCount,
+    );
+    const cursorRows = await page.locator('#sync-cursors tbody tr').count();
+    check('with one cursor row per syncable kind', cursorRows === 5, `${cursorRows}`);
+    const changeRows = await page.locator('#sync-changes li').count();
+    check('and what has changed since it last caught up', changeRows > 0, `${changeRows}`);
+    check(
+      'every changed row carries its space indicator too',
+      (await page.locator('#sync-changes li span[title^="Space:"]').count()) === changeRows,
+    );
+    check(
+      'a locked row is listed as locked rather than left out',
+      (await page.locator('#sync-changes li', { hasText: 'no plaintext to show' }).count()) > 0,
+    );
+    check(
+      'nothing is queued on a browser that has not typed anything',
+      (await page.locator('#outbox-summary').innerText()).includes('has been sent'),
+    );
+
+    // ---- a task to do all this to, deleted at the end ----
+    const stamp = `Smoke sync ${Date.now()}`;
+    await page.goto('/tasks/all');
+    await page.locator('form[aria-label="Add a task"] input[name="title"]').fill(stamp);
+    await page.locator('form[aria-label="Add a task"] input[name="title"]').press('Enter');
+    await settle(page);
+    await page.goto('/tasks/all');
+    await page.locator('main ul li', { hasText: stamp }).first().locator('a[href^="/tasks/item/"]').click();
+    await settle(page);
+    const taskUrl = page.url();
+    check('a task to edit offline exists', taskUrl.includes('/tasks/item/'), taskUrl);
+
+    // ---- go offline, and edit ----
+    await page.getByLabel('Work offline').check();
+    const offlineTitle = `${stamp} — offline`;
+    const titleField = page.locator('#offline-edit-heading').locator('..').locator('..').locator('input[type="text"], input:not([type])').first();
+    await titleField.fill(offlineTitle);
+    await titleField.blur();
+    await page.waitForTimeout(400);
+    check(
+      'an edit made offline shows on the screen straight away',
+      (await titleField.inputValue()) === offlineTitle,
+    );
+    check(
+      'and says out loud that it has not been sent',
+      (await page.locator('text=not sent yet').count()) > 0,
+    );
+
+    await page.reload();
+    await page.waitForTimeout(500);
+    check(
+      'the queued edit survives a reload of the page',
+      (await page.locator('text=not sent yet').count()) > 0,
+    );
+    check(
+      'and the server still holds the title it had before',
+      (await page.locator('h1').innerText()) === stamp,
+      await page.locator('h1').innerText(),
+    );
+
+    await page.goto('/sync');
+    check(
+      'the sync page counts the edit waiting to be sent',
+      (await page.locator('#outbox-summary').innerText()).includes('1 edit'),
+      await page.locator('#outbox-summary').innerText(),
+    );
+    check(
+      'and the pending row carries its space indicator, like every other row',
+      (await page.locator('#outbox-queued li span[title^="Space:"]').count()) === 1,
+    );
+
+    // ---- send it, and it lands ----
+    await page.getByRole('button', { name: /^Send 1 queued edit$/ }).click();
+    await settle(page);
+    check(
+      'sending it says what happened rather than only redrawing',
+      (await page.locator('#outbox-results li').first().innerText()).includes('Applied'),
+      await page.locator('#outbox-results li').first().innerText(),
+    );
+    await page.goto(taskUrl);
+    check(
+      'and the edit is on the server afterwards',
+      (await page.locator('h1').innerText()) === offlineTitle,
+      await page.locator('h1').innerText(),
+    );
+
+    // ---- a real conflict: queue one edit, then move the row underneath it ----
+    const mine = `${stamp} — mine`;
+    const theirs = `${stamp} — theirs`;
+    const titleField2 = page.locator('#offline-edit-heading').locator('..').locator('..').locator('input[type="text"], input:not([type])').first();
+    await titleField2.fill(mine);
+    await titleField2.blur();
+    await page.waitForTimeout(400);
+
+    // The ordinary edit form is the "somebody else" here: a second writer that
+    // moves the row while the queued edit is still waiting.
+    await page.locator('#task-title').fill(theirs);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await settle(page);
+    check(
+      'the other writer’s change is what the server holds',
+      (await page.locator('h1').innerText()) === theirs,
+      await page.locator('h1').innerText(),
+    );
+
+    await page.goto('/sync');
+    await page.getByRole('button', { name: /^Send 1 queued edit$/ }).click();
+    await settle(page);
+    const conflictCount = await page.locator('#outbox-conflicts li').count();
+    check('sending an edit that clashed produces a conflict, not a silent win', conflictCount === 1);
+    const conflictText = await page.locator('#outbox-conflicts li').first().innerText();
+    check('the conflict names both versions', conflictText.includes(mine) && conflictText.includes(theirs));
+    check('and says nothing has been overwritten', conflictText.includes('nothing has been overwritten'));
+    check(
+      'and the conflict row carries its space indicator',
+      (await page.locator('#outbox-conflicts li span[title^="Space:"]').count()) === 1,
+    );
+    await page.goto(taskUrl);
+    check(
+      'an unanswered conflict has changed nothing on the server',
+      (await page.locator('h1').innerText()) === theirs,
+      await page.locator('h1').innerText(),
+    );
+
+    // ---- answer it ----
+    await page.goto('/sync');
+    await page.getByRole('button', { name: 'Keep theirs' }).click();
+    await settle(page);
+    check(
+      'answering the conflict clears it',
+      (await page.locator('#outbox-conflicts li').count()) === 0,
+    );
+    check(
+      'and says which version was kept',
+      (await page.locator('main').innerText()).includes('The other version was kept'),
+    );
+    await page.goto(taskUrl);
+    check(
+      'keeping theirs left the server exactly as it was',
+      (await page.locator('h1').innerText()) === theirs,
+      await page.locator('h1').innerText(),
+    );
+
+    const syncUnnamed = await labelAuditOn(page);
+    check('every control on the task page has a label', syncUnnamed.length === 0, syncUnnamed.join(', '));
+
+    // ---- cursors move forward, and only on purpose ----
+    await page.goto('/sync');
+    const syncPageUnnamed = await labelAuditOn(page);
+    check('every control on the sync page has a label', syncPageUnnamed.length === 0, syncPageUnnamed.join(', '));
+
+    await page.getByRole('button', { name: 'Mark caught up' }).click();
+    await settle(page);
+    check(
+      'marking a device caught up leaves nothing changed since',
+      (await page.locator('#sync-changes-none').count()) === 1,
+    );
+    await page.getByRole('button', { name: 'Rewind to the beginning' }).click();
+    await settle(page);
+    check(
+      'and rewinding it makes the next sync read everything again',
+      (await page.locator('#sync-changes li').count()) > 0,
+    );
+
+    // ---- leave nothing behind ----
+    await page.getByLabel('Work offline').uncheck();
+    await page.goto(taskUrl);
+    await page.getByRole('button', { name: 'Delete this task' }).click();
+    await settle(page);
+    await page.goto('/tasks/all');
+    check(
+      'and the task it created is deleted again',
+      !(await page.locator('main').innerText()).includes(stamp),
+    );
+    await page.goto('/sync');
+    check(
+      'with an empty queue and no conflicts left behind',
+      (await page.locator('#outbox-summary').innerText()).includes('has been sent'),
+      await page.locator('#outbox-summary').innerText(),
+    );
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/sync');
+    const text = await page.locator('main').innerText();
+    // Devices and cursors stop at the space boundary like everything else:
+    // Danny has his own phone in his own space, and cannot see the laptop
+    // Priya registered in hers.
+    check('the partner sees his own device', text.includes('Danny — phone'));
+    check('and none of the owner’s', !text.includes('Priya — laptop'));
+    const dannyDevices = await page.locator('#sync-devices li').count();
+    check('exactly one of them', dannyDevices === 1, `${dannyDevices}`);
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/sync');
+    check(
+      'the outsider has no devices at all',
+      (await page.locator('#sync-devices li').count()) === 0,
+    );
+    check(
+      'and is told so rather than shown an error',
+      (await page.locator('main').innerText()).includes('No devices are registered'),
+    );
+    await ctx.close();
+  }
+
   // ------------------------------------------------------------- dark mode
   {
     const { ctx, page } = await pageAs(PRIYA);
