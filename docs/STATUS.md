@@ -20,7 +20,7 @@ rebuilt database at the end of session 7 and all five were green:
 pnpm build             clean
 pnpm typecheck         clean (needs the build first on a fresh clone)
 pnpm test              595 Vitest tests in 13 files
-pnpm smoke             276/276 against the running app     (needs pnpm start)
+pnpm smoke             279/279 against the running app     (needs pnpm start)
 ```
 
 `pnpm smoke` was run **twice in a row without reseeding** after that rebuild
@@ -105,9 +105,9 @@ Everything here was executed and watched.
   `tests/smartlists.test.ts` (32), `tests/markdown.test.ts` (30),
   `tests/ai.test.ts` (23), `tests/contrast.test.ts` (26) — unchanged.
 
-**Smoke — `pnpm smoke`, 276 checks against the running app**
-`scripts/smoke.mjs` drives Chromium against `pnpm start`. 61 checks are new
-this session across three sections.
+**Smoke — `pnpm smoke`, 279 checks against the running app**
+`scripts/smoke.mjs` drives Chromium against `pnpm start`. 64 checks are new
+this session across three new sections and one extended one.
 
 | Acting as | Result |
 |---|---|
@@ -246,8 +246,12 @@ Including the ones I introduced this session and did not fix.
 
 14. **Nothing runs a `schedule` rule on a schedule.** No background worker;
     adding one is a deployment decision, out of scope. Accepted (session 5).
-15. **A rule's conditions and actions are appended and removed, never edited**,
-    and never reordered.
+15. **A rule's conditions and actions are never reordered.** A *condition* can
+    now be edited where it sits (fixed this session); an **action** still
+    cannot — `updateAction` and `editRuleActionAction` exist and are wired to
+    nothing, because the action form is one select plus one free-text box that
+    means a different thing per kind, and repeating that per row would need the
+    form rebuilding first.
 16. **The rules engine only knows about tasks**, and a sweep is capped at 500
     open tasks in one space, silently.
 17. **`rule_runs` is never pruned.**
@@ -304,7 +308,8 @@ Including the ones I introduced this session and did not fix.
 
 Fixed in session 7, previously listed here: **2** (only `note_summary` had a
 surface), **19** in part (no UI for creating a repeat), **20** in part (nothing
-pushed a local edit back to a provider).
+pushed a local edit back to a provider), and **14** in part (a rule's
+conditions could only be removed and re-added at the end).
 
 ---
 
@@ -321,7 +326,7 @@ pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
 pnpm test                      # 595 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm smoke                     # 276 checks against the running app
+pnpm smoke                     # 279 checks against the running app
 ```
 
 Start the server so it survives the shell that launched it:
@@ -394,9 +399,10 @@ Orbit is finished. There is no Phase 7 and inventing one is explicitly not the
 job. What is left is the rough-edge list above, in the order they are worth
 doing:
 
-1. **Editing a rule's conditions in place** (edge 15), then **a trip detail
-   page** (edge 18) — the two oldest Phase 4 gaps, both plain missing UI over
-   data that already exists, both with the pattern to copy already in the repo.
+1. **Editing a rule's *actions* in place** (edge 15) — the query and the server
+   action are already written and wired to nothing; what is missing is a form
+   whose one free-text box knows which parameter it is setting. Then **a trip
+   detail page** (edge 18), plain missing UI over data that already exists.
 2. **Editing a repeat, not only creating one** (edges 11 and 20). The builder
    and the parser both exist; what is missing is reading an existing rule back
    into the form, and the harder half — "this occurrence" versus "the series" —

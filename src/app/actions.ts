@@ -35,6 +35,8 @@ import {
   removeAction,
   removeCondition,
   runRule,
+  updateAction,
+  updateCondition,
   setRuleEnabled,
   updateRuleParts,
 } from '@/lib/queries/rules';
@@ -1717,6 +1719,25 @@ export async function addRuleConditionAction(formData: FormData) {
   ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
 }
 
+/**
+ * Edit one condition where it sits, rather than removing it and adding it back
+ * at the end. Order is reading order, and a rule you have to re-read from the
+ * bottom every time you change a threshold is a rule nobody edits.
+ */
+export async function editRuleConditionAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const raw = {
+    field: String(formData.get('field') ?? ''),
+    op: String(formData.get('op') ?? ''),
+    value: String(formData.get('value') ?? ''),
+  };
+  const result = await updateCondition(user.id, id, Number(formData.get('index')), raw);
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
 export async function removeRuleConditionAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('ruleId') ?? '');
@@ -1743,6 +1764,26 @@ export async function addRuleActionAction(formData: FormData) {
   else if (kind === 'notify') raw.message = value;
 
   const result = await addAction(user.id, id, raw);
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
+/** The same for an action: edited in place, keeping its position. */
+export async function editRuleActionAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const kind = String(formData.get('kind') ?? '');
+  const value = String(formData.get('value') ?? '').trim();
+
+  const raw: Record<string, unknown> = { kind };
+  if (kind === 'task.set_priority') raw.priority = value;
+  else if (kind === 'task.set_status') raw.status = value;
+  else if (kind === 'task.assign') raw.to = value;
+  else if (kind === 'task.defer_days' || kind === 'task.due_in_days') raw.days = Number(value || '0');
+  else if (kind === 'notify') raw.message = value;
+
+  const result = await updateAction(user.id, id, Number(formData.get('index')), raw);
   revalidatePath('/', 'layout');
   ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
 }

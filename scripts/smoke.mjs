@@ -1216,7 +1216,7 @@ try {
     // Give it a condition and an action. A notify action, deliberately: it
     // proves the push path without rewriting a seeded task, so running this
     // section twice leaves the same tasks behind as running it once.
-    const condForm = page.locator('form:has(select[name="field"])');
+    const condForm = page.locator('#add-condition');
     await condForm.locator('select[name="field"]').selectOption('title');
     await condForm.locator('select[name="op"]').selectOption('contains');
     await condForm.locator('input[name="value"]').fill('bins');
@@ -1286,6 +1286,35 @@ try {
     );
 
     // ---- accessibility on both new pages ----
+    // A condition is edited where it sits, keeping its position — rough edge
+    // since Phase 4, when it could only be removed and re-added at the end.
+    {
+      const first = page.locator('#rule-conditions li').first();
+      const before = await first.innerText();
+      await first.locator('input[name="value"]').fill('recycling');
+      await first.getByRole('button', { name: 'Save this condition' }).click();
+      await settle(page);
+      const after = await page.locator('#rule-conditions li').first().innerText();
+      check(
+        'a condition can be changed in place',
+        after.includes('recycling') && !after.includes('bins'),
+        after.split('\n')[0],
+      );
+      check(
+        'and stays where it was rather than being removed and re-added at the end',
+        (await page.locator('#rule-conditions li').count()) === 1,
+      );
+      check(
+        'and editing it switches the rule back off, as any structural edit does',
+        await page.getByRole('button', { name: 'Switch on' }).isDisabled(),
+      );
+      // Put it back, so the section that follows still finds the rule it built.
+      await page.locator('#rule-conditions li').first().locator('input[name="value"]').fill('bins');
+      await page.locator('#rule-conditions li').first()
+        .getByRole('button', { name: 'Save this condition' }).click();
+      await settle(page);
+    }
+
     const ruleUnnamed = await labelAuditOn(page);
     check('every control on the rule page has a label', ruleUnnamed.length === 0, ruleUnnamed.join(', '));
     check(

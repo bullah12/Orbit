@@ -744,3 +744,17 @@ tracking, ever.
   still deletes — verified twice in a row against the same database.
 - **12. `runAiFeature` still reads every consent row on every run.** Three round
   trips at this data size; still not close to mattering. Accepted.
+
+### After the phase landed
+
+- **A rule's condition is edited where it sits.** Order is not evaluation order
+  — every condition has to hold — but it *is* reading order, and a rule you have
+  to re-read from the bottom every time you change a threshold is a rule nobody
+  edits. The whole list is re-validated on save rather than only the changed
+  one, so a rule stored before a shape changed cannot be half-saved, and an edit
+  is structural like any other: it switches the rule off and clears its preview.
+- **`updateAction` exists and nothing calls it yet.** The action form is one
+  select and one free-text box that means a different thing per kind, and
+  repeating that per row without rebuilding the form first would be four
+  differently-labelled boxes stacked up. Recorded as a rough edge with the
+  query already written, rather than half-built.

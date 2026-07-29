@@ -707,6 +707,58 @@ export async function removeCondition(
   return updateRuleParts(userId, ruleId, { conditions: parseConditions(next) });
 }
 
+/**
+ * Replace one condition, in place, keeping its position.
+ *
+ * Rough edge since Phase 4: a condition could only be removed and re-added,
+ * which put it at the end. Order is not evaluation order — every condition has
+ * to hold — but it *is* reading order, and a rule you have to re-read from the
+ * bottom every time you change a threshold is a rule nobody edits.
+ *
+ * The whole list is re-validated rather than only the new one, so a rule that
+ * was stored before a shape changed cannot be half-saved.
+ */
+export async function updateCondition(
+  userId: string,
+  ruleId: string,
+  index: number,
+  raw: unknown,
+): Promise<{ ok: true } | { error: string }> {
+  const row = await getRule(userId, ruleId);
+  if (!row) return { error: 'That rule does not exist, or is not yours to change.' };
+  const current = Array.isArray(row.conditions) ? (row.conditions as unknown[]) : [];
+  if (index < 0 || index >= current.length) return { error: 'There is no such condition.' };
+
+  let next: Conditions;
+  try {
+    next = parseConditions(current.map((c, i) => (i === index ? raw : c)));
+  } catch (err) {
+    return { error: err instanceof RuleShapeError ? err.message : 'that condition is malformed' };
+  }
+  return updateRuleParts(userId, ruleId, { conditions: next });
+}
+
+/** The same, for one action. */
+export async function updateAction(
+  userId: string,
+  ruleId: string,
+  index: number,
+  raw: unknown,
+): Promise<{ ok: true } | { error: string }> {
+  const row = await getRule(userId, ruleId);
+  if (!row) return { error: 'That rule does not exist, or is not yours to change.' };
+  const current = Array.isArray(row.actions) ? (row.actions as unknown[]) : [];
+  if (index < 0 || index >= current.length) return { error: 'There is no such action.' };
+
+  let next: Action[];
+  try {
+    next = parseActions(current.map((a, i) => (i === index ? raw : a)));
+  } catch (err) {
+    return { error: err instanceof RuleShapeError ? err.message : 'that action is malformed' };
+  }
+  return updateRuleParts(userId, ruleId, { actions: next });
+}
+
 export async function addAction(
   userId: string,
   ruleId: string,

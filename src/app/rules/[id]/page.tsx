@@ -24,6 +24,7 @@ import {
   addRuleConditionAction,
   deleteRuleAction,
   dryRunRuleAction,
+  editRuleConditionAction,
   removeRuleActionAction,
   removeRuleConditionAction,
   runRuleNowAction,
@@ -182,19 +183,63 @@ export default async function RulePage({
               clearer than one rule with a branch in it.
             </p>
 
-            <ul className="mt-2 flex flex-col gap-1">
+            <ul className="mt-2 flex flex-col gap-1" id="rule-conditions">
+              {/* Edited where it sits, keeping its position. Order is not
+                  evaluation order — every condition has to hold — but it is
+                  reading order, and a rule you have to re-read from the bottom
+                  every time you change a threshold is a rule nobody edits. */}
               {conditions.map((c, i) => (
-                <li key={i} className="hairline flex items-center gap-2 rounded border px-2 py-1.5">
-                  <span className="flex-1 text-[12px]">{describeCondition(c)}</span>
-                  <form action={removeRuleConditionAction}>
+                <li key={i} className="hairline flex flex-col gap-1 rounded border px-2 py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 text-[12px]">{describeCondition(c)}</span>
+                    <form action={removeRuleConditionAction}>
+                      <input type="hidden" name="ruleId" value={row.id} />
+                      <input type="hidden" name="index" value={i} />
+                      <button
+                        type="submit"
+                        className="faint rounded p-1"
+                        aria-label={`Remove condition: ${describeCondition(c)}`}
+                      >
+                        <Icon name="x" size={12} />
+                      </button>
+                    </form>
+                  </div>
+                  <form
+                    action={editRuleConditionAction}
+                    className="flex flex-wrap items-center gap-1.5"
+                    aria-label={`Change condition ${i + 1}`}
+                  >
                     <input type="hidden" name="ruleId" value={row.id} />
                     <input type="hidden" name="index" value={i} />
-                    <button
-                      type="submit"
-                      className="faint rounded p-1"
-                      aria-label={`Remove condition: ${describeCondition(c)}`}
+                    <select
+                      name="field"
+                      defaultValue={c.field}
+                      aria-label={`Condition ${i + 1}: field`}
+                      className="input text-[11px]"
                     >
-                      <Icon name="x" size={12} />
+                      {Object.entries(CONDITION_FIELDS).map(([key, meta]) => (
+                        <option key={key} value={key}>{meta.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      name="op"
+                      defaultValue={c.op}
+                      aria-label={`Condition ${i + 1}: operator`}
+                      className="input text-[11px]"
+                    >
+                      {Object.entries(CONDITION_OPS).map(([key, meta]) => (
+                        <option key={key} value={key}>{meta.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      name="value"
+                      defaultValue={c.value == null ? '' : String(c.value)}
+                      aria-label={`Condition ${i + 1}: value`}
+                      autoComplete="off"
+                      className="input text-[11px]"
+                    />
+                    <button type="submit" className="hairline rounded border px-2 py-0.5 text-[11px]">
+                      Save this condition
                     </button>
                   </form>
                 </li>
@@ -206,7 +251,11 @@ export default async function RulePage({
               )}
             </ul>
 
-            <form action={addRuleConditionAction} className="mt-2 flex flex-wrap items-end gap-2">
+            <form
+              action={addRuleConditionAction}
+              id="add-condition"
+              className="mt-2 flex flex-wrap items-end gap-2"
+            >
               <input type="hidden" name="ruleId" value={row.id} />
               <label className="flex flex-col gap-1">
                 <span className="faint text-[11px]">Field</span>
