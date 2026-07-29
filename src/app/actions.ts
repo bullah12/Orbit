@@ -24,7 +24,7 @@ import {
   sessionIsActive,
   type LegMode,
 } from '@/lib/travel';
-import { isTriggerKind, type Trigger } from '@/lib/rules';
+import { isTriggerKind, rawActionFrom, type Trigger } from '@/lib/rules';
 import { rruleFromForm } from '@/lib/recurrence';
 import {
   addAction,
@@ -1751,37 +1751,37 @@ export async function addRuleActionAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('ruleId') ?? '');
   if (!id) return;
-  const kind = String(formData.get('kind') ?? '');
-  const value = String(formData.get('value') ?? '').trim();
-
-  // Each action kind names its parameter differently; one select plus one
-  // free-text box is the whole form, so this is where the two meet.
-  const raw: Record<string, unknown> = { kind };
-  if (kind === 'task.set_priority') raw.priority = value;
-  else if (kind === 'task.set_status') raw.status = value;
-  else if (kind === 'task.assign') raw.to = value;
-  else if (kind === 'task.defer_days' || kind === 'task.due_in_days') raw.days = Number(value || '0');
-  else if (kind === 'notify') raw.message = value;
+  // One kind plus one string. `rawActionFrom` knows which key of the action
+  // object the string belongs in — it is the same table the form renders itself
+  // from, so the two halves cannot drift apart — and `parseActions`, one layer
+  // down, is still the only thing that decides whether the result is valid.
+  const raw = rawActionFrom(
+    String(formData.get('kind') ?? ''),
+    String(formData.get('value') ?? '').trim(),
+  );
 
   const result = await addAction(user.id, id, raw);
   revalidatePath('/', 'layout');
   ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
 }
 
-/** The same for an action: edited in place, keeping its position. */
+/**
+ * The same for an action: edited in place, keeping its position.
+ *
+ * Position matters more here than it does for a condition. Every condition has
+ * to hold, so their order is only reading order; actions are *applied* in order,
+ * so removing one and re-adding it at the end to change a value could change
+ * what the rule does to a task. That is why this exists rather than "remove and
+ * add again" being good enough.
+ */
 export async function editRuleActionAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('ruleId') ?? '');
   if (!id) return;
-  const kind = String(formData.get('kind') ?? '');
-  const value = String(formData.get('value') ?? '').trim();
-
-  const raw: Record<string, unknown> = { kind };
-  if (kind === 'task.set_priority') raw.priority = value;
-  else if (kind === 'task.set_status') raw.status = value;
-  else if (kind === 'task.assign') raw.to = value;
-  else if (kind === 'task.defer_days' || kind === 'task.due_in_days') raw.days = Number(value || '0');
-  else if (kind === 'notify') raw.message = value;
+  const raw = rawActionFrom(
+    String(formData.get('kind') ?? ''),
+    String(formData.get('value') ?? '').trim(),
+  );
 
   const result = await updateAction(user.id, id, Number(formData.get('index')), raw);
   revalidatePath('/', 'layout');

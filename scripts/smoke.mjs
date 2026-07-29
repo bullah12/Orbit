@@ -1223,7 +1223,7 @@ try {
     await condForm.getByRole('button', { name: 'Add condition' }).click();
     await settle(page);
 
-    const actForm = page.locator('form:has(select[name="kind"])');
+    const actForm = page.locator('form[aria-label="Add an action"]');
     await actForm.locator('select[name="kind"]').selectOption('notify');
     await actForm.locator('input[name="value"]').fill('Bins tonight');
     await actForm.getByRole('button', { name: 'Add action' }).click();
@@ -1313,6 +1313,102 @@ try {
       await page.locator('#rule-conditions li').first()
         .getByRole('button', { name: 'Save this condition' }).click();
       await settle(page);
+    }
+
+    // An action is edited where it sits too — rough edge 15, half-closed last
+    // session. The interesting part is not that it saves: it is that the one box
+    // knows which parameter it is setting, so changing the kind changes the
+    // control in front of you rather than leaving a free-text box that now means
+    // something else.
+    {
+      const row = () => page.locator('#rule-actions li').first();
+      check(
+        'an action carries a form of its own, where it sits',
+        (await row().locator('select[name="kind"]').count()) === 1,
+      );
+      check(
+        'and a notify action offers a message box, because that is its parameter',
+        (await row().locator('input[name="value"]').count()) === 1 &&
+          (await row().locator('select[name="value"]').count()) === 0,
+      );
+
+      await row().locator('input[name="value"]').fill('Recycling tonight');
+      await row().getByRole('button', { name: 'Save this action' }).click();
+      await settle(page);
+      check(
+        'an action can be changed in place',
+        (await row().innerText()).includes('notify me: “Recycling tonight”'),
+        (await row().innerText()).split('\n')[0],
+      );
+      check(
+        'and stays where it was, rather than being re-added at the end where it would run later',
+        (await page.locator('#rule-actions li').count()) === 1,
+      );
+
+      // Prove the switch-off is caused by the edit, not left over: preview it
+      // first so the rule is genuinely ready to run, then change an action.
+      await page.getByRole('button', { name: /Dry run/ }).click();
+      await settle(page);
+      check(
+        'a previewed rule is ready to run again',
+        await page.getByRole('button', { name: 'Switch on' }).isEnabled(),
+      );
+
+      // Change the kind: the message box has to become a list of priorities.
+      await row().locator('select[name="kind"]').selectOption('task.set_priority');
+      const valueOptions = await row().locator('select[name="value"] option').allInnerTexts();
+      check(
+        'changing the kind changes the control, so the box always knows what it sets',
+        (await row().locator('input[name="value"]').count()) === 0 &&
+          valueOptions.includes('urgent') && valueOptions.includes('no priority'),
+        valueOptions.join(' / '),
+      );
+      check(
+        'and it does not carry the old kind’s value across into the new vocabulary',
+        (await row().locator('select[name="value"]').inputValue()) === '',
+      );
+
+      await row().locator('select[name="value"]').selectOption('high');
+      await row().getByRole('button', { name: 'Save this action' }).click();
+      await settle(page);
+      check(
+        'an action can be changed to a different kind entirely',
+        (await row().innerText()).includes('set priority to high'),
+        (await row().innerText()).split('\n')[0],
+      );
+      check(
+        'and editing an action switches the rule off, as any structural edit does',
+        await page.getByRole('button', { name: 'Switch on' }).isDisabled(),
+      );
+
+      // A number of days left empty is refused by name rather than read as zero,
+      // which would quietly mean "due today".
+      await row().locator('select[name="kind"]').selectOption('task.due_in_days');
+      check(
+        'a days action offers a number box, not free text',
+        (await row().locator('input[name="value"][type="number"]').count()) === 1,
+      );
+      await row().locator('input[name="value"]').fill('3');
+      await row().getByRole('button', { name: 'Save this action' }).click();
+      await settle(page);
+      check(
+        'and a number of days reads back as days',
+        (await row().innerText()).includes('make it due in 3 days'),
+      );
+
+      // Put it back, so what follows finds the rule it built.
+      await row().locator('select[name="kind"]').selectOption('notify');
+      await row().locator('input[name="value"]').fill('Bins tonight');
+      await row().getByRole('button', { name: 'Save this action' }).click();
+      await settle(page);
+      check(
+        'and back to the notify it started as',
+        (await row().innerText()).includes('notify me: “Bins tonight”'),
+      );
+      check(
+        'with one action throughout, never two',
+        (await page.locator('#rule-actions li').count()) === 1,
+      );
     }
 
     const ruleUnnamed = await labelAuditOn(page);
