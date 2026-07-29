@@ -38,6 +38,7 @@ import {
   updateRuleParts,
 } from '@/lib/queries/rules';
 import { createFromCapture } from '@/lib/queries/capture';
+import { runAiFeature, setConsent } from '@/lib/queries/ai';
 import {
   connectProviderCalendar,
   pullCalendar,
@@ -1751,4 +1752,54 @@ export async function captureCreate(formData: FormData) {
 
   revalidatePath('/', 'layout');
   redirect(result.href as never);
+}
+
+// ---------------------------------------------------------------------------
+// AI
+// ---------------------------------------------------------------------------
+
+/**
+ * Switch one AI feature on or off, in one space.
+ *
+ * There is no "AI on" switch and there is not going to be one. Consent is per
+ * feature and per space because that is the granularity at which somebody can
+ * actually answer the question "what did I agree to send".
+ */
+export async function setAiConsent(formData: FormData) {
+  const user = await requireUser();
+  const consentId = String(formData.get('consentId') ?? '');
+  const enabled = String(formData.get('enabled') ?? '') === '1';
+  if (!consentId) return;
+
+  const result = await setConsent(user.id, consentId, enabled);
+  revalidatePath('/', 'layout');
+  if ('error' in result) redirect(`/ai?error=${encodeURIComponent(result.error)}`);
+  redirect('/ai');
+}
+
+/**
+ * Run one AI feature against one note.
+ *
+ * The refusal and the answer are both carried back on the URL so the page can
+ * show what was sent next to what came back — the same bargain the rules
+ * engine's dry run makes. A refusal shows no prompt because there was none:
+ * nothing was assembled and nothing was sent.
+ */
+export async function runAiOnNote(formData: FormData) {
+  const user = await requireUser();
+  const feature = String(formData.get('feature') ?? '');
+  const noteId = String(formData.get('noteId') ?? '');
+  if (!feature || !noteId) return;
+
+  const result = await runAiFeature(user.id, feature, noteId);
+  revalidatePath('/', 'layout');
+
+  const params = new URLSearchParams();
+  if (result.ok) {
+    params.set('sent', result.prompt);
+    params.set('answer', result.text);
+  } else {
+    params.set('refused', result.reason ?? 'It did not run.');
+  }
+  redirect(`/ai?${params.toString()}`);
 }

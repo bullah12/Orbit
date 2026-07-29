@@ -33,6 +33,7 @@ import { OpenRouteServiceTravelTimeProvider } from './travel/openrouteservice';
 import { FakePushProvider } from './push/fake';
 import { WebPushProvider } from './push/webpush';
 import { FakeAiProvider } from './ai/fake';
+import { AnthropicAiProvider } from './ai/anthropic';
 
 export * from './types';
 export { parseIcs, parseIcsDate, parseIcsDuration } from './ics/parse';
@@ -105,13 +106,17 @@ export function selectPushProvider(env: Env = process.env): PushProvider {
 }
 
 /**
- * Phase 5 owns the real AI provider. Only `fake` is listed, so asking for one
- * today fails loudly with the list of what exists rather than serving fixtures
- * under another name.
+ * Phase 5 wrote the real AI provider: the Anthropic Messages API, against the
+ * published documentation. Like the four before it, it has never executed a
+ * request — what the tests verify is that it constructs with no credential and
+ * refuses when called without one. The default is still the fake, which is
+ * deterministic, offline, and the one every other test exercises.
  */
-
 export function selectAiProvider(env: Env = process.env): AiProvider {
-  return choose<AiProvider>('AI_PROVIDER', env, { fake: () => new FakeAiProvider() });
+  return choose<AiProvider>('AI_PROVIDER', env, {
+    fake: () => new FakeAiProvider(),
+    anthropic: () => new AnthropicAiProvider(env),
+  });
 }
 
 // --- process-wide singletons ----------------------------------------------

@@ -1570,6 +1570,150 @@ try {
     await ctx.close();
   }
 
+  // -------------------------------------------------------------------- AI
+  //
+  // The whole claim of the phase is that nothing happens until somebody says so
+  // and that a locked item never happens at all. Both are driven here, in
+  // order, through the running app — and the consent is switched back off at
+  // the end, so the suite passes twice against the same database.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/');
+    check('AI is reachable from the sidebar', (await page.locator('nav a[href="/ai"]').count()) === 1);
+
+    await page.goto('/ai');
+    const provider = await page.locator('#ai-provider').innerText();
+    check('the AI page names the provider that would answer', provider.includes('ai:'), provider);
+    check(
+      'and says whether it is a fake, rather than leaving it to be assumed',
+      (await page.locator('main').innerText()).includes('nothing leaves this machine'),
+    );
+
+    const consentCount = await page.locator('#ai-consents li').count();
+    check('every AI feature is listed with its disclosure', consentCount >= 3, `${consentCount}`);
+    check(
+      'and every one of them starts switched off',
+      (await page.locator('#ai-consents li:has-text("Off")').count()) === consentCount,
+    );
+    const aiIndicators = await page.locator('#ai-consents li span[title^="Space:"]').count();
+    check('each consent says which space it is for', aiIndicators >= consentCount);
+
+    // ---- pick a plain note, and be refused because nothing is switched on ----
+    const options = await page
+      .locator('#ai-note option')
+      .evaluateAll((os) => os.map((o) => ({ value: o.value, label: o.textContent.trim() })));
+    const plain = options.find((o) => !o.label.startsWith('🔒'));
+    const locked = options.find((o) => o.label.startsWith('🔒'));
+    check('the note picker lists a locked note rather than hiding it', Boolean(locked));
+
+    await page.locator('#ai-note').selectOption(plain.value);
+    await page.getByRole('button', { name: 'Summarise it' }).click();
+    await settle(page);
+    check(
+      'running a feature that is switched off is refused',
+      (await page.locator('#ai-refusal').innerText()).includes('switched off'),
+    );
+    check('and nothing was sent', (await page.locator('#ai-sent').count()) === 0);
+
+    // ---- switch it on, and it works ----
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Summarise a note' })
+      .first()
+      .getByRole('button', { name: 'Switch on, and send this' })
+      .click();
+    await settle(page);
+    check(
+      'switching one feature on records the consent',
+      (await page.locator('#ai-consents li', { hasText: 'Summarise a note' }).first().innerText())
+        .includes('Consented'),
+    );
+
+    await page.locator('#ai-note').selectOption(plain.value);
+    await page.getByRole('button', { name: 'Summarise it' }).click();
+    await settle(page);
+    const sent = await page.locator('#ai-sent').innerText();
+    check('now it runs, and shows exactly what was sent', sent.length > 0);
+    check('and shows what came back', (await page.locator('#ai-answer').count()) === 1);
+    check(
+      'and the answer is the fake saying so, not a model pretending',
+      (await page.locator('#ai-answer').innerText()).includes('nothing left this device'),
+    );
+
+    // ---- the locked note is refused, with the feature switched ON ----
+    await page.locator('#ai-note').selectOption(locked.value);
+    await page.getByRole('button', { name: 'Summarise it' }).click();
+    await settle(page);
+    const refusal = await page.locator('#ai-refusal').innerText();
+    check('a locked note is refused even with the feature switched on', refusal.includes('locked'));
+    check(
+      'and the refusal says the reason rather than just failing',
+      refusal.includes('no plaintext on this server'),
+    );
+    check('and nothing was sent for it', (await page.locator('#ai-sent').count()) === 0);
+
+    // ---- the refusal is a row, not an absence ----
+    const runs = await page.locator('#ai-runs').innerText();
+    check('the refusal is recorded as a run, not as silence', runs.includes('nothing sent'));
+    check('and the run log holds no note content', !runs.includes('Worcester'));
+
+    const aiUnnamed = await labelAuditOn(page);
+    check('every control on the AI page has a label', aiUnnamed.length === 0, aiUnnamed.join(', '));
+    check(
+      'the AI page announces its result rather than only redrawing',
+      (await page.locator('[aria-live="polite"]').count()) > 0,
+    );
+
+    // ---- leave it as it was found ----
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Summarise a note' })
+      .first()
+      .getByRole('button', { name: 'Switch off' })
+      .click();
+    await settle(page);
+    check(
+      'switching it back off leaves every feature off, as it was found',
+      (await page.locator('#ai-consents li:has-text("Off")').count()) === consentCount,
+    );
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/ai');
+    const text = await page.locator('main').innerText();
+    // Consent is personal at the policy level, not space-wide. Danny has one
+    // row of his own in Home and sees none of Priya's three in the same space.
+    const dannyConsents = await page.locator('#ai-consents li').count();
+    check('the partner has his own consent to give', dannyConsents === 1, `${dannyConsents}`);
+    check(
+      'and none of the owner\u2019s, even in the space they share',
+      !text.includes('Review the week ahead') && !text.includes('Break a task into steps'),
+    );
+    check(
+      'and sees the AI runs in that space',
+      (await page.locator('#ai-runs li').count()) > 0,
+    );
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/ai');
+    check(
+      'the outsider has no AI features at all',
+      (await page.locator('#ai-consents li a, #ai-consents li form').count()) === 0,
+    );
+    check(
+      'and no runs',
+      (await page.locator('main').innerText()).includes('Nothing has run yet'),
+    );
+    await ctx.close();
+  }
+
   // ------------------------------------------------------------- dark mode
   {
     const { ctx, page } = await pageAs(PRIYA);
