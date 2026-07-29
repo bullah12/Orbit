@@ -37,6 +37,8 @@ import {
   setRuleEnabled,
   updateRuleParts,
 } from '@/lib/queries/rules';
+import { createFromCapture } from '@/lib/queries/capture';
+import { runAiFeature, setConsent } from '@/lib/queries/ai';
 import {
   connectProviderCalendar,
   pullCalendar,
@@ -1712,4 +1714,92 @@ export async function deleteRuleAction(formData: FormData) {
   await deleteRule(user.id, id);
   revalidatePath('/', 'layout');
   redirect('/rules');
+}
+
+// ---------------------------------------------------------------------------
+// Capture
+// ---------------------------------------------------------------------------
+
+/**
+ * Create whatever a captured line described.
+ *
+ * The **text** is what the form carries, not the parse. Re-parsing it here
+ * costs nothing and means the thing that gets created is produced by the same
+ * function that produced the preview somebody read — a form carrying a resolved
+ * date would be a form somebody could edit into a date the preview never
+ * showed.
+ *
+ * The parser is local-only by decision 8; nothing on this path sends the text
+ * anywhere except into the row it creates.
+ */
+export async function captureCreate(formData: FormData) {
+  const user = await requireUser();
+  const text = String(formData.get('text') ?? '');
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const rawKind = String(formData.get('kind') ?? '');
+  const kind =
+    rawKind === 'task' || rawKind === 'note' || rawKind === 'event' ? rawKind : undefined;
+
+  const result = await createFromCapture(user.id, text, { spaceId, kind });
+
+  if ('error' in result) {
+    redirect(`/capture?text=${encodeURIComponent(text)}&error=${encodeURIComponent(result.error)}`);
+  }
+
+  // A capture that produced a task fires the task rules, exactly as the compose
+  // bar does. A rule the user wrote should not care which surface typed it.
+  if (result.kind === 'task') await fireForTask(user.id, 'task.created', result.id);
+
+  revalidatePath('/', 'layout');
+  redirect(result.href as never);
+}
+
+// ---------------------------------------------------------------------------
+// AI
+// ---------------------------------------------------------------------------
+
+/**
+ * Switch one AI feature on or off, in one space.
+ *
+ * There is no "AI on" switch and there is not going to be one. Consent is per
+ * feature and per space because that is the granularity at which somebody can
+ * actually answer the question "what did I agree to send".
+ */
+export async function setAiConsent(formData: FormData) {
+  const user = await requireUser();
+  const consentId = String(formData.get('consentId') ?? '');
+  const enabled = String(formData.get('enabled') ?? '') === '1';
+  if (!consentId) return;
+
+  const result = await setConsent(user.id, consentId, enabled);
+  revalidatePath('/', 'layout');
+  if ('error' in result) redirect(`/ai?error=${encodeURIComponent(result.error)}`);
+  redirect('/ai');
+}
+
+/**
+ * Run one AI feature against one note.
+ *
+ * The refusal and the answer are both carried back on the URL so the page can
+ * show what was sent next to what came back — the same bargain the rules
+ * engine's dry run makes. A refusal shows no prompt because there was none:
+ * nothing was assembled and nothing was sent.
+ */
+export async function runAiOnNote(formData: FormData) {
+  const user = await requireUser();
+  const feature = String(formData.get('feature') ?? '');
+  const noteId = String(formData.get('noteId') ?? '');
+  if (!feature || !noteId) return;
+
+  const result = await runAiFeature(user.id, feature, noteId);
+  revalidatePath('/', 'layout');
+
+  const params = new URLSearchParams();
+  if (result.ok) {
+    params.set('sent', result.prompt);
+    params.set('answer', result.text);
+  } else {
+    params.set('refused', result.reason ?? 'It did not run.');
+  }
+  redirect(`/ai?${params.toString()}`);
 }

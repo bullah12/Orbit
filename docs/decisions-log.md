@@ -494,3 +494,107 @@ tracking, ever.
   notification rather than a task change, deliberately: it exercises the push
   path without rewriting a seeded task, so running it twice leaves the same
   tasks behind as running it once.
+
+## Session 6 — 2026-07-29
+
+- **Branch is `claude/orbit-phase-5-q2yu2b`.** The designated branch again
+  differs from names elsewhere in the brief; the designated one wins, as it has
+  every session so far.
+- **Search is five queries, not one union.** Each kind has its own columns and
+  its own idea of a subtitle, and a `union all` that flattened them would either
+  lose the detail line or carry five nullable columns nobody reads. Merging
+  them into one list happens in TypeScript, which is an *ordering* decision and
+  not a visibility one — RLS already decided what came back.
+- **No kind may crowd the others out.** `mergeResults` promotes the first
+  result of every kind ahead of the second result of any kind. Ten matching
+  tasks must not bury the one person whose name was actually typed. The
+  alternative — a flat sort by `ts_rank` — makes search useless for the case it
+  is most often used for.
+- **The tsvector expression is copied character for character from the index
+  definition.** Every one of the five search queries repeats the expression in
+  the migration exactly, so the partial GIN index is usable. If one drifts,
+  search still *works* and quietly stops using the index; nothing catches that,
+  so the comment in `queries/search.ts` says to change both together.
+- **There is no "exclude the locked ones" branch, because there is nothing to
+  exclude.** A locked row is constrained to `title = ''` and `body_md = ''`, so
+  it cannot match a query. `where not is_locked` is in each query to make the
+  planner use the partial index, not as the security boundary. The search page
+  states the number of locked items rather than saying nothing, because silence
+  reads as "there is nothing there".
+- **Highlighting is done in TypeScript, not with `ts_headline`.** `ts_headline`
+  takes a second pass over the document per row and returns *markup in a
+  string*, which is the one shape that cannot reach React without
+  `dangerouslySetInnerHTML`. Segments can.
+- **The highlighter stems, crudely, on purpose.** Postgres searches with the
+  `english` dictionary, so "bins" finds a task whose title says "bin bags" — and
+  a highlighter looking for the literal string would embolden nothing on the
+  very row it just found, which reads as a broken search. `looseStem` handles
+  the plural, which is the case that matters; being occasionally too generous
+  about which word to embolden costs nothing, because it never decides what
+  *matches*.
+- **Capture parsing has a test that reads its own source.** The ADR says the
+  local-only rule should be a lint rule; linting is out of scope by
+  instruction. `tests/capture.test.ts` therefore reads
+  `src/lib/capture/index.ts`, strips the comments, and fails if `fetch(`,
+  `import(`, a node network module, or the string `AiProvider` appears in the
+  code. A promise nothing checks is a comment.
+- **"Next Friday" is the Friday of next week; a bare "Friday" is the Friday
+  coming; "a week on Friday" is the Friday coming plus seven.** All three are
+  defensible and they sometimes disagree; each is pinned by a test, and the
+  resolved date is shown back on a chip before anything is created, which is the
+  real safeguard. Typed on a Tuesday, "on Tuesday" means the Tuesday coming —
+  somebody who meant today would have typed today.
+- **A bare hour has a stated assumption, not a guess: 1–6 is the afternoon,
+  7–11 the morning, 12 is midday.** That is what makes "half three" mean half
+  past three, which is the only thing it can mean in English. "At 7" resolving
+  to 07:00 will sometimes be wrong; the chip says "07:00 — morning assumed", so
+  it is wrong *visibly*, which is the most that can be done.
+- **A duration that runs past midnight is clamped to 23:59, not rolled over.**
+  An event that silently moved to tomorrow is worse than one that ends at 23:59
+  and is obviously wrong.
+- **The capture form carries the text, not the parse.** The server re-parses
+  before creating anything, so what is created is produced by the same function
+  that produced the preview somebody read. A form carrying a resolved date
+  would be a form somebody could edit into a date the preview never showed.
+- **A locked item is refused by the AI gate *before* consent is looked at.**
+  The order is asserted from three directions in `tests/ai.test.ts`. If consent
+  were checked first, a locked item with the feature switched on would be
+  refused for the right reason by accident; the sentence this design exists to
+  make unsayable is "you consented, so we read it".
+- **An `ai_runs` row is written for every attempt, refusals included.** Same
+  call as `notification_deliveries` in Phase 4, same reason: it is the only way
+  to tell "nothing was sent" from "something was sent and nobody looked". A
+  refused row names the entity it declined to read and holds none of its
+  content.
+- **Emptiness is decided on the subject, not the assembled prompt.** Every
+  prompt carries an instruction, so a prompt is never empty even when there is
+  nothing to say. Sending an instruction with a blank note attached is a
+  request that costs money and can only produce an invention.
+- **Consent turned out to be personal at the policy level already.** The
+  migration wrote `owner_id = auth.uid() and can_read_space(...)` on
+  `ai_feature_consents`, not the usual space-wide grant. The first version of
+  the page re-decided this in TypeScript with an `isMine` flag; that was
+  deleted. Being in somebody's space does not show you what they agreed to
+  send. The seed now gives Danny his own row so the fact is visible in the app,
+  and pgTAP asserts the partner sees none of Alice's.
+- **`buildPrompt` is the only place a prompt is assembled**, so the disclosure
+  a person reads in settings can be checked against one function rather than
+  against a habit. `weekly_review` says "no note bodies", and there is a test
+  that its prompt contains none.
+- **Locked notes are listed in the AI picker and refused, not hidden.** A note
+  that vanishes from a picker looks like a note that does not exist. One that
+  is listed, picked and refused is the promise being kept in front of you.
+- **The real `AiProvider` is the Anthropic Messages API, written and never
+  run.** Written against the published API rather than the SDK, for the same
+  reason as every other real provider here: a dependency Orbit cannot execute
+  is a dependency nobody can check. It does not decide whether it is allowed to
+  run — consent is checked before anything reaches it — and it does not retry,
+  because silently repeating a request that costs money and leaves the device is
+  not an implementation detail. A `stop_reason: "refusal"` is a successful HTTP
+  response with an empty body, so it is checked before the content is read.
+- **`ai_runs` records no token counts.** Nothing in this build counts tokens,
+  and a fabricated number in an audit trail is worse than a null.
+- **Search, capture and AI are three separate pages, not one.** They share a
+  phase and nothing else: search reads, capture writes, and AI is a setting
+  with one demonstration attached. Putting them behind one nav item would make
+  the AI consent screen something people arrive at by accident.

@@ -35,12 +35,15 @@ export function Sidebar({
 
       <div className="flex flex-col gap-0.5">
         <NavLink href="/" icon="check" label="Today" />
+        <NavLink href="/capture" icon="plus" label="Capture" />
+        <NavLink href="/search" icon="search" label="Search" />
         <NavLink href="/calendar/week" icon="calendar" label="Calendar" />
         <NavLink href="/people" icon="users" label="People" />
         <NavLink href="/places" icon="map_pin" label="Places" />
         <NavLink href="/travel" icon="route" label="Travel" />
         <NavLink href="/notes" icon="note" label="Notes" />
         <NavLink href="/rules" icon="route" label="Rules" />
+        <NavLink href="/ai" icon="sparkle" label="AI" />
       </div>
 
       <Section title="Lists">

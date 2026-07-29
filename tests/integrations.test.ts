@@ -8,6 +8,7 @@ import { GoogleCalendarProvider } from '@/lib/integrations/calendar/google';
 import { NominatimGeocodingProvider } from '@/lib/integrations/geocoding/nominatim';
 import { OpenRouteServiceTravelTimeProvider } from '@/lib/integrations/travel/openrouteservice';
 import { WebPushProvider } from '@/lib/integrations/push/webpush';
+import { AnthropicAiProvider } from '@/lib/integrations/ai/anthropic';
 import { parseIcs, parseIcsDuration } from '@/lib/integrations/ics/parse';
 import {
   IntegrationError,
@@ -66,7 +67,12 @@ describe('provider selection', () => {
     expect(() => selectGeocodingProvider({ GEOCODING_PROVIDER: 'google' })).toThrow(UnknownProviderError);
     expect(() => selectTravelTimeProvider({ TRAVEL_TIME_PROVIDER: 'google' })).toThrow(UnknownProviderError);
     expect(() => selectPushProvider({ PUSH_PROVIDER: 'apns' })).toThrow(UnknownProviderError);
-    expect(() => selectAiProvider({ AI_PROVIDER: 'anthropic' })).toThrow(UnknownProviderError);
+    expect(() => selectAiProvider({ AI_PROVIDER: 'openai' })).toThrow(UnknownProviderError);
+  });
+
+  it('selects the real AI provider by name', () => {
+    expect(selectAiProvider({ AI_PROVIDER: 'anthropic' }).name).toBe('ai:anthropic');
+    expect(selectAiProvider({ AI_PROVIDER: 'anthropic' }).isFake).toBe(false);
   });
 
   it('constructing a real provider without credentials does not throw', () => {
@@ -109,6 +115,7 @@ describe('provider selection', () => {
     // thing that is provable for Nominatim and ORS: it boots without a
     // credential and will not act without one.
     expect(() => new WebPushProvider({})).not.toThrow();
+    expect(() => new AnthropicAiProvider({})).not.toThrow();
     await expect(
       new WebPushProvider({}).send(subscriptionJson(), { title: 'Orbit', body: 'Bins' }),
     ).rejects.toMatchObject({ name: 'IntegrationError', kind: 'missing_credential' });
@@ -403,5 +410,44 @@ describe('the phase 3+ fakes', () => {
     const res = await a.complete({ feature: 'summarise', prompt: 'two words' });
     expect(res.text).toContain('nothing left this device');
     expect(res.model).toBe('fake-local');
+  });
+});
+
+/**
+ * The real AI provider — written, never run.
+ *
+ * The Anthropic Messages API has never been called from this container: there
+ * is no key and no network. What can be checked without either is that it
+ * constructs happily with nothing, refuses when *called* with nothing, and says
+ * which variable is missing rather than failing somewhere downstream.
+ */
+describe('the real AI provider', () => {
+  it('constructs with no credential, because the app has to boot', () => {
+    expect(() => new AnthropicAiProvider({})).not.toThrow();
+    expect(new AnthropicAiProvider({}).name).toBe('ai:anthropic');
+  });
+
+  it('is not a fake, and does not claim to be', () => {
+    expect(new AnthropicAiProvider({}).isFake).toBe(false);
+  });
+
+  it('refuses when called without a key, and names the variable', async () => {
+    await expect(
+      new AnthropicAiProvider({}).complete({ feature: 'note_summary', prompt: 'hello' }),
+    ).rejects.toMatchObject({ name: 'IntegrationError', kind: 'missing_credential' });
+
+    await expect(
+      new AnthropicAiProvider({}).complete({ feature: 'note_summary', prompt: 'hello' }),
+    ).rejects.toThrow(/ANTHROPIC_API_KEY/);
+  });
+
+  it('refuses before it would touch the network', async () => {
+    // If the credential check happened after the request was built, a missing
+    // key would show up as a transport error from a machine with no network —
+    // which is the wrong sentence for the wrong problem.
+    const err = await new AnthropicAiProvider({})
+      .complete({ feature: 'note_summary', prompt: 'hello' })
+      .catch((e) => e as IntegrationError);
+    expect((err as IntegrationError).kind).toBe('missing_credential');
   });
 });

@@ -1336,6 +1336,384 @@ try {
     await ctx.close();
   }
 
+  // --------------------------------------------------------------- capture
+  //
+  // Creates one task and deletes it again, so the suite still passes twice in a
+  // row against the same database. What it asserts is the *bargain*: the parse
+  // is shown before anything is created, and what gets created is what the
+  // preview said.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    const stamp = `smoke capture ${Date.now()}`;
+
+    await page.goto('/');
+    check(
+      'capture is reachable from the sidebar',
+      (await page.locator('nav a[href="/capture"]').count()) === 1,
+    );
+
+    await page.goto('/capture');
+    check(
+      'capture says plainly that nothing leaves the device',
+      (await page.locator('main').innerText()).includes('Nothing you type here is sent anywhere'),
+    );
+
+    await page.locator('#capture-text').fill(`${stamp} a week on Tuesday !high`);
+    await page.getByRole('button', { name: 'Read it back' }).click();
+    await settle(page);
+
+    const preview = await page.locator('main').innerText();
+    check('the parse is read back before anything is created', preview.includes(stamp));
+    check('and it resolved the date phrase to a real day', /a week on Tuesday/.test(preview));
+
+    const chips = await page.locator('#capture-matches li').count();
+    check('and shows one chip per phrase it consumed', chips === 2, `${chips} chips`);
+    check(
+      'and names the priority it read',
+      (await page.locator('#capture-matches').innerText()).includes('high priority'),
+    );
+
+    // The space indicator is a hard requirement on every compose surface, and
+    // what you capture is readable by everyone in the space you put it in.
+    const composeIndicators = await page
+      .locator('form[aria-label="Create what was captured"] span[title^="Space:"]')
+      .count();
+    check('the capture compose surface carries space indicators', composeIndicators > 0);
+
+    const captureUnnamed = await labelAuditOn(page);
+    check('every control on the capture page has a label', captureUnnamed.length === 0, captureUnnamed.join(', '));
+
+    await page.getByRole('button', { name: 'Create it' }).click();
+    await settle(page);
+    check(
+      'creating it lands on the thing it created',
+      page.url().includes('/tasks/item/'),
+      page.url(),
+    );
+    check(
+      'with the title the preview showed and none of the phrases it consumed',
+      (await page.locator('#task-title').inputValue()) === stamp,
+      await page.locator('#task-title').inputValue(),
+    );
+    const due = await page.locator('#task-due').inputValue();
+    check('and the date it resolved', /^\d{4}-\d{2}-\d{2}$/.test(due), due);
+
+    // A line with nothing but a date creates nothing.
+    await page.goto('/capture?text=tomorrow');
+    check(
+      'a line that is only a date cannot be created',
+      await page.getByRole('button', { name: 'Create it' }).isDisabled(),
+    );
+
+    // ---- leave nothing behind ----
+    await page.goto('/tasks/all');
+    const found = page.locator('main ul li', { hasText: stamp }).first();
+    await found.locator('a[href^="/tasks/item/"]').click();
+    await settle(page);
+    await page.getByRole('button', { name: 'Delete this task' }).click();
+    await settle(page);
+    await page.goto('/tasks/all');
+    check(
+      'and the task it created is deleted again',
+      !(await page.locator('main').innerText()).includes(stamp),
+    );
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/capture?text=something%20tomorrow');
+    check(
+      'the outsider has no space to capture into',
+      (await page.locator('form[aria-label="Create what was captured"] input[name="spaceId"]').count()) === 0,
+    );
+    check(
+      'so capture is refused rather than offered',
+      await page.getByRole('button', { name: 'Create it' }).isDisabled(),
+    );
+    await ctx.close();
+  }
+
+  // ---------------------------------------------------------------- search
+  //
+  // Search is the one surface where "the client filtered it" and "the policy
+  // filtered it" look identical from the outside, so what is asserted here is a
+  // *relationship* between what three different people get back for the same
+  // query — not a count, which would rot the moment the seed changes.
+  let priyaHrefs = [];
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/');
+    check(
+      'search is reachable from the sidebar',
+      (await page.locator('nav a[href="/search"]').count()) === 1,
+    );
+
+    await page.goto('/search?q=bins');
+    const rows = await page.locator('#search-results li').count();
+    check('search finds things', rows > 0, `${rows} results`);
+
+    priyaHrefs = await page
+      .locator('#search-results li a')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+
+    check(
+      'and the owner finds things in her own space that nobody else is in',
+      (await page.locator('#search-results li span[title="Space: Priya"]').count()) > 0,
+    );
+
+    const indicators = await page.locator('#search-results li span[title^="Space:"]').count();
+    check(
+      'every search result carries a space indicator',
+      indicators >= rows,
+      `${indicators} indicators / ${rows} rows`,
+    );
+
+    // Every result says which kind it is; a mixed list where you cannot tell a
+    // note from an event is a list you have to open to read.
+    const kinds = await page
+      .locator('#search-results li')
+      .evaluateAll((lis) =>
+        lis.filter((li) => /\b(Task|Note|Person|Event|Place)\b/.test(li.innerText)).length,
+      );
+    check('and says which kind of thing it is', kinds === rows, `${kinds}/${rows}`);
+
+    // A locked item has no plaintext on the server, so it cannot be found — and
+    // the page must say so rather than being silently short.
+    check(
+      'search says plainly that locked items were not searched',
+      (await page.locator('main').innerText()).includes('not searched'),
+    );
+    const blank = await page
+      .locator('#search-results li')
+      .evaluateAll((lis) => lis.filter((li) => li.innerText.trim().length < 3).length);
+    check('and no result is an empty row where a locked item used to be', blank === 0);
+
+    // The kind filter declines to *look* for something; it does not hide
+    // anything the caller could otherwise see.
+    await page.goto('/search?q=bins&kind=note');
+    const noteRows = await page.locator('#search-results li').count();
+    const onlyNotes = await page
+      .locator('#search-results li')
+      .evaluateAll((lis) => lis.every((li) => /\bNote\b/.test(li.innerText)));
+    check('narrowing to notes returns only notes', noteRows > 0 && onlyNotes, `${noteRows} notes`);
+    check('and fewer results than the unfiltered query', noteRows < rows);
+
+    await page.goto('/search?q=zzqqxx');
+    check(
+      'a query that matches nothing says so',
+      (await page.locator('main').innerText()).includes('Nothing matches'),
+    );
+    check(
+      'and returns no rows',
+      (await page.locator('#search-results li').count()) === 0,
+    );
+
+    const searchUnnamed = await labelAuditOn(page);
+    check('every control on the search page has a label', searchUnnamed.length === 0, searchUnnamed.join(', '));
+    check(
+      'the search page announces its result count rather than only redrawing',
+      (await page.locator('[aria-live="polite"]').count()) > 0,
+    );
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/search?q=bins');
+    const dannyHrefs = await page
+      .locator('#search-results li a')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    check('the partner finds things too', dannyHrefs.length > 0, `${dannyHrefs.length} results`);
+
+    // In the space they share, the two of them find the same rows. This is the
+    // real claim: membership decides, not identity — so "Danny sees less" must
+    // be entirely explained by the spaces he is not in, and not by anything
+    // being hidden from him inside the one he is.
+    const dannyShared = await page
+      .locator('#search-results li')
+      .evaluateAll((lis) =>
+        lis
+          .filter((li) => li.querySelector('span[title="Space: Home"]'))
+          .map((li) => li.querySelector('a').getAttribute('href')),
+      );
+    check(
+      'and in the space they share, they find exactly the same rows',
+      dannyShared.length > 0 && dannyShared.every((h) => priyaHrefs.includes(h)),
+      `${dannyShared.length} shared rows`,
+    );
+    check(
+      'and nothing at all from the space he only sees as free/busy',
+      (await page.locator('#search-results li span[title="Space: Work"]').count()) === 0,
+    );
+    check(
+      'and nothing from the space that is hers alone',
+      (await page.locator('#search-results li span[title="Space: Priya"]').count()) === 0,
+    );
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/search?q=bins');
+    check(
+      'the outsider finds nothing at all',
+      (await page.locator('#search-results li').count()) === 0,
+    );
+    check(
+      'and is told so, rather than shown an error',
+      (await page.locator('main').innerText()).includes('Nothing matches'),
+    );
+    await ctx.close();
+  }
+
+  // -------------------------------------------------------------------- AI
+  //
+  // The whole claim of the phase is that nothing happens until somebody says so
+  // and that a locked item never happens at all. Both are driven here, in
+  // order, through the running app — and the consent is switched back off at
+  // the end, so the suite passes twice against the same database.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/');
+    check('AI is reachable from the sidebar', (await page.locator('nav a[href="/ai"]').count()) === 1);
+
+    await page.goto('/ai');
+    const provider = await page.locator('#ai-provider').innerText();
+    check('the AI page names the provider that would answer', provider.includes('ai:'), provider);
+    check(
+      'and says whether it is a fake, rather than leaving it to be assumed',
+      (await page.locator('main').innerText()).includes('nothing leaves this machine'),
+    );
+
+    const consentCount = await page.locator('#ai-consents li').count();
+    check('every AI feature is listed with its disclosure', consentCount >= 3, `${consentCount}`);
+    check(
+      'and every one of them starts switched off',
+      (await page.locator('#ai-consents li:has-text("Off")').count()) === consentCount,
+    );
+    const aiIndicators = await page.locator('#ai-consents li span[title^="Space:"]').count();
+    check('each consent says which space it is for', aiIndicators >= consentCount);
+
+    // ---- pick a plain note, and be refused because nothing is switched on ----
+    const options = await page
+      .locator('#ai-note option')
+      .evaluateAll((os) => os.map((o) => ({ value: o.value, label: o.textContent.trim() })));
+    const plain = options.find((o) => !o.label.startsWith('🔒'));
+    const locked = options.find((o) => o.label.startsWith('🔒'));
+    check('the note picker lists a locked note rather than hiding it', Boolean(locked));
+
+    await page.locator('#ai-note').selectOption(plain.value);
+    await page.getByRole('button', { name: 'Summarise it' }).click();
+    await settle(page);
+    check(
+      'running a feature that is switched off is refused',
+      (await page.locator('#ai-refusal').innerText()).includes('switched off'),
+    );
+    check('and nothing was sent', (await page.locator('#ai-sent').count()) === 0);
+
+    // ---- switch it on, and it works ----
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Summarise a note' })
+      .first()
+      .getByRole('button', { name: 'Switch on, and send this' })
+      .click();
+    await settle(page);
+    check(
+      'switching one feature on records the consent',
+      (await page.locator('#ai-consents li', { hasText: 'Summarise a note' }).first().innerText())
+        .includes('Consented'),
+    );
+
+    await page.locator('#ai-note').selectOption(plain.value);
+    await page.getByRole('button', { name: 'Summarise it' }).click();
+    await settle(page);
+    const sent = await page.locator('#ai-sent').innerText();
+    check('now it runs, and shows exactly what was sent', sent.length > 0);
+    check('and shows what came back', (await page.locator('#ai-answer').count()) === 1);
+    check(
+      'and the answer is the fake saying so, not a model pretending',
+      (await page.locator('#ai-answer').innerText()).includes('nothing left this device'),
+    );
+
+    // ---- the locked note is refused, with the feature switched ON ----
+    await page.locator('#ai-note').selectOption(locked.value);
+    await page.getByRole('button', { name: 'Summarise it' }).click();
+    await settle(page);
+    const refusal = await page.locator('#ai-refusal').innerText();
+    check('a locked note is refused even with the feature switched on', refusal.includes('locked'));
+    check(
+      'and the refusal says the reason rather than just failing',
+      refusal.includes('no plaintext on this server'),
+    );
+    check('and nothing was sent for it', (await page.locator('#ai-sent').count()) === 0);
+
+    // ---- the refusal is a row, not an absence ----
+    const runs = await page.locator('#ai-runs').innerText();
+    check('the refusal is recorded as a run, not as silence', runs.includes('nothing sent'));
+    check('and the run log holds no note content', !runs.includes('Worcester'));
+
+    const aiUnnamed = await labelAuditOn(page);
+    check('every control on the AI page has a label', aiUnnamed.length === 0, aiUnnamed.join(', '));
+    check(
+      'the AI page announces its result rather than only redrawing',
+      (await page.locator('[aria-live="polite"]').count()) > 0,
+    );
+
+    // ---- leave it as it was found ----
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Summarise a note' })
+      .first()
+      .getByRole('button', { name: 'Switch off' })
+      .click();
+    await settle(page);
+    check(
+      'switching it back off leaves every feature off, as it was found',
+      (await page.locator('#ai-consents li:has-text("Off")').count()) === consentCount,
+    );
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/ai');
+    const text = await page.locator('main').innerText();
+    // Consent is personal at the policy level, not space-wide. Danny has one
+    // row of his own in Home and sees none of Priya's three in the same space.
+    const dannyConsents = await page.locator('#ai-consents li').count();
+    check('the partner has his own consent to give', dannyConsents === 1, `${dannyConsents}`);
+    check(
+      'and none of the owner\u2019s, even in the space they share',
+      !text.includes('Review the week ahead') && !text.includes('Break a task into steps'),
+    );
+    check(
+      'and sees the AI runs in that space',
+      (await page.locator('#ai-runs li').count()) > 0,
+    );
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/ai');
+    check(
+      'the outsider has no AI features at all',
+      (await page.locator('#ai-consents li a, #ai-consents li form').count()) === 0,
+    );
+    check(
+      'and no runs',
+      (await page.locator('main').innerText()).includes('Nothing has run yet'),
+    );
+    await ctx.close();
+  }
+
   // ------------------------------------------------------------- dark mode
   {
     const { ctx, page } = await pageAs(PRIYA);

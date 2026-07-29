@@ -743,6 +743,27 @@ async function main() {
     }
   }
 
+  // A locked note in Home, so the AI page can *show* the refusal rather than
+  // describing it. It lives in the space Danny shares, because "the partner
+  // sees a locked note and cannot read it either" is the same claim from the
+  // other side. A locked row has no plaintext by constraint: title and body
+  // are empty and the ciphertext is opaque.
+  {
+    const lockedNoteId = uid();
+    noteIds.push(lockedNoteId);
+    await sql`
+      insert into public.notes (id, space_id, owner_id, title, body_md, is_locked)
+      values (${lockedNoteId}, ${S_HOME}, ${PRIYA}, '', '', true)
+    `;
+    await sql`
+      insert into public.encrypted_blobs
+        (space_id, owner_id, entity_kind, entity_id, ciphertext, nonce, algorithm)
+      values (${S_HOME}, ${PRIYA}, 'note', ${lockedNoteId},
+              ${Buffer.from('seed placeholder note ciphertext').toString('base64')},
+              ${Buffer.from('seednonce4567').toString('base64')}, 'xchacha20poly1305')
+    `;
+  }
+
   // -- tags -----------------------------------------------------------------
   // -- activity ------------------------------------------------------------
   // One real audit row, so `activity_log` is covered by the pgTAP outsider
@@ -991,6 +1012,44 @@ async function main() {
     await sql`
       insert into public.ai_feature_consents (space_id, owner_id, feature, is_enabled, data_leaves_device)
       values (${S_HOME}, ${PRIYA}, ${feature}, false, ${disclosure})
+    `;
+  }
+
+  // Danny gets his own row for the same feature in the same space. Consent is
+  // personal — the policy is `owner_id = auth.uid()`, not the usual space-wide
+  // grant — so this is what makes "the partner sees one consent, his own, and
+  // none of Priya's three" a fact you can see in the app rather than a claim.
+  await sql`
+    insert into public.ai_feature_consents (space_id, owner_id, feature, is_enabled, data_leaves_device)
+    values (${S_HOME}, ${DANNY}, 'note_summary', false,
+            'The note’s text is sent to the model provider. Locked notes are never included.')
+  `;
+
+  // Two `ai_runs` rows, so the table leaves the pgTAP known-empty ledger and
+  // the outsider check on it is not vacuous.
+  //
+  // The refusal is the important one. It is a *row* that says an AI feature was
+  // asked to read a locked note and declined, with no content anywhere in it —
+  // which is what makes "nothing was sent" a fact somebody can check rather
+  // than an absence they have to trust. Both live in Home, so the partner sees
+  // them and a free/busy participant does not.
+  {
+    const [lockedNote] = await sql<{ id: string }[]>`
+      select id from public.notes where space_id = ${S_HOME} and is_locked limit 1
+    `;
+    const [plainNote] = await sql<{ id: string }[]>`
+      select id from public.notes where space_id = ${S_HOME} and not is_locked
+      order by created_at limit 1
+    `;
+    await sql`
+      insert into public.ai_runs
+        (space_id, owner_id, feature, provider, model, entity_kind, entity_id, status, error)
+      values
+        (${S_HOME}, ${PRIYA}, 'note_summary', 'ai:fake', 'fake-local', 'note',
+         ${plainNote?.id ?? null}, 'ok', null),
+        (${S_HOME}, ${PRIYA}, 'note_summary', 'ai:fake', null, 'note',
+         ${lockedNote?.id ?? null}, 'refused',
+         'That item is locked. Locked items are end-to-end encrypted, have no plaintext on this server, and never reach an AI feature — switching anything on does not change that.')
     `;
   }
 

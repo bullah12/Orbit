@@ -165,11 +165,20 @@ export function londonDayMinutes(iso: DateOnly): number {
   return Math.round((end.getTime() - start.getTime()) / 60_000);
 }
 
+/**
+ * Day of the week of a calendar date. 0 = Sunday, UK-irrelevant but JS-native.
+ *
+ * Anchored at UTC midnight of the *date*, never at an instant, so it cannot
+ * drift by one across a BST boundary. `getDay()` would answer in the
+ * container's timezone and is never correct here.
+ */
+export function weekdayOf(iso: DateOnly): number {
+  return new Date(`${iso.slice(0, 10)}T00:00:00Z`).getUTCDay();
+}
+
 /** Monday-first, UK convention. Returns the ISO date of that week's Monday. */
 export function startOfWeekISO(iso: DateOnly): DateOnly {
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  const dow = d.getUTCDay(); // 0 = Sunday
-  const back = (dow + 6) % 7; // Monday = 0
+  const back = (weekdayOf(iso) + 6) % 7; // Monday = 0
   return addDaysISO(iso, -back);
 }
 

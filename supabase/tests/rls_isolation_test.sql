@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(70);
+select plan(76);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -189,6 +189,32 @@ insert into public.notification_deliveries
    '11111111-1111-1111-1111-111111111111', 'push', 'sent', 'push:fake'),
   ('a7a7a7a7-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'push', 'queued', 'push:fake');
+
+-- AI runs — Phase 5.
+--
+-- One in the shared space and one in Alice's own, and one of them is a refusal.
+-- A refusal row is the record that a feature was asked to read something and
+-- declined; it names the entity it declined to read and holds none of its
+-- content, which is exactly why it must still be space-scoped like everything
+-- else. Carol sees neither: "an AI feature ran over Alice's notes" is strictly
+-- more than "Alice is busy".
+-- Consent is personal, not space-wide: the policy is `owner_id = auth.uid()`.
+-- Alice's consent lives in the space she shares with Bob, which is exactly the
+-- case where a space-wide grant would have leaked it.
+insert into public.ai_feature_consents
+  (id, space_id, owner_id, feature, is_enabled, data_leaves_device, consented_at) values
+  ('a9a9a9a9-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'note_summary', true,
+   'The note text is sent to the model provider.', now());
+
+insert into public.ai_runs
+  (id, space_id, owner_id, feature, provider, model, entity_kind, status, error) values
+  ('a8a8a8a8-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'note_summary', 'ai:fake', 'fake-local',
+   'note', 'ok', null),
+  ('a8a8a8a8-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'note_summary', 'ai:fake', null,
+   'note', 'refused', 'that item is locked');
 
 -- ===========================================================================
 -- 1. RLS is on, everywhere
@@ -409,6 +435,58 @@ select is(
   (select count(*)::int from public.notification_deliveries),
   0,
   'and no notification deliveries');
+
+select is(
+  (select count(*)::int from public.ai_runs),
+  0,
+  'and no AI runs — that a feature ran over somebody''s notes is more than "busy"');
+
+-- AI, from the partner's side. Both directions matter: the run row, and the
+-- consent row that would have allowed it.
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+select is(
+  (select count(*)::int from public.ai_runs
+   where id in ('a8a8a8a8-0000-0000-0000-000000000001',
+                'a8a8a8a8-0000-0000-0000-000000000002')),
+  1,
+  'the partner sees the AI run in the shared space and not the one in Alice''s own');
+
+select is(
+  (select count(*)::int from public.ai_runs
+   where id = 'a8a8a8a8-0000-0000-0000-000000000001' and status = 'refused'),
+  0,
+  'and the run they see is the one that happened, not the refusal from elsewhere');
+
+-- The run is visible in the shared space; the *consent* behind it is not. What
+-- somebody agreed to send is theirs, even to a person they share a space with.
+select is(
+  (select count(*)::int from public.ai_feature_consents
+   where id = 'a9a9a9a9-0000-0000-0000-000000000001'),
+  0,
+  'but not the consent behind it — what somebody agreed to send is personal');
+
+-- Consent is per space, and it is a *grant*: writing one into a space you are
+-- not in would be granting yourself permission to send somebody else's notes.
+select throws_ok(
+  $$insert into public.ai_feature_consents
+      (space_id, owner_id, feature, is_enabled, data_leaves_device, consented_at)
+    values ('aaaaaaaa-0000-0000-0000-000000000001',
+            '22222222-2222-2222-2222-222222222222', 'note_summary', true,
+            'everything', now())$$,
+  '42501',
+  null,
+  'the partner cannot consent to an AI feature inside a space they are not in');
+
+-- The same shape for the run itself: a row claiming a run happened in a space
+-- you cannot read is a claim about content you cannot see.
+select throws_ok(
+  $$insert into public.ai_runs (space_id, owner_id, feature, provider, status)
+    values ('aaaaaaaa-0000-0000-0000-000000000001',
+            '22222222-2222-2222-2222-222222222222', 'note_summary', 'ai:fake', 'ok')$$,
+  '42501',
+  null,
+  'nor record an AI run inside one');
 
 -- A rule cannot be pointed at another space. The FK is to spaces, so the write
 -- that matters is the one where space_id says one thing and the rule's own
@@ -793,7 +871,7 @@ select is(
    from unnest(string_to_array(tests.tables_with_rows(), ', ')) as t
    where t <> ''
      and t <> all (array[
-       'ai_runs', 'attachments', 'person_relationships',
+       'attachments', 'person_relationships',
        'space_invites', 'sync_cursors'
      ])),
   '',
