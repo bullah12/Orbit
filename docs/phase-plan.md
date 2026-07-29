@@ -64,8 +64,8 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
       events at different places. No background location, and we do not request
       the permission.
 - [x] `src/lib/travel.ts` is pure and carries the maths — buffers, departure
-      instants, whether a journey fits the gap, derivation, sessions — with 46
-      Vitest cases including both 2026 clock changes
+      instants, whether a journey fits the gap, derivation, sessions, and where a
+      trip stands — with 55 Vitest cases including both 2026 clock changes
 - [x] `place_visits`, `travel_legs` and `travel_sessions` seeded and out of the
       pgTAP known-empty ledger, with isolation cases from the partner's and the
       free/busy participant's side
@@ -85,9 +85,14 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
       Vitest, both visible in the preview
 - [x] Notifications through `PushProvider`; the fake is the default and the
       real Web Push provider is **written, never run**
-- [x] Heavy test coverage — 69 Vitest cases in `tests/rules.test.ts`, 7 new
-      pgTAP assertions from both sides of the membership, 28 smoke checks
+- [x] Heavy test coverage — 78 Vitest cases in `tests/rules.test.ts`, 7 new
+      pgTAP assertions from both sides of the membership, 41 smoke checks
       driving the whole sequence through the running app
+- [x] A condition **and an action** are each edited where they sit. Session 8
+      rebuilt the action form so its one box knows which parameter it is
+      setting — `ACTION_PARAMS` per kind — which is what made reusing it per
+      row possible; order matters more for an action, because actions are
+      applied in order
 - [x] `rule_runs`, `notification_deliveries` and `note_versions` out of the
       pgTAP known-empty ledger
 
@@ -147,13 +152,22 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
       fake accepting one honestly, Google's conditional `If-Match` write
       **written, never run**. `events.is_dirty` is now cleared, and `'push'` is
       written to `calendar_sync_state.direction`
-- [x] A UI for creating a recurring event — `rruleFromForm` builds a small
-      honest subset and refuses rather than guesses. Still one row plus an
-      RRULE, never expanded copies
-- [x] Test coverage second only to RLS — 51 Vitest cases in `tests/sync.test.ts`,
-      12 more for the repeat builder, 6 for the provider's write side, 7 new
-      pgTAP assertions, and 49 smoke checks driving the whole sequence
-      including a real conflict
+- [x] A UI for creating **and editing** a recurring event — `rruleFromForm`
+      builds a small honest subset and refuses rather than guesses;
+      `repeatFormFromRrule` (session 8) reads a stored rule back into it and
+      returns null for any rule the form cannot express, so an ordinary
+      `BYDAY=3TH` is shown in words rather than silently narrowed. One
+      occurrence can be skipped and put back, which is the first use of
+      `recurrence_rules.exdates` from the UI. Still one row plus an RRULE,
+      never expanded copies
+- [x] Test coverage second only to RLS — 59 Vitest cases in `tests/sync.test.ts`,
+      28 more for the repeat builder and the occurrence naming, 6 for the
+      provider's write side, 7 new pgTAP assertions, and 62 smoke checks driving
+      the whole sequence including a real conflict
+- [x] The queue and the cursors are the same device and the page says so
+      (session 8): a label in a cookie ties the browser's `localStorage` queue
+      to one row in `devices` per space, and the browser's own `online` event
+      flushes the queue once — a listener, never a retry
 
 ---
 
