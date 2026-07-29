@@ -38,8 +38,23 @@ const S_WORK = '00000000-0000-4000-8000-000000000005';
 const TRAVEL_DAY = '2026-07-29';
 let placeUrl;
 let privatePlaceUrl;
+let tripUrl;
 let failures = 0;
 const results = [];
+
+/**
+ * One day on from a `yyyy-mm-dd`, in UTC.
+ *
+ * Only ever used to move a date *box* by a day and then move it back, so the
+ * London/UTC distinction cannot bite here: it never crosses a clock change
+ * because it is always immediately undone. `src/lib/format.ts` is the place that
+ * does this properly, and the suite deliberately does not import from the app.
+ */
+function addDays(iso, n) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 function check(name, ok, detail = '') {
   results.push({ name, ok, detail });
@@ -1128,6 +1143,108 @@ try {
     await manual.first().locator('button[aria-label^="Delete the journey"]').click();
     await settle(page);
 
+    // ---- a trip's own page ----
+    //
+    // Rough edge since Phase 4: a trip could be created and deleted and nothing
+    // in between, so a date typed wrong meant deleting the trip — and the FK
+    // cascades, so that took its journeys with it.
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const pembroke = page.locator('#trip-list li', { hasText: 'Pembrokeshire' }).first();
+    const journeysOnRow = (await pembroke.innerText()).match(/(\d+) journe/);
+    await pembroke.locator('a[href^="/travel/trip/"]').click();
+    await settle(page);
+    tripUrl = page.url().split('?')[0];
+    check('a trip opens on its own page', /\/travel\/trip\/[0-9a-f-]{36}$/.test(tripUrl), tripUrl);
+
+    const tripText = await page.locator('main, body').first().innerText();
+    check(
+      'and says where the trip stands, worked out from its dates rather than stored',
+      /days? ago|Away now|Ended today|In \d+ day/.test(tripText) &&
+        tripText.includes('worked out from these dates'),
+      (tripText.match(/days? ago|Away now|Ended today|In \d+ days?/) ?? [''])[0],
+    );
+    check(
+      'and repeats that Orbit does not know where you are',
+      tripText.includes('no background location'),
+    );
+    check(
+      'and lists the journeys attached to it, the same number the list row counted',
+      (await page.locator('ul[aria-label="Journeys on this trip"] li').count()) ===
+        Number(journeysOnRow?.[1] ?? -1),
+      `${await page.locator('ul[aria-label="Journeys on this trip"] li').count()} listed, row said ${journeysOnRow?.[1]}`,
+    );
+    check(
+      'every journey on the trip carries a space indicator',
+      (await page.locator('ul[aria-label="Journeys on this trip"] li span[title^="Space:"]').count()) ===
+        (await page.locator('ul[aria-label="Journeys on this trip"] li').count()),
+    );
+
+    // Its dates and notes are editable — and a range that ends before it starts
+    // is refused with a sentence rather than a 500 from the check constraint.
+    const originalEnd = await page.locator('#trip-end').inputValue();
+    const originalStart = await page.locator('#trip-start').inputValue();
+    await page.fill('#trip-end', '2020-01-01');
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    check(
+      'a trip that would end before it starts is refused, and says so',
+      // Scoped to the page's own live region: Next's route announcer is also a
+      // role="alert", and an unscoped locator matches both.
+      (await page.locator('[aria-live="polite"] [role="alert"]').innerText()).includes(
+        'cannot end before it starts',
+      ),
+    );
+    check(
+      'and nothing was changed by the refusal',
+      (await page.locator('#trip-end').inputValue()) === originalEnd,
+      await page.locator('#trip-end').inputValue(),
+    );
+
+    await page.fill('#trip-title', 'Half term — Pembrokeshire (smoke)');
+    await page.fill('#trip-notes', 'Cottage booked. Take the big cool bag.\n\nSmoke ran here.');
+    await page.fill('#trip-end', addDays(originalEnd, 1));
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    const savedTrip = await page.locator('main, body').first().innerText();
+    check(
+      'a trip can be renamed, redated and annotated in one save',
+      savedTrip.includes('Half term — Pembrokeshire (smoke)') && savedTrip.includes('Smoke ran here.'),
+    );
+    check(
+      'and its notes render as Markdown below the form',
+      (await page.locator('h2:has-text("Rendered")').count()) === 1,
+    );
+    check(
+      'and the new dates change the number of days it covers',
+      (await page.locator('#trip-end').inputValue()) === addDays(originalEnd, 1),
+    );
+    check(
+      'and its journeys are untouched by a change of dates',
+      (await page.locator('ul[aria-label="Journeys on this trip"] li').count()) ===
+        Number(journeysOnRow?.[1] ?? -1),
+    );
+    check(
+      'and the page says the journeys were left alone',
+      savedTrip.includes('editing a trip’s dates does not'),
+    );
+
+    const tripUnnamed = await labelAuditOn(page);
+    check('every control on the trip page has a label', tripUnnamed.length === 0, tripUnnamed.join(', '));
+
+    // Put it back, all three fields, so this passes twice in a row.
+    await page.fill('#trip-title', 'Half term — Pembrokeshire');
+    await page.fill('#trip-notes', 'Cottage booked. Take the big cool bag.');
+    await page.fill('#trip-end', originalEnd);
+    await page.fill('#trip-start', originalStart);
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    check(
+      'and it is put back exactly as it was found',
+      (await page.locator('h1').first().innerText()) === 'Half term — Pembrokeshire' &&
+        (await page.locator('#trip-end').inputValue()) === originalEnd &&
+        (await page.locator('#trip-start').inputValue()) === originalStart,
+    );
+
     await ctx.close();
   }
 
@@ -1145,11 +1262,23 @@ try {
       'and not the trip in the space he only sees as free/busy',
       !titles.some((t) => t.includes('Leeds')),
     );
+    // The trip page is a page, so it is a policy question too.
+    await page.goto(tripUrl);
+    check(
+      'the partner can open the trip in the space he shares',
+      (await page.locator('h1').first().innerText()).includes('Pembrokeshire'),
+    );
     await ctx.close();
   }
 
   {
     const { ctx, page } = await pageAs(OUTSIDER);
+    const res = await page.goto(tripUrl);
+    check(
+      'the outsider gets a not-found on the trip page, never a forbidden',
+      res.status() === 404,
+      `HTTP ${res.status()}`,
+    );
     await page.goto(`/travel?day=${TRAVEL_DAY}`);
     const body = await page.locator('main').innerText();
     check('the outsider sees no trips', body.includes('No trips recorded'));

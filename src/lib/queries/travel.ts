@@ -142,6 +142,39 @@ export async function listTravelSessions(userId: string): Promise<TravelSessionR
 }
 
 /**
+ * One trip, or null — which is also the answer when it belongs to a space you
+ * are not in. Not found and not permitted are the same response on purpose:
+ * anything else confirms the trip exists.
+ */
+export async function getTravelSession(
+  userId: string,
+  id: string,
+): Promise<TravelSessionRow | null> {
+  return asUser(userId, async (tx) => {
+    const rows = await tx<TravelSessionRow[]>`
+      select
+        t.id, t.title, t.source, t.starts_at as "startsAt", t.ends_at as "endsAt",
+        t.timezone, t.is_active as "isActive", t.notes_md as "notesMd",
+        t.event_id as "eventId",
+        t.origin_place_id as "originPlaceId", op.name as "originPlaceName",
+        t.destination_place_id as "destinationPlaceId", dp.name as "destinationPlaceName",
+        coalesce(lg.n, 0) as "legCount",
+        jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
+                           'colour', s.colour, 'icon', s.icon) as space
+      from public.travel_sessions t
+      join public.spaces s on s.id = t.space_id
+      left join public.places op on op.id = t.origin_place_id
+      left join public.places dp on dp.id = t.destination_place_id
+      left join lateral (
+        select count(*)::int as n from public.travel_legs x where x.session_id = t.id
+      ) lg on true
+      where t.id = ${id}::uuid
+    `;
+    return rows[0] ?? null;
+  });
+}
+
+/**
  * The day's events, reduced to what travel derivation needs.
  *
  * Deliberately built on `listCalendarItems`, which is the one place recurrence

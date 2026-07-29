@@ -408,6 +408,47 @@ export function sessionIsActive(
   return t >= Date.parse(session.startsAt) && t <= Date.parse(session.endsAt);
 }
 
+export type TripStanding = {
+  phase: 'upcoming' | 'running' | 'past';
+  /** How many London days it covers in total, both ends counted. */
+  days: number;
+  /**
+   * Whole London days until it starts, or since it ended. Zero while it runs.
+   * Counting midnights rather than dividing by 86 400 000, for the same reason
+   * `sessionDayCount` does: the weekend the clocks change is out by an hour.
+   */
+  daysAway: number;
+};
+
+/**
+ * Where a trip stands right now — the one sentence a trip's own page opens with.
+ *
+ * Derived from its dates every time it is asked, never read from
+ * `travel_sessions.is_active`. That column is written from the dates at every
+ * write and is correct at the moment it is written, but nothing sweeps it and
+ * Orbit has no scheduler by decision, so a stored "away" goes stale the instant
+ * the trip ends. A date range cannot go stale, so the dates are the authority
+ * and the column is only ever a cache — the same call the calendar makes by
+ * expanding a recurrence rule rather than storing occurrences.
+ */
+export function tripStanding(
+  session: { startsAt: string; endsAt: string },
+  now: Date = new Date(),
+): TripStanding {
+  const days = sessionDayCount(session);
+  if (sessionIsActive(session, now)) return { phase: 'running', days, daysAway: 0 };
+
+  const today = londonDayISO(now.toISOString());
+  const upcoming = now.getTime() < Date.parse(session.startsAt);
+  const edge = londonDayISO(upcoming ? session.startsAt : session.endsAt);
+
+  let daysAway = 0;
+  const [from, to] = upcoming ? [today, edge] : [edge, today];
+  for (let d = from; d < to; d = addDaysISO(d, 1)) daysAway += 1;
+
+  return { phase: upcoming ? 'upcoming' : 'past', days, daysAway };
+}
+
 /**
  * How many London days a session covers, counting both ends.
  *

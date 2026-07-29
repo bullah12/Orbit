@@ -1635,6 +1635,80 @@ export async function createSessionFromEvent(formData: FormData) {
   revalidatePath('/', 'layout');
 }
 
+/**
+ * Edit a trip: its title, its dates, where it goes and its notes.
+ *
+ * Rough edge since Phase 4 — a trip could be created and deleted and nothing in
+ * between, so a date typed wrong meant deleting the trip and its journeys with
+ * it, because the FK cascades.
+ *
+ * `is_active` is written from the dates here, the same way both create paths
+ * write it, which is the other half of that rough edge: the column was set once
+ * at creation and never touched again. It still is not read anywhere — every
+ * surface derives from the dates through `tripStanding`, because nothing sweeps
+ * the column and Orbit has no scheduler by decision, so a stored "away" goes
+ * stale the moment a trip ends. Keeping it correct at every write costs one
+ * expression; trusting it would cost the truth.
+ *
+ * The space is deliberately not editable. Moving a trip would have to move its
+ * journeys, and every journey's two places, and a place in another space is a
+ * place the other member cannot see — so it needs `space_move_preview()` and a
+ * confirmation, on the same terms as a task. Nothing here makes it movable.
+ */
+export async function updateTravelSession(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('sessionId') ?? '');
+  if (!id) return;
+
+  const title = String(formData.get('title') ?? '').trim();
+  const startDate = String(formData.get('startDate') ?? '');
+  const endDate = String(formData.get('endDate') ?? '');
+  const notesMd = String(formData.get('notesMd') ?? '');
+  const originPlaceId = String(formData.get('originPlaceId') ?? '') || null;
+  const destinationPlaceId = String(formData.get('destinationPlaceId') ?? '') || null;
+
+  if (!title) return tripRedirect(id, 'A trip needs a name.');
+  const startsAt = instantFromForm(startDate, '00:00');
+  const endsAt = instantFromForm(endDate, '23:59');
+  if (!startsAt || !endsAt) return tripRedirect(id, 'A trip needs a start date and an end date.');
+  // The database has the same check as a constraint; catching it here is what
+  // turns a 500 into a sentence.
+  if (endsAt < startsAt) return tripRedirect(id, 'A trip cannot end before it starts.');
+
+  const updated = await asUser(user.id, async (tx) => {
+    const rows = await tx<{ id: string }[]>`
+      update public.travel_sessions set
+        title                = ${title},
+        starts_at            = ${startsAt},
+        ends_at              = ${endsAt},
+        notes_md             = ${notesMd},
+        origin_place_id      = ${originPlaceId}::uuid,
+        destination_place_id = ${destinationPlaceId}::uuid,
+        is_active            = ${sessionIsActive({
+          startsAt: startsAt.toISOString(),
+          endsAt: endsAt.toISOString(),
+        })}
+      where id = ${id}::uuid
+      returning id
+    `;
+    return rows.length > 0;
+  });
+
+  revalidatePath('/', 'layout');
+  // A trip in a space you are not in updates nothing, and says so as a sentence
+  // rather than pretending it saved.
+  if (!updated) tripRedirect(id, 'That trip does not exist, or is not yours to change.');
+  tripRedirect(id, undefined, '1');
+}
+
+function tripRedirect(id: string, error?: string, saved?: string): never {
+  const q = new URLSearchParams();
+  if (error) q.set('error', error);
+  if (saved) q.set('saved', saved);
+  const suffix = q.toString();
+  redirect(suffix ? `/travel/trip/${id}?${suffix}` : `/travel/trip/${id}`);
+}
+
 export async function deleteTravelSession(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('sessionId') ?? '');
@@ -1647,6 +1721,10 @@ export async function deleteTravelSession(formData: FormData) {
   });
 
   revalidatePath('/', 'layout');
+  // Deleted from its own page, there is no page left to stay on. The value is
+  // compared against a literal rather than redirected to, so this can never
+  // become somewhere a form field chose.
+  if (String(formData.get('then') ?? '') === 'travel') redirect('/travel');
 }
 
 // ===========================================================================
