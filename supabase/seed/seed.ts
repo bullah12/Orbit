@@ -1002,6 +1002,32 @@ async function main() {
       (${S_DANNY}, ${DANNY}, 'Danny — phone',  'web', now())
   `;
 
+  // A sync cursor per device, per kind, so `sync_cursors` leaves the pgTAP
+  // known-empty ledger and the outsider check on it is not vacuous.
+  //
+  // They are deliberately *behind*: the laptop last caught up two days ago, so
+  // the sync page has something to show on a fresh seed rather than "nothing
+  // has changed" everywhere. Danny's phone is a day behind in his own space,
+  // which is what makes "the partner sees his cursors and none of Priya's" a
+  // fact you can see in the app rather than only in pgTAP.
+  {
+    const devices = await sql<{ id: string; space_id: string; owner_id: string }[]>`
+      select id, space_id, owner_id from public.devices
+    `;
+    const behindDays: Record<string, number> = { [S_PRIYA]: 2, [S_HOME]: 2, [S_DANNY]: 1 };
+    for (const d of devices) {
+      for (const kind of ['task', 'note', 'event', 'person', 'place'] as const) {
+        const back = behindDays[d.space_id] ?? 2;
+        await sql`
+          insert into public.sync_cursors
+            (space_id, owner_id, device_id, entity_kind, cursor_at, last_sync_at)
+          values (${d.space_id}, ${d.owner_id}, ${d.id}, ${kind}::app.entity_kind,
+                  ${dayOffset(-back)}, ${dayOffset(-back)})
+        `;
+      }
+    }
+  }
+
   // Every AI feature ships off. These rows exist so settings can render the
   // disclosure text; is_enabled is false and consented_at is null.
   for (const [feature, disclosure] of [
@@ -1068,6 +1094,8 @@ async function main() {
     union all select 'travel_sessions', count(*)::int from public.travel_sessions
     union all select 'rules', count(*)::int from public.rules
     union all select 'rule_runs', count(*)::int from public.rule_runs
+    union all select 'devices', count(*)::int from public.devices
+    union all select 'sync_cursors', count(*)::int from public.sync_cursors
     order by 1
   `;
   console.log('▸ seeded:');
