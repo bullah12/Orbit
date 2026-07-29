@@ -758,3 +758,56 @@ tracking, ever.
   repeating that per row without rebuilding the form first would be four
   differently-labelled boxes stacked up. Recorded as a rough edge with the
   query already written, rather than half-built.
+
+## Session 8 — 2026-07-29
+
+- **Branch is `claude/orbit-rough-edges-qw12jt`.** The session designated it and
+  the designated one wins, as it has in all eight sessions. No pull request.
+- **This is a rough-edge session, not a phase.** Nothing new was started; the
+  work is the list in STATUS.md, in its order.
+
+### “This occurrence” versus “the whole series” — decided before it was built
+
+The brief asked for this in writing first, so here it is, in the order the
+options were weighed.
+
+- **What a repeat is, in Orbit, is not up for revision.** One row plus an RRULE,
+  expanded on read. Every option below was judged on whether it keeps that true.
+- **Editing the *series* is the operation that was missing, and it is now built.**
+  `rruleFromForm` could build a rule and nothing could read one back into the
+  form, so a repeat could be created and then never touched: no changing Tuesday
+  to Wednesday, no moving the end date, no removing the repeat without deleting
+  the event. `repeatFormFromRrule` is the inverse, and the event page now adds,
+  changes and removes a repeat. This is the honest bulk of edges 11 and 20.
+- **A rule the builder cannot express is shown in words and left alone, never
+  silently narrowed.** An imported `BYDAY=3TH`, a `COUNT`, a `BYMONTHDAY` — all
+  parse and all expand correctly, and none can be *typed* (edge 10). Reading one
+  into a builder that cannot express it would save it back as something else, so
+  the form refuses to open on it and says why in a sentence. Losing "the third
+  Thursday" by round-tripping it through a form that does not have the concept
+  would be exactly the kind of quiet data loss the conflict model exists to
+  prevent.
+- **A single occurrence can now be *skipped*, and put back.** This is the first
+  use of `recurrence_rules.exdates` from the UI — migration 0010 added the column
+  in Phase 2 and only the importer ever wrote it. An occurrence is named by its
+  own start instant on the URL (`?on=…`), which is what RFC 5545 calls a
+  RECURRENCE-ID and what the calendar block's key has carried since Phase 2 for
+  exactly this reason. Skipping is one array append; putting it back is one
+  removal. Both are reversible, and being reversible is what makes them safe to
+  offer without a confirmation.
+- **Editing *one occurrence's details* — EXDATE plus a new one-off event — is
+  deliberately NOT in this session.** It is the right shape and it is written
+  down here so the next session does not have to re-derive it. What stopped it
+  was not the write: it is that the new one-off event is a second row that has to
+  carry the series' calendar, category, place, attendees and space, and then
+  answer four questions this session cannot answer honestly in the context it has
+  left — what happens to it when the series' rule changes underneath it, whether
+  it appears in the series' own page at all, what a push to a provider does with
+  it (`pushEvent` has no RECURRENCE-ID concept), and what deleting the series
+  does to it. A half-built version of that is worse than none: it would put rows
+  in the database that no later session could interpret. Skipping an occurrence
+  has none of those questions, because it creates nothing.
+- **So the shipped answer is: the series is edited, one occurrence is skipped or
+  restored, and one occurrence's details are edited by skipping it and adding an
+  ordinary event on the day — which the page says, in those words.** That is not
+  the full RFC 5545 model and the page does not pretend it is.
