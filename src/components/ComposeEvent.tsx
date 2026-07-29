@@ -34,6 +34,7 @@ export function ComposeEvent({
   const initial = writable[0];
   const [spaceId, setSpaceId] = useState(initial?.id ?? '');
   const [allDay, setAllDay] = useState(false);
+  const [repeat, setRepeat] = useState('');
 
   if (writable.length === 0 || !initial) return null;
 
@@ -134,6 +135,77 @@ export function ComposeEvent({
             ))}
           </select>
         </label>
+      )}
+
+      {/* Phase 2 could store and expand a repeat and had no way to make one:
+          a recurring event could only arrive from an .ics file or a provider.
+          A repeat is still one row plus an RRULE — this writes the rule, it
+          never writes expanded copies. */}
+      <label className="flex items-center gap-1.5">
+        <span className="sr-only">Repeats</span>
+        <select
+          name="repeatFreq"
+          value={repeat}
+          onChange={(e) => setRepeat(e.target.value)}
+          className="faint rounded bg-transparent text-[11px] outline-none"
+        >
+          <option value="">Does not repeat</option>
+          <option value="DAILY">Every day</option>
+          <option value="WEEKLY">Every week</option>
+          <option value="MONTHLY">Every month</option>
+          <option value="YEARLY">Every year</option>
+        </select>
+      </label>
+
+      {repeat !== '' && (
+        <>
+          <label className="faint flex items-center gap-1 text-[11px]">
+            every
+            <input
+              type="number"
+              name="repeatInterval"
+              defaultValue={1}
+              min={1}
+              max={99}
+              aria-label="How many days, weeks, months or years between repeats"
+              className="hairline w-12 rounded border bg-transparent px-1 text-[11px]"
+            />
+            {repeat === 'DAILY' ? 'days' : repeat === 'WEEKLY' ? 'weeks' : repeat === 'MONTHLY' ? 'months' : 'years'}
+          </label>
+
+          {repeat === 'WEEKLY' && (
+            <fieldset className="flex items-center gap-1">
+              <legend className="sr-only">Which days it repeats on</legend>
+              {(
+                [
+                  ['MO', 'Monday'], ['TU', 'Tuesday'], ['WE', 'Wednesday'], ['TH', 'Thursday'],
+                  ['FR', 'Friday'], ['SA', 'Saturday'], ['SU', 'Sunday'],
+                ] as const
+              ).map(([code, name]) => (
+                <label key={code} className="faint cursor-pointer text-[11px]">
+                  <input type="checkbox" name="repeatByDay" value={code} className="peer sr-only" />
+                  <span className="sr-only">{name}</span>
+                  <span
+                    aria-hidden="true"
+                    className="hairline block rounded border px-1 opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2"
+                  >
+                    {code}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+
+          <label className="faint flex items-center gap-1 text-[11px]">
+            until
+            <input
+              type="date"
+              name="repeatUntil"
+              aria-label="The date it stops repeating; leave empty for forever"
+              className="faint rounded bg-transparent text-[11px] outline-none"
+            />
+          </label>
+        </>
       )}
 
       <fieldset className="flex items-center gap-1">

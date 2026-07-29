@@ -28,6 +28,8 @@ import {
   type ExternalAttendee,
   type ExternalCalendar,
   type ExternalEvent,
+  type OutgoingEvent,
+  type PushedEvent,
 } from '../types';
 import { TZ, zonedInstant } from '@/lib/format';
 
@@ -171,6 +173,90 @@ export class GoogleCalendarProvider implements CalendarProvider {
 
     return { events, deletedIds, nextSyncToken };
   }
+
+  /**
+   * Write one event back to Google. **Written, never run.**
+   *
+   * `POST /calendars/{id}/events` to create, `PUT .../events/{eventId}` to
+   * update. The update carries `If-Match: <etag>`, so Google refuses with 412
+   * when the event moved on their side since we read it — the same shape as
+   * Orbit's own conflict handling, and the reason the etag is stored at all.
+   * A 412 is reported as a conflict rather than swallowed: `is_dirty` stays
+   * set, and the local edit is still there to send again.
+   *
+   * An all-day event is written as a bare `date`, and — per RFC 5545, which
+   * Google follows — the end date is *exclusive*, so a one-day event ends on
+   * the following day. Getting that wrong is the classic off-by-one that makes
+   * every all-day event a day short.
+   */
+  async pushEvent(calendarExternalId: string, event: OutgoingEvent): Promise<PushedEvent> {
+    const body: Record<string, unknown> = {
+      summary: event.title,
+      description: event.description,
+      location: event.location ?? undefined,
+      status: event.status,
+      start: googleDate(event.startsAt, event.allDay, event.timezone),
+      end: googleDate(event.endsAt, event.allDay, event.timezone, event.allDay),
+    };
+
+    const create = event.externalId === null;
+    const url = new URL(
+      `${API}/calendars/${encodeURIComponent(calendarExternalId)}/events${
+        create ? '' : `/${encodeURIComponent(event.externalId!)}`
+      }`,
+    );
+
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${await this.token()}`,
+      'content-type': 'application/json',
+    };
+    // A conditional write only if we have something to be conditional about.
+    if (!create && event.etag) headers['if-match'] = event.etag;
+
+    const res = await fetch(url, {
+      method: create ? 'POST' : 'PUT',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (res.status === 412) {
+      throw new IntegrationError(
+        'calendar:google',
+        'transport',
+        'the event changed on Google since it was read here — the local edit has been kept and not sent',
+      );
+    }
+    if (res.status === 403) {
+      throw new IntegrationError('calendar:google', 'read_only', 'this calendar cannot be written to');
+    }
+    if (!res.ok) {
+      throw new IntegrationError('calendar:google', 'transport', `${res.status} ${res.statusText}`);
+    }
+
+    const json = (await res.json()) as { id?: string; etag?: string };
+    if (!json.id) {
+      throw new IntegrationError('calendar:google', 'malformed', 'the write came back without an id');
+    }
+    return { externalId: json.id, etag: json.etag ?? null, created: create };
+  }
+}
+
+/**
+ * A Google date-time, or a bare date for an all-day event.
+ *
+ * `exclusiveEnd` shifts an all-day end on by one day, because Google's end date
+ * is exclusive and Orbit's is not.
+ */
+function googleDate(
+  instant: string,
+  allDay: boolean,
+  timezone: string,
+  exclusiveEnd = false,
+): Record<string, string> {
+  if (!allDay) return { dateTime: new Date(instant).toISOString(), timeZone: timezone };
+  const d = new Date(instant);
+  if (exclusiveEnd) d.setUTCDate(d.getUTCDate() + 1);
+  return { date: d.toISOString().slice(0, 10) };
 }
 
 function mapDate(d: GoogleDate | undefined): { instant: string; allDay: boolean; tz: string } | null {

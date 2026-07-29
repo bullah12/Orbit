@@ -25,6 +25,7 @@ import {
   type LegMode,
 } from '@/lib/travel';
 import { isTriggerKind, type Trigger } from '@/lib/rules';
+import { rruleFromForm } from '@/lib/recurrence';
 import {
   addAction,
   fireForTask,
@@ -58,6 +59,7 @@ import { runAiFeature, setConsent } from '@/lib/queries/ai';
 import {
   connectProviderCalendar,
   pullCalendar,
+  pushCalendar,
   upsertExternalEvent,
 } from '@/lib/sync/calendar';
 
@@ -664,10 +666,43 @@ export async function createEvent(formData: FormData) {
   // event running into the next day, which is what the person meant.
   const finalEnd = endsAt < startsAt ? new Date(endsAt.getTime() + 86_400_000) : endsAt;
 
+  // A repeat is one row plus an RRULE, never expanded copies. The rule is
+  // built by the same pure module that reads one back, and a malformed one
+  // stops the write rather than producing an event that repeats at the wrong
+  // time forever.
+  const repeatFreq = String(formData.get('repeatFreq') ?? '');
+  let recurrenceRule: string | null = null;
+  if (repeatFreq) {
+    const built = rruleFromForm({
+      freq: repeatFreq as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY',
+      interval: Number(formData.get('repeatInterval') ?? 1),
+      byDay: formData.getAll('repeatByDay').map(String) as never,
+      endOn: String(formData.get('repeatUntil') ?? '') || null,
+      startOn: onDate,
+    });
+    if ('error' in built) {
+      redirect(`/calendar/week?error=${encodeURIComponent(built.error)}`);
+    }
+    recurrenceRule = built.rrule;
+  }
+
   await asUser(user.id, async (tx) => {
+    // The rule is written first so the event can point at it. Both carry the
+    // space of the event, because a rule is as much content as the event is.
+    let ruleId: string | null = null;
+    if (recurrenceRule) {
+      const [rule] = await tx<{ id: string }[]>`
+        insert into public.recurrence_rules (space_id, owner_id, rrule, dtstart)
+        values (${spaceId}::uuid, ${user.id}::uuid, ${recurrenceRule}, ${startsAt})
+        returning id
+      `;
+      ruleId = rule?.id ?? null;
+    }
+
     await tx`
       insert into public.events
-        (space_id, owner_id, calendar_id, category_id, title, starts_at, ends_at, all_day)
+        (space_id, owner_id, calendar_id, category_id, title, starts_at, ends_at, all_day,
+         recurrence_rule_id)
       values (
         ${spaceId}::uuid, ${user.id}::uuid,
         -- Both references are resolved against the chosen space rather than
@@ -683,7 +718,7 @@ export async function createEvent(formData: FormData) {
         ),
         (select k.id from public.categories k
           where k.id = ${categoryId}::uuid and k.space_id = ${spaceId}::uuid),
-        ${title}, ${startsAt}, ${finalEnd}, ${allDay}
+        ${title}, ${startsAt}, ${finalEnd}, ${allDay}, ${ruleId}::uuid
       )
     `;
   });
@@ -742,7 +777,21 @@ export async function deleteEvent(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
+    // A recurrence rule belongs to the event that carried it. The FK is
+    // `on delete set null`, so deleting the event alone would leave the rule
+    // behind as a row nothing points at — invisible, and still counted by the
+    // structural checks. It goes too, but only if no other event uses it.
+    const [row] = await tx<{ ruleId: string | null }[]>`
+      select recurrence_rule_id as "ruleId" from public.events where id = ${id}::uuid
+    `;
     await tx`delete from public.events where id = ${id}::uuid`;
+    if (row?.ruleId) {
+      await tx`
+        delete from public.recurrence_rules r
+        where r.id = ${row.ruleId}::uuid
+          and not exists (select 1 from public.events e where e.recurrence_rule_id = r.id)
+      `;
+    }
   });
 
   redirect('/calendar/week');
@@ -938,6 +987,25 @@ export async function connectCalendar(formData: FormData) {
   // type through `+` and the build stops being able to check the path.
   redirect(
     `/calendar/import?added=${result.added}&changed=${result.updated}&removed=${result.removed}&full=${result.wasFullPull ? 1 : 0}`,
+  );
+}
+
+/**
+ * Push local edits back to the provider.
+ *
+ * The other half of a sync that had only ever had one. Until this existed,
+ * `events.is_dirty` was set by every local edit and never cleared, and `'pull'`
+ * was the only value ever written to `calendar_sync_state.direction`.
+ */
+export async function pushCalendarEdits(formData: FormData) {
+  const user = await requireUser();
+  const calendarId = String(formData.get('calendarId') ?? '');
+  if (!calendarId) return;
+
+  const result = await pushCalendar(user.id, calendarId);
+  revalidatePath('/', 'layout');
+  redirect(
+    `/calendar/import?pushed=${result.created + result.updated}&created=${result.created}&locked=${result.skippedLocked}&failed=${result.failed.length}`,
   );
 }
 

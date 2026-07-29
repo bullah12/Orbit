@@ -37,12 +37,12 @@ export default async function CalendarPage({
   searchParams,
 }: {
   params: Promise<{ view: string }>;
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; error?: string }>;
 }) {
   const { view } = await params;
   if (!isCalendarView(view)) notFound();
 
-  const { date } = await searchParams;
+  const { date, error } = await searchParams;
   const user = await requireUser();
   const today = todayFor();
   const anchor = normaliseDate(date) ?? today;
@@ -120,6 +120,17 @@ export default async function CalendarPage({
           Import
         </Link>
       </header>
+
+      {error && (
+        <p
+          role="alert"
+          id="calendar-error"
+          className="hairline border-b px-5 py-2 text-[12px]"
+          style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
+        >
+          {error}
+        </p>
+      )}
 
       <ComposeEvent spaces={spaces} categories={categories} calendars={calendars} defaultDate={anchor} />
 

@@ -1945,6 +1945,133 @@ try {
     await ctx.close();
   }
 
+  // --------------------------------------- calendar: the two Phase 2 gaps
+  //
+  // Both were rough edges 19 and 20 and both belong to sync. Nothing had ever
+  // pushed a local edit back to a provider — is_dirty was set and never
+  // cleared, and 'pull' was the only direction ever written — and there was no
+  // way at all to *create* a repeat from the UI.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    // ---- push back ----
+    await page.goto('/calendar/import');
+    const familyRow = page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first();
+    check(
+      'a connected calendar says whether anything is waiting to go back',
+      (await familyRow.innerText()).includes('waiting to go back'),
+    );
+
+    await page.goto('/search?q=checkup&kind=event');
+    await page.locator('#search-results a[href^="/calendar/event/"]').first().click();
+    await settle(page);
+    const eventUrl = page.url();
+    const originalLocation = await page.locator('input[name="locationText"]').inputValue();
+    const stampedLocation = `${originalLocation} (smoke)`;
+
+    await page.locator('input[name="locationText"]').fill(stampedLocation);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await settle(page);
+
+    await page.goto('/calendar/import');
+    const dirtyRow = page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first();
+    check(
+      'editing a pulled event leaves something waiting to go back',
+      (await dirtyRow.innerText()).includes('1 local edit waiting to go back'),
+      await dirtyRow.innerText(),
+    );
+
+    await dirtyRow.locator('button', { hasText: 'back' }).click();
+    await settle(page);
+    const pushBanner = await page.locator('#push-result').innerText();
+    check('pushing it back says what it did', /Pushed 1 event back/.test(pushBanner), pushBanner);
+    check(
+      'and nothing is waiting afterwards',
+      (await page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first().innerText())
+        .includes('nothing waiting to go back'),
+    );
+    check(
+      'the push is recorded as a push, not as another pull',
+      (await page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first().innerText())
+        .includes('last push ok'),
+    );
+
+    // ---- put it back, and push that too, so the suite runs twice ----
+    await page.goto(eventUrl);
+    await page.locator('input[name="locationText"]').fill(originalLocation);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await settle(page);
+    await page.goto('/calendar/import');
+    await page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first()
+      .locator('button', { hasText: 'back' }).click();
+    await settle(page);
+    check(
+      'and the edit that put it back went the same way',
+      (await page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first().innerText())
+        .includes('nothing waiting to go back'),
+    );
+
+    // ---- create a repeat ----
+    const repeatTitle = `Smoke repeat ${Date.now()}`;
+    await page.goto('/calendar/week?date=2026-08-03');
+    await page.locator('select[name="repeatFreq"]').selectOption('WEEKLY');
+    await page.locator('form[aria-label="Add an event"] input[name="title"]').fill(repeatTitle);
+    await page.locator('input[name="onDate"]').fill('2026-08-03');
+    await page.locator('input[name="repeatUntil"]').fill('2026-08-31');
+    await page.getByRole('button', { name: 'Add' }).click();
+    await settle(page);
+
+    await page.goto('/calendar/month?date=2026-08-03');
+    const drawn = await page.locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle }).count();
+    check(
+      'an event created with a repeat is drawn on every occurrence',
+      drawn >= 4,
+      `${drawn} drawn`,
+    );
+
+    await page.locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle }).first().click();
+    await settle(page);
+    const repeatUrl = page.url();
+    check(
+      'and its detail page reads the rule back in words',
+      /(week|Week)/.test(await page.locator('main').innerText()),
+    );
+
+    // A repeat that cannot be built is refused with a sentence, not silently
+    // turned into something else.
+    await page.goto('/calendar/week?date=2026-08-03');
+    await page.locator('select[name="repeatFreq"]').selectOption('WEEKLY');
+    await page.locator('form[aria-label="Add an event"] input[name="title"]').fill('Smoke bad repeat');
+    await page.locator('input[name="onDate"]').fill('2026-08-03');
+    await page.locator('input[name="repeatUntil"]').fill('2026-07-01');
+    await page.getByRole('button', { name: 'Add' }).click();
+    await settle(page);
+    check(
+      'a repeat that stops before it starts is refused, and says so',
+      (await page.locator('#calendar-error').innerText()).includes('before it starts'),
+    );
+    await page.goto('/calendar/month?date=2026-08-03');
+    check(
+      'and nothing was created for it',
+      !(await page.locator('main').innerText()).includes('Smoke bad repeat'),
+    );
+
+    const composeUnnamed = await labelAuditOn(page);
+    check('every control on the calendar page has a label', composeUnnamed.length === 0, composeUnnamed.join(', '));
+
+    // ---- leave nothing behind ----
+    await page.goto(repeatUrl);
+    await page.getByRole('button', { name: 'Delete this event' }).click();
+    await settle(page);
+    await page.goto('/calendar/month?date=2026-08-03');
+    check(
+      'and the repeating event it created is deleted again',
+      !(await page.locator('main').innerText()).includes(repeatTitle),
+    );
+
+    await ctx.close();
+  }
+
   // ------------------------------------------------------------- dark mode
   {
     const { ctx, page } = await pageAs(PRIYA);

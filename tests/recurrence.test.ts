@@ -5,6 +5,7 @@ import {
   formatRrule,
   parseRrule,
   RecurrenceError,
+  rruleFromForm,
 } from '@/lib/recurrence';
 import { londonInstant, londonTimeHHMM } from '@/lib/format';
 
@@ -325,5 +326,87 @@ describe('describeRrule', () => {
     expect(describeRrule('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO')).toBe('Every 2 weeks, on Monday');
     expect(describeRrule('FREQ=MONTHLY;BYDAY=-1FR')).toBe('Every month, on the 1st Friday');
     expect(describeRrule('FREQ=MONTHLY;BYMONTHDAY=31')).toBe('Every month, on the 31st');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('building a repeat from a form', () => {
+  const base = { freq: 'WEEKLY' as const, interval: 1, byDay: [] as const, endOn: null, startOn: '2026-08-03' };
+
+  it('builds a weekly repeat on the days chosen', () => {
+    const r = rruleFromForm({ ...base, byDay: ['MO', 'TH'] });
+    expect(r).toEqual({ rrule: 'FREQ=WEEKLY;BYDAY=MO,TH' });
+  });
+
+  it('falls back to the day the event starts on when none is chosen', () => {
+    // 3 August 2026 is a Monday.
+    expect(rruleFromForm(base)).toEqual({ rrule: 'FREQ=WEEKLY;BYDAY=MO' });
+  });
+
+  it('carries an interval only when it is not one', () => {
+    expect(rruleFromForm({ ...base, interval: 2, byDay: ['MO'] })).toEqual({
+      rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO',
+    });
+  });
+
+  it('ignores chosen days for a frequency that has none', () => {
+    expect(rruleFromForm({ ...base, freq: 'MONTHLY', byDay: ['MO', 'TH'] })).toEqual({
+      rrule: 'FREQ=MONTHLY',
+    });
+  });
+
+  it('ends on the whole of the last day, not at midnight on it', () => {
+    const r = rruleFromForm({ ...base, byDay: ['MO'], endOn: '2026-08-31' });
+    expect(r).toEqual({ rrule: 'FREQ=WEEKLY;BYDAY=MO;UNTIL=20260831T235959Z' });
+  });
+
+  it('keeps the occurrence on the day it was told to stop', () => {
+    const built = rruleFromForm({ ...base, byDay: ['MO'], endOn: '2026-08-31' });
+    if ('error' in built) throw new Error(built.error);
+    const dates = expandRecurrence({
+      rrule: built.rrule,
+      dtstart: '2026-08-03T09:00:00.000Z',
+      from: '2026-08-01T00:00:00.000Z',
+      to: '2026-09-30T00:00:00.000Z',
+    }).map((o) => o.startsAt.slice(0, 10));
+    // 31 August 2026 is a Monday, and it is the day it was told to stop.
+    expect(dates).toContain('2026-08-31');
+    expect(dates.every((d) => d <= '2026-08-31')).toBe(true);
+  });
+
+  it('refuses an interval that is not a whole number of anything', () => {
+    expect(rruleFromForm({ ...base, interval: 0 })).toEqual({
+      error: 'How often it repeats has to be a whole number between 1 and 99.',
+    });
+    expect(rruleFromForm({ ...base, interval: 1.5 })).toHaveProperty('error');
+    expect(rruleFromForm({ ...base, interval: 100 })).toHaveProperty('error');
+  });
+
+  it('refuses to stop before it starts', () => {
+    expect(rruleFromForm({ ...base, endOn: '2026-07-01' })).toEqual({
+      error: 'It cannot stop repeating before it starts.',
+    });
+  });
+
+  it('refuses a start date that is not a date', () => {
+    expect(rruleFromForm({ ...base, startOn: 'tomorrow' })).toHaveProperty('error');
+  });
+
+  it('refuses an end date that is not a date', () => {
+    expect(rruleFromForm({ ...base, endOn: '31/08/2026' })).toHaveProperty('error');
+  });
+
+  it('refuses a frequency it cannot build', () => {
+    expect(rruleFromForm({ ...base, freq: 'HOURLY' as never })).toHaveProperty('error');
+  });
+
+  it('produces something parseRrule accepts, for every frequency', () => {
+    for (const freq of ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'] as const) {
+      const built = rruleFromForm({ ...base, freq, interval: 3, endOn: '2027-01-01' });
+      if ('error' in built) throw new Error(built.error);
+      expect(() => parseRrule(built.rrule)).not.toThrow();
+      expect(describeRrule(built.rrule)).toBeTruthy();
+    }
   });
 });
