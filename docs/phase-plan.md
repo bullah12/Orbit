@@ -93,10 +93,37 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
 
 ## Phase 5 — Search, capture, and AI
 
-- Server-side search across everything **except** locked items
-- Natural-language capture, parsed locally, never over the network
-- AI features off by default, per-feature opt-in, plain-language disclosure of
-  what leaves the device
+- [x] Server-side search across tasks, notes, people, events and places — one
+      box, five kinds, every result carrying its space indicator. The five
+      partial GIN indexes were already there and all say `where not is_locked`;
+      each query repeats that predicate so the planner uses it
+- [x] Locked items are absent by construction, not by a filter: a locked row is
+      constrained to an empty title and body, so there is no plaintext to
+      match. The page says how many were not searched rather than being quietly
+      short
+- [x] `src/lib/search.ts` is pure — query normalisation, a word-aligned snippet
+      with a crude English stem so a search for "bins" emboldens the "bin bags"
+      Postgres actually matched, and a merge that promotes the first result of
+      every kind ahead of the second of any kind. 50 Vitest cases
+- [x] Natural-language capture, parsed **locally**, in `src/lib/capture/` — one
+      import (the date helpers) and a test that reads the source back and fails
+      if a `fetch`, an `import()` or an AI provider ever appears in it
+- [x] UK phrasing: "a week on Tuesday", "next Friday at half three" meaning
+      15:30, DD/MM never MM/DD, "quarter to five", "tomorrow morning". 99
+      Vitest cases, with instants pinned on both sides of both 2026 clock
+      changes and an all-day capture asserted at 23 and 25 hours
+- [x] `/capture` reads the line back before creating anything: one chip per
+      phrase it consumed, saying what it took it to mean
+- [x] AI off by default, per feature and per space, each row stating in plain
+      language what would leave the device; the provider that would answer is
+      named, and whether it is a fake
+- [x] A locked item never reaches an AI path — refused *first*, before consent
+      is looked at, in a pure evaluator (`src/lib/ai.ts`), asserted in Vitest
+      and driven through the running app
+- [x] `ai_runs` out of the pgTAP known-empty ledger, with a row for every
+      attempt including every refusal, and never any content
+- [x] The real `AiProvider` — the Anthropic Messages API, **written, never
+      run**
 
 ## Phase 6 — Sync and offline
 
