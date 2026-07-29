@@ -1689,9 +1689,14 @@ try {
     // row of his own in Home and sees none of Priya's three in the same space.
     const dannyConsents = await page.locator('#ai-consents li').count();
     check('the partner has his own consent to give', dannyConsents === 1, `${dannyConsents}`);
+    // Scoped to the consent list, not the whole page: the *run log* names the
+    // feature that ran, and Danny legitimately sees runs in the space he
+    // shares. What he must not see is what Priya agreed to send.
+    const dannyConsentText = await page.locator('#ai-consents').innerText();
     check(
       'and none of the owner\u2019s, even in the space they share',
-      !text.includes('Review the week ahead') && !text.includes('Break a task into steps'),
+      !dannyConsentText.includes('Review the week ahead') &&
+        !dannyConsentText.includes('Break a task into steps'),
     );
     check(
       'and sees the AI runs in that space',
@@ -1711,6 +1716,119 @@ try {
       'and no runs',
       (await page.locator('main').innerText()).includes('Nothing has run yet'),
     );
+    await ctx.close();
+  }
+
+  // ------------------------------------------------- AI: the other two features
+  //
+  // Until now only note_summary had a surface: task_breakdown and weekly_review
+  // had consent rows, disclosure text and prompts, and nothing called them.
+  // Both are switched on and back off again here, so the suite runs twice.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    // ---- break a task into steps ----
+    // A task in Home, because that is where the seed's consent rows live: a
+    // task in a space with no consent row is refused for a different (and also
+    // correct) reason, which would make this assertion about the wrong thing.
+    await page.goto(`/tasks/all?space=${S_HOME}`);
+    await page.locator('main ul li a[href^="/tasks/item/"]').first().click();
+    await settle(page);
+    const taskUrl = page.url();
+    const taskTitle = await page.locator('h1').innerText();
+
+    check(
+      'a task offers to be broken into steps',
+      (await page.getByRole('button', { name: 'Break it into steps' }).count()) === 1,
+    );
+    await page.getByRole('button', { name: 'Break it into steps' }).click();
+    await settle(page);
+    check(
+      'and running it while the feature is off is refused',
+      (await page.locator('#ai-refusal').innerText()).includes('switched off'),
+    );
+    check('with nothing sent', (await page.locator('#ai-sent').count()) === 0);
+
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Break a task into steps' })
+      .first()
+      .getByRole('button', { name: 'Switch on, and send this' })
+      .click();
+    await settle(page);
+
+    await page.goto(taskUrl);
+    await page.getByRole('button', { name: 'Break it into steps' }).click();
+    await settle(page);
+    check(
+      'once switched on it runs, and shows what was sent',
+      (await page.locator('#ai-sent').innerText()).includes(taskTitle),
+    );
+    check('and what came back', (await page.locator('#ai-answer').count()) === 1);
+
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Break a task into steps' })
+      .first()
+      .getByRole('button', { name: 'Switch off' })
+      .click();
+    await settle(page);
+
+    // ---- review the week ahead ----
+    await page.goto('/');
+    const reviewButtons = await page.locator('#week-review li').count();
+    check('Today offers a weekly review, one per space', reviewButtons > 0, `${reviewButtons}`);
+    check(
+      'each one says which space it would read',
+      (await page.locator('#week-review li span[title^="Space:"]').count()) === reviewButtons,
+    );
+
+    await page.locator('#week-review button').first().click();
+    await settle(page);
+    check(
+      'running it while it is off is refused',
+      (await page.locator('#ai-refusal').innerText()).includes('switched off'),
+    );
+
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Review the week ahead' })
+      .first()
+      .getByRole('button', { name: 'Switch on, and send this' })
+      .click();
+    await settle(page);
+
+    await page.goto('/');
+    await page.locator('#week-review button').first().click();
+    await settle(page);
+    const weekSent = await page.locator('#ai-sent').innerText();
+    check('once on, the weekly review runs', weekSent.length > 0);
+    check(
+      'and what it sends is titles and dates, as the disclosure says',
+      /\d{4}-\d{2}-\d{2}/.test(weekSent) || weekSent.split('\n').length <= 2,
+      weekSent.slice(0, 120),
+    );
+
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Review the week ahead' })
+      .first()
+      .getByRole('button', { name: 'Switch off' })
+      .click();
+    await settle(page);
+    // Counted by the button rather than by the word: a row only offers
+    // "Switch off" when it is on, and `has-text` is case-insensitive, so
+    // looking for "On" would match "Switch on, and send this" on every row.
+    check(
+      'and both are switched back off, as they were found',
+      (await page.locator('#ai-consents li').getByRole('button', { name: 'Switch off' }).count()) === 0,
+    );
+
+    check(
+      'the run log now holds more than notes',
+      (await page.locator('#ai-runs li').count()) > 0,
+    );
+
     await ctx.close();
   }
 

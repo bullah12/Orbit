@@ -8,6 +8,9 @@ import { SpaceIndicator, CategoryChip } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { Markdown } from '@/components/Markdown';
 import { OfflineEdit } from '@/components/OfflineEdit';
+import { AiResult } from '@/components/AiResult';
+import { listConsents } from '@/lib/queries/ai';
+import { runAiFeatureFor } from '@/app/actions';
 import { smartListsFor } from '@/lib/smartlists';
 import { SMART_LISTS, isSmartListKey } from '@/lib/queries/tasks';
 import { formatDate } from '@/lib/format';
@@ -35,19 +38,27 @@ export default async function TaskPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ moveTo?: string }>;
+  searchParams: Promise<{ moveTo?: string; sent?: string; answer?: string; refused?: string }>;
 }) {
   const { id } = await params;
-  const { moveTo } = await searchParams;
+  const { moveTo, sent, answer, refused } = await searchParams;
 
   const user = await requireUser();
   const [task, spaces] = await Promise.all([getTask(user.id, id), listSpaces(user.id)]);
   if (!task) notFound();
 
-  const [categories, members] = await Promise.all([
+  const [categories, members, consents] = await Promise.all([
     listCategories(user.id, task.space.id),
     listSpaceMembers(user.id, task.space.id),
+    listConsents(user.id),
   ]);
+
+  // The consent for *this* feature in *this* space. AI is off by default, per
+  // feature and per space, so a button on a task in Home says nothing about a
+  // task in Work.
+  const breakdown = consents.find(
+    (c) => c.feature === 'task_breakdown' && c.spaceId === task.space.id,
+  );
 
   const targets = spaces.filter((s) => s.canWrite && s.id !== task.space.id);
 
@@ -134,6 +145,44 @@ export default async function TaskPage({
           <MoveConfirmation task={task} target={target} preview={preview ?? []} />
         )}
       </section>
+
+      {!task.isLocked && (
+        <section className="hairline border-t px-5 py-4" aria-labelledby="task-ai-heading">
+          <h2
+            id="task-ai-heading"
+            className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider"
+          >
+            <Icon name="sparkle" size={11} />
+            Break it into steps
+          </h2>
+          <p className="muted mb-2 text-[12px]">
+            {breakdown
+              ? breakdown.dataLeavesDevice
+              : 'This space has no consent row for that feature, so there is nothing switched on and nothing to send.'}
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <form action={runAiFeatureFor}>
+              <input type="hidden" name="feature" value="task_breakdown" />
+              <input type="hidden" name="subjectId" value={task.id} />
+              <input type="hidden" name="back" value="task" />
+              <button type="submit" className="hairline rounded border px-2.5 py-1 text-[12px]">
+                Break it into steps
+              </button>
+            </form>
+            <span className="faint text-[12px]">
+              {breakdown?.isEnabled
+                ? 'Switched on for this space.'
+                : 'Switched off. Pressing it is refused, and the refusal is recorded.'}
+            </span>
+            <Link href="/ai" className="muted text-[12px]">
+              AI settings
+            </Link>
+          </div>
+          <div className="mt-3">
+            <AiResult sent={sent} answer={answer} refused={refused} />
+          </div>
+        </section>
+      )}
 
       {!task.isLocked && (
         <OfflineEdit

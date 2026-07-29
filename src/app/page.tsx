@@ -9,19 +9,34 @@ import { ComposeTask } from '@/components/ComposeTask';
 import { Icon } from '@/components/Icon';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { plural } from '@/lib/format';
+import { AiResult } from '@/components/AiResult';
+import { listConsents } from '@/lib/queries/ai';
+import { runAiFeatureFor } from '@/app/actions';
 
 export const dynamic = 'force-dynamic';
 
-export default async function TodayPage() {
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sent?: string; answer?: string; refused?: string }>;
+}) {
+  const { sent, answer, refused } = await searchParams;
   const user = await requireUser();
-  const [spaces, categories, today, overdue, yesterday, dates] = await Promise.all([
+  const [spaces, categories, today, overdue, yesterday, dates, consents] = await Promise.all([
     listSpaces(user.id),
     categoriesBySpace(user.id),
     listTasks(user.id, 'today', { limit: 50 }),
     listTasks(user.id, 'overdue', { limit: 50 }),
     yesterdaySummary(user.id),
     upcomingDates(user.id, 21),
+    listConsents(user.id),
   ]);
+
+  // Consent is per feature *and* per space, so a weekly review is offered once
+  // per space rather than once. There is no "all my spaces" version: a review
+  // that read three spaces on one consent would be the consent meaning more
+  // than it said.
+  const reviews = consents.filter((c) => c.feature === 'weekly_review');
 
   const overdueOnly = overdue.filter((t) => !today.some((x) => x.id === t.id));
   const firstName = user.displayName.split(' ')[0];
@@ -47,6 +62,44 @@ export default async function TodayPage() {
           <Icon name="calendar" size={12} className="faint" />
           {plural(yesterday.eventCount, 'event')} yesterday, no notes.
         </div>
+      )}
+
+      {reviews.length > 0 && (
+        <section className="hairline border-b px-5 py-3" aria-labelledby="week-review-heading">
+          <h2
+            id="week-review-heading"
+            className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider"
+          >
+            <Icon name="sparkle" size={11} />
+            Review the week ahead
+          </h2>
+          <ul className="flex flex-wrap items-center gap-2" id="week-review">
+            {reviews.map((c) => (
+              <li key={c.id}>
+                <form action={runAiFeatureFor} className="flex items-center gap-1.5">
+                  <input type="hidden" name="feature" value="weekly_review" />
+                  <input type="hidden" name="subjectId" value={c.spaceId} />
+                  <input type="hidden" name="back" value="today" />
+                  <SpaceIndicator space={c.space} />
+                  <button
+                    type="submit"
+                    className="hairline rounded border px-2 py-0.5 text-[11px]"
+                    aria-label={`Review the week ahead in ${c.space.name}`}
+                  >
+                    {c.isEnabled ? 'Review it' : 'Review it (switched off)'}
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+          <p className="faint mt-1.5 text-[11px]">
+            Titles and dates for the next seven days. No note bodies, nothing
+            locked, and one space at a time.
+          </p>
+          <div className="mt-2">
+            <AiResult sent={sent} answer={answer} refused={refused} />
+          </div>
+        </section>
       )}
 
       {dates.length > 0 && (

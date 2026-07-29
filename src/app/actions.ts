@@ -1869,6 +1869,40 @@ export async function setAiConsent(formData: FormData) {
  * engine's dry run makes. A refusal shows no prompt because there was none:
  * nothing was assembled and nothing was sent.
  */
+/**
+ * Run one AI feature against one subject, and come back to where you were.
+ *
+ * The same function behind all three surfaces: the AI page's note picker, the
+ * "break it into steps" button on a task, and "review the week ahead" on
+ * Today. What differs between them is the subject reader, which lives in
+ * `readSubject` — not the gate, not the consent check and not the run row.
+ *
+ * `back` is checked against a list rather than trusted: a redirect target from
+ * a form is an open redirect if it is not.
+ */
+export async function runAiFeatureFor(formData: FormData) {
+  const user = await requireUser();
+  const feature = String(formData.get('feature') ?? '');
+  const subjectId = String(formData.get('subjectId') ?? '');
+  const back = String(formData.get('back') ?? '');
+  if (!feature || !subjectId) return;
+
+  const result = await runAiFeature(user.id, feature, subjectId);
+  revalidatePath('/', 'layout');
+
+  const params = new URLSearchParams();
+  if (result.ok) {
+    params.set('sent', result.prompt);
+    params.set('answer', result.text);
+  } else {
+    params.set('refused', result.reason ?? 'It did not run.');
+  }
+
+  if (back === 'today') redirect(`/?${params.toString()}`);
+  if (back === 'task') redirect(`/tasks/item/${subjectId}?${params.toString()}`);
+  redirect(`/ai?${params.toString()}`);
+}
+
 export async function runAiOnNote(formData: FormData) {
   const user = await requireUser();
   const feature = String(formData.get('feature') ?? '');
