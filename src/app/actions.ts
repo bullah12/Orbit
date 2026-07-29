@@ -57,7 +57,9 @@ import {
   type ConflictChoice,
   type PendingWrite,
 } from '@/lib/sync/conflict';
-import type { FlushOutcome } from '@/lib/sync/outbox';
+import { normaliseDeviceLabel, type FlushOutcome } from '@/lib/sync/outbox';
+import { setThisDeviceLabel } from '@/lib/sync/device';
+import { listSpaces } from '@/lib/queries/spaces';
 import { runAiFeature, setConsent } from '@/lib/queries/ai';
 import {
   connectProviderCalendar,
@@ -2320,6 +2322,51 @@ export async function answerConflict(
         : 'The other version was kept. Everything nobody disagreed about was still applied.',
     conflict: null,
   };
+}
+
+/**
+ * Say which device this browser is, and make sure the rows exist to say it with.
+ *
+ * Rough edge since Phase 6: the outbox is scoped to a browser profile and every
+ * cursor belongs to a row in `devices`, and nothing connected the two — `/sync`
+ * showed "this device's queue" above "how far Priya — laptop has caught up" with
+ * no reason to believe they were the same device, and did not say so.
+ *
+ * A label, in a cookie, because `/sync` is a server component and a value only
+ * the client can read cannot pick the right row. `devices` is keyed
+ * `(space_id, owner_id, label)`, so one browser is one row per space — which is
+ * what a space-scoped cursor requires, and which is why this claims a row in
+ * every space the caller can write to rather than one row overall.
+ *
+ * `on conflict … do update` rather than an insert: claiming the same label twice
+ * is somebody pressing the button again, not an error, and it is how the label is
+ * *renamed* too — the old rows keep their cursors, so renaming a browser does not
+ * make it forget how far it had caught up. Only the spaces the caller can write
+ * to: registering a device in a space you can only read would be writing a row
+ * into somebody else's space, which the policies refuse anyway.
+ */
+export async function nameThisDevice(formData: FormData) {
+  const user = await requireUser();
+  const label = normaliseDeviceLabel(String(formData.get('label') ?? ''));
+  if (label === '') redirect('/sync?error=A+device+needs+a+name.');
+
+  const spaces = await listSpaces(user.id);
+  const writable = spaces.filter((s) => s.canWrite);
+
+  await asUser(user.id, async (tx) => {
+    for (const space of writable) {
+      await tx`
+        insert into public.devices (space_id, owner_id, label, platform, last_seen_at)
+        values (${space.id}::uuid, ${user.id}::uuid, ${label}, 'web', now())
+        on conflict (space_id, owner_id, label)
+        do update set last_seen_at = now(), revoked_at = null
+      `;
+    }
+  });
+
+  await setThisDeviceLabel(label);
+  revalidatePath('/', 'layout');
+  redirect('/sync?named=1');
 }
 
 /** Mark a device as having caught up with a space, to the instant the page was read. */

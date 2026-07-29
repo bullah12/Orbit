@@ -2251,6 +2251,119 @@ try {
     const syncUnnamed = await labelAuditOn(page);
     check('every control on the task page has a label', syncUnnamed.length === 0, syncUnnamed.join(', '));
 
+    // ---- coming back online sends what is queued, once ----
+    //
+    // Rough edge 2: nothing flushed automatically, so an edit made on a train sat
+    // there until somebody noticed the page. This is a listener on the browser's
+    // own `online` event, not a retry ladder — a retry that cannot tell "never
+    // arrived" from "arrived and the answer was lost" is banned by the same rule
+    // that keeps a push from retrying.
+    const backOnline = `${stamp} online`;
+    await page.goto(taskUrl);
+    await page.getByLabel('Work offline').check();
+    await settle(page);
+    const onlineField = page
+      .locator('#offline-edit-heading')
+      .locator('..')
+      .locator('..')
+      .locator('input[type="text"], input:not([type])')
+      .first();
+    await onlineField.fill(backOnline);
+    await onlineField.blur();
+    await page.waitForTimeout(400);
+    await page.goto('/sync');
+    check(
+      'an edit made while offline is waiting, as before',
+      (await page.locator('#outbox-queued li').count()) === 1,
+    );
+    // Untick first: the switch is a person saying "not yet", and the browser
+    // regaining a network must not overrule them.
+    await page.getByLabel('Work offline').uncheck();
+    await settle(page);
+    check(
+      'unticking Work offline does not itself send anything',
+      (await page.locator('#outbox-queued li').count()) === 1,
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await settle(page);
+    check(
+      'the browser coming back online sends the queue by itself',
+      (await page.locator('#outbox-queued li').count()) === 0,
+      await page.locator('#outbox-summary').innerText(),
+    );
+    check(
+      'and says that is why it sent, rather than looking like a button was pressed',
+      (await page.locator('main, body').first().innerText()).includes('Back online'),
+    );
+    await page.goto(taskUrl);
+    check(
+      'and the edit really landed on the server',
+      (await page.locator('h1').innerText()) === backOnline,
+      await page.locator('h1').innerText(),
+    );
+
+    // ---- the queue and the cursors are the same device, and say so ----
+    //
+    // Rough edge 1: the outbox is one browser profile's localStorage and every
+    // cursor belongs to a row in `devices`, and nothing connected them.
+    await page.goto('/sync');
+    check(
+      'until it is named, the page says the queue is not tied to a device',
+      (await page.locator('section[aria-labelledby="thisdevice-heading"]').innerText()).includes(
+        'has not said which device it is',
+      ),
+    );
+    check(
+      'and the queue heading claims only to be this browser’s',
+      (await page.locator('#outbox-heading').innerText()) === 'This browser’s queue',
+      await page.locator('#outbox-heading').innerText(),
+    );
+    check(
+      'and no device row is marked as this browser',
+      (await page.locator('#sync-devices li', { hasText: 'this browser' }).count()) === 0,
+    );
+
+    // Named as the seeded laptop, so the chip lands on rows that already have
+    // cursors — which is the whole point: the halves now describe one device.
+    await page.locator('section[aria-labelledby="thisdevice-heading"] input[name="label"]').fill(
+      '  Priya —   laptop  ',
+    );
+    await page.getByRole('button', { name: /^(Name this browser|Save this name)$/ }).click();
+    await settle(page);
+    check(
+      'naming the browser ties the queue to a device row',
+      (await page.locator('#outbox-heading').innerText()) === 'Priya — laptop — its queue',
+      await page.locator('#outbox-heading').innerText(),
+    );
+    const marked = await page.locator('#sync-devices li', { hasText: 'this browser' }).count();
+    check(
+      'and every row with that name is marked as this browser, one per space',
+      marked >= 2,
+      `${marked} marked`,
+    );
+    check(
+      // The name was typed with stray whitespace on purpose. Unnormalised it
+      // would be a label no seeded row carries, so nothing above would be marked
+      // and the box would read back with the spaces still in it.
+      'and the stray whitespace was normalised rather than making a second device',
+      (await page
+        .locator('section[aria-labelledby="thisdevice-heading"] input[name="label"]')
+        .inputValue()) === 'Priya — laptop',
+      await page
+        .locator('section[aria-labelledby="thisdevice-heading"] input[name="label"]')
+        .inputValue(),
+    );
+    check(
+      'and the page says why there is more than one row for one browser',
+      (await page.locator('section[aria-labelledby="thisdevice-heading"]').innerText()).includes(
+        'because a cursor is space-scoped',
+      ),
+    );
+    check(
+      'and it still shows a cursor per kind for it',
+      (await page.locator('#sync-cursors tbody tr').count()) === 5,
+    );
+
     // ---- cursors move forward, and only on purpose ----
     await page.goto('/sync');
     const syncPageUnnamed = await labelAuditOn(page);

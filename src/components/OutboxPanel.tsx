@@ -48,7 +48,16 @@ const PATH: Record<string, (id: string) => string> = {
   place: (id) => `/places/${id}`,
 };
 
-export function OutboxPanel({ spaces, serverNow }: { spaces: SpaceRef[]; serverNow: string }) {
+export function OutboxPanel({
+  spaces,
+  serverNow,
+  deviceLabel,
+}: {
+  spaces: SpaceRef[];
+  serverNow: string;
+  /** What this browser calls itself, or null if it has not said. */
+  deviceLabel: string | null;
+}) {
   const [outbox, setOutbox] = useState<Outbox | null>(null);
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -60,6 +69,33 @@ export function OutboxPanel({ spaces, serverNow }: { spaces: SpaceRef[]; serverN
     setOutbox(readOutbox());
     setOffline(readOffline());
     setDeviceNow(new Date().toISOString());
+  }, []);
+
+  /**
+   * Coming back online sends what is queued — **once**, on the event.
+   *
+   * Rough edge since Phase 6: nothing flushed automatically, so an edit made on a
+   * train sat there until somebody noticed the page and pressed a button. This is
+   * a listener, not a retry ladder, and the difference matters: a retry that
+   * cannot tell "delivered" from "timed out" would re-send a write it has no
+   * answer for, which is banned by the same standing rule that keeps a push from
+   * retrying. `online` fires when the browser learns it has a network again, which
+   * is a fact rather than a guess, and one attempt per fact is honest.
+   *
+   * It does nothing while *Work offline* is ticked: that switch is a person saying
+   * "not yet", and the browser regaining a network does not overrule them.
+   */
+  useEffect(() => {
+    function onOnline() {
+      const current = readOutbox();
+      if (readOffline() || current.writes.length === 0) return;
+      void send(current, 'online');
+    }
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+    // `send` reads the queue it is given rather than closing over state, so this
+    // listener is attached once and never needs re-binding.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const update = useCallback((next: Outbox) => {
@@ -83,22 +119,33 @@ export function OutboxPanel({ spaces, serverNow }: { spaces: SpaceRef[]; serverN
   const summary = outboxSummary(outbox);
   const skew = deviceNow ? clockSkew(deviceNow, serverNow) : null;
 
-  async function send() {
-    if (!outbox) return;
+  /**
+   * Send the queue once.
+   *
+   * Takes the queue rather than reading it from state, so the `online` listener
+   * can hand it the queue as it was when the event fired without depending on a
+   * render having happened.
+   */
+  async function send(queue?: Outbox, trigger: 'button' | 'online' = 'button') {
+    const from = queue ?? outbox;
+    if (!from) return;
     setBusy(true);
     try {
-      const result = await sendQueue(outbox.writes);
-      update(settle(outbox, result.outcomes, result.dropped));
+      const result = await sendQueue(from.writes);
+      update(settle(from, result.outcomes, result.dropped));
       setResults(result.outcomes.map((o) => ({ opId: o.opId, outcome: o.outcome, note: o.note })));
       const conflicts = result.outcomes.filter((o) => o.outcome === 'conflict').length;
+      const how = trigger === 'online' ? 'Back online, so this device sent what it had. ' : '';
       setSaid(
         result.outcomes.length === 0
-          ? 'There was nothing to send.'
+          ? `${how}There was nothing to send.`
           : conflicts === 0
-            ? `Sent ${result.outcomes.length}. Nothing clashed.`
-            : `Sent ${result.outcomes.length}. ${conflicts} could not be applied and ${conflicts === 1 ? 'is' : 'are'} below.`,
+            ? `${how}Sent ${result.outcomes.length}. Nothing clashed.`
+            : `${how}Sent ${result.outcomes.length}. ${conflicts} could not be applied and ${conflicts === 1 ? 'is' : 'are'} below.`,
       );
     } catch {
+      // Not retried. A failure that cannot tell "never arrived" from "arrived and
+      // the answer was lost" must not send the same write again on a timer.
       setSaid('That did not send. Nothing has left this device and the queue is unchanged.');
     } finally {
       setBusy(false);
@@ -134,7 +181,7 @@ export function OutboxPanel({ spaces, serverNow }: { spaces: SpaceRef[]; serverN
       <section className="hairline border-b px-5 py-4" aria-labelledby="outbox-heading">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="outbox-heading" className="text-[13px] font-semibold">
-            This device’s queue
+            {deviceLabel === null ? 'This browser’s queue' : `${deviceLabel} — its queue`}
           </h2>
           <label className="flex items-center gap-2 text-[12px]">
             <input
@@ -177,6 +224,11 @@ export function OutboxPanel({ spaces, serverNow }: { spaces: SpaceRef[]; serverN
           <span className="faint text-[11px]">
             A queued write is an ordinary write: it goes through the same policies as
             every other one, and one made into a space you have since left is refused.
+            Coming back online sends what is queued, once — there is no retry, because
+            a retry that cannot tell “never arrived” from “arrived and the answer was
+            lost” would send the same edit twice.
+            {deviceLabel === null &&
+              ' This queue is not yet tied to a device: name this browser below.'}
           </span>
         </div>
 
