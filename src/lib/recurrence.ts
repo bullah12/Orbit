@@ -130,6 +130,82 @@ export function formatRrule(r: Rrule): string {
   return out.join(';');
 }
 
+/**
+ * Build an RRULE from what a compose form can honestly ask for.
+ *
+ * Phase 2 could store and expand a repeat but had no way to *make* one — a
+ * recurring event could only arrive from an .ics file or a provider. This is
+ * the other end of it, and it is deliberately a small subset: every day, every
+ * week on chosen days, every month on the same date, every year. Anything more
+ * expressive is a form nobody can read back, which is the same call the rules
+ * engine made about its condition fields.
+ *
+ * It refuses rather than guesses. An interval of zero, a weekly repeat with no
+ * day chosen, an end date before the start — each returns a sentence, because
+ * a repeat that quietly became something else is a repeat that fires at the
+ * wrong time forever.
+ *
+ * `endOn` is a plain date and is turned into an inclusive end-of-day instant:
+ * "until 31 August" said by a person means the 31st is included, and UNTIL in
+ * RFC 5545 is exclusive of anything after the instant given.
+ */
+export type RepeatForm = {
+  freq: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+  interval: number;
+  /** Weekly only. Ignored by every other frequency. */
+  byDay: readonly Weekday[];
+  /** 'YYYY-MM-DD', or null for "forever". */
+  endOn: string | null;
+  /** The event's own start date, so a weekly repeat with no day chosen can use it. */
+  startOn: string;
+};
+
+export function rruleFromForm(form: RepeatForm): { rrule: string } | { error: string } {
+  if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(form.freq)) {
+    return { error: `“${form.freq}” is not a repeat this can build.` };
+  }
+  if (!Number.isInteger(form.interval) || form.interval < 1 || form.interval > 99) {
+    return { error: 'How often it repeats has to be a whole number between 1 and 99.' };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(form.startOn)) {
+    return { error: 'The event needs a start date before it can repeat.' };
+  }
+
+  const byDay: ByDay[] =
+    form.freq === 'WEEKLY'
+      ? (form.byDay.length > 0 ? form.byDay : [weekdayOf(form.startOn)]).map((weekday) => ({
+          weekday,
+          nth: null,
+        }))
+      : [];
+
+  let until: string | null = null;
+  if (form.endOn !== null) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.endOn)) {
+      return { error: 'The date it stops on is not a date.' };
+    }
+    if (form.endOn < form.startOn) {
+      return { error: 'It cannot stop repeating before it starts.' };
+    }
+    // Inclusive of the whole last day. UNTIL is an instant, and 00:00 on the
+    // last day would drop an occurrence somebody expected to keep.
+    until = `${form.endOn}T23:59:59.000Z`;
+  }
+
+  return {
+    rrule: formatRrule({
+      freq: form.freq,
+      interval: form.interval,
+      count: null,
+      until,
+      byDay,
+      byMonthDay: [],
+      byMonth: [],
+      wkst: 'MO',
+    }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Date helpers. All on 'YYYY-MM-DD' strings, so nothing here can pick up the
 // container's timezone the way a Date would.

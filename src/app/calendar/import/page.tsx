@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { listCalendarsBySpace } from '@/lib/queries/events';
-import { connectCalendar, importIcs, syncCalendar } from '@/app/actions';
+import { connectCalendar, importIcs, pushCalendarEdits, syncCalendar } from '@/app/actions';
 import { calendarProvider, icsProvider, providerSummary } from '@/lib/integrations';
 import { listConnectedCalendars } from '@/lib/sync/calendar';
 import { FakeIcsProvider } from '@/lib/integrations/ics/fake';
@@ -30,10 +30,12 @@ export default async function ImportPage({
   searchParams: Promise<{
     imported?: string; updated?: string; rules?: string;
     added?: string; changed?: string; removed?: string; full?: string;
+    pushed?: string; created?: string; locked?: string; failed?: string;
   }>;
 }) {
   const user = await requireUser();
-  const { imported, updated, rules, added, changed, removed, full } = await searchParams;
+  const { imported, updated, rules, added, changed, removed, full, pushed, created, locked, failed } =
+    await searchParams;
 
   const calProvider = calendarProvider();
   const [spaces, calendars, connected, remote] = await Promise.all([
@@ -84,6 +86,19 @@ export default async function ImportPage({
         >
           {full === '1' ? 'Full pull' : 'Incremental pull'}: {plural(Number(added), 'new event')},
           {' '}{changed} changed, {removed} cancelled.
+        </div>
+      )}
+
+      {pushed != null && (
+        <div
+          className="hairline border-b px-5 py-2 text-[13px]"
+          role="status"
+          aria-live="polite"
+          id="push-result"
+        >
+          Pushed {plural(Number(pushed), 'event')} back ({created} created),
+          {' '}{plural(Number(locked ?? 0), 'locked event')} skipped because there is no
+          plaintext to send, {failed} refused.
         </div>
       )}
 
@@ -220,7 +235,7 @@ export default async function ImportPage({
         <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
           Calendars in your spaces
         </h2>
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col gap-1" id="connected-calendars">
           {connected.map((c) => (
             <li key={c.id} className="flex flex-wrap items-center gap-2 text-[12px]">
               <SpaceIndicator
@@ -240,16 +255,38 @@ export default async function ImportPage({
                   {c.hasToken ? ', token held' : ''}
                 </span>
               )}
+              {/* Both directions, named. Until Phase 6 only 'pull' was ever
+                  written, and a local edit set is_dirty and sat there. */}
+              <span className="faint" data-dirty={c.dirtyCount}>
+                {c.dirtyCount === 0
+                  ? 'nothing waiting to go back'
+                  : `${plural(c.dirtyCount, 'local edit')} waiting to go back`}
+              </span>
+              {c.pushStatus && (
+                <span className="faint">last push {c.pushStatus}</span>
+              )}
               {c.externalId && (
-                <form action={syncCalendar} className="ml-auto">
-                  <input type="hidden" name="calendarId" value={c.id} />
-                  <button
-                    type="submit"
-                    className="hairline row-hover rounded border px-2 py-0.5 text-[11px]"
-                  >
-                    Pull again
-                  </button>
-                </form>
+                <span className="ml-auto flex items-center gap-1">
+                  <form action={syncCalendar}>
+                    <input type="hidden" name="calendarId" value={c.id} />
+                    <button
+                      type="submit"
+                      className="hairline row-hover rounded border px-2 py-0.5 text-[11px]"
+                    >
+                      Pull again
+                    </button>
+                  </form>
+                  <form action={pushCalendarEdits}>
+                    <input type="hidden" name="calendarId" value={c.id} />
+                    <button
+                      type="submit"
+                      className="hairline row-hover rounded border px-2 py-0.5 text-[11px]"
+                      disabled={c.dirtyCount === 0}
+                    >
+                      Push {c.dirtyCount > 0 ? c.dirtyCount : ''} back
+                    </button>
+                  </form>
+                </span>
               )}
             </li>
           ))}

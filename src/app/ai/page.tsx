@@ -96,6 +96,10 @@ export default async function AiPage({
           you what they agreed to send, and does not let you agree for them —
           the policy on the table says so, not this page.
         </p>
+        <p className="faint mt-1 text-[11px]" id="ai-where">
+          Each is run from where the thing it acts on lives: a note here, a
+          task from its own page, and the week from Today, once per space.
+        </p>
         <ul id="ai-consents" className="mt-2 flex flex-col gap-2">
           {consents.map((c) => (
             <li key={c.id} className="hairline flex flex-col gap-1 rounded border px-3 py-2">

@@ -277,6 +277,149 @@ export async function pullCalendar(
   return { ...counts, token: page.nextSyncToken, wasFullPull: syncToken === null };
 }
 
+/**
+ * Push local edits back to the provider.
+ *
+ * Until this existed, `events.is_dirty` was set by every local edit and never
+ * cleared, and `'pull'` was the only value ever written to
+ * `calendar_sync_state.direction` — a one-way sync that looked two-way in the
+ * schema. This is the other direction.
+ *
+ * What it will not do:
+ *  - It never pushes a **locked** event. There is no plaintext to send, and a
+ *    title of `''` arriving in somebody's Google calendar is worse than not
+ *    syncing at all.
+ *  - It never invents an external id. An event with no `external_id` is
+ *    *created* provider-side and given the id that comes back.
+ *  - It never clears `is_dirty` on a failure. A row that says it was sent and
+ *    was not is exactly the lie the flag exists to prevent, so a push that
+ *    throws leaves the flag set and the error on the state row.
+ *
+ * A failure on one event does not stop the rest: they are independent edits,
+ * and "none of your six went because the third one's calendar is read-only"
+ * would be a lie about five of them. The same call `flushQueue` makes.
+ */
+export type PushResult = {
+  created: number;
+  updated: number;
+  skippedLocked: number;
+  failed: { title: string; reason: string }[];
+};
+
+export async function pushCalendar(userId: string, calendarId: string): Promise<PushResult> {
+  const provider = calendarProvider();
+
+  const [calendar] = await asUser(userId, async (tx) => {
+    return tx<CalendarRow[]>`
+      select id, space_id as "spaceId", external_id as "externalId",
+             account_id as "accountId"
+      from public.calendars where id = ${calendarId}::uuid
+    `;
+  });
+  if (!calendar?.externalId) {
+    return { created: 0, updated: 0, skippedLocked: 0, failed: [] };
+  }
+
+  const dirty = await asUser(userId, async (tx) => {
+    return tx<
+      {
+        id: string;
+        externalId: string | null;
+        etag: string | null;
+        title: string;
+        bodyMd: string;
+        locationText: string | null;
+        startsAt: string;
+        endsAt: string;
+        allDay: boolean;
+        timezone: string;
+        status: string;
+        isLocked: boolean;
+      }[]
+    >`
+      select id, external_id as "externalId", external_etag as "etag",
+             title, body_md as "bodyMd", location_text as "locationText",
+             starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay",
+             timezone, status::text as status, is_locked as "isLocked"
+      from public.events
+      where calendar_id = ${calendarId}::uuid and is_dirty
+      order by updated_at
+      limit 200
+    `;
+  });
+
+  const result: PushResult = { created: 0, updated: 0, skippedLocked: 0, failed: [] };
+  const now = new Date();
+
+  await recordPushState(userId, calendar, now, { status: 'running' });
+
+  for (const e of dirty) {
+    if (e.isLocked) {
+      result.skippedLocked += 1;
+      continue;
+    }
+    try {
+      const pushed = await provider.pushEvent(calendar.externalId, {
+        externalId: e.externalId,
+        etag: e.etag,
+        title: e.title,
+        description: e.bodyMd,
+        location: e.locationText,
+        startsAt: e.startsAt,
+        endsAt: e.endsAt,
+        allDay: e.allDay,
+        timezone: e.timezone,
+        status:
+          e.status === 'cancelled' ? 'cancelled' : e.status === 'tentative' ? 'tentative' : 'confirmed',
+      });
+
+      // The flag is cleared in the same statement that records what came back,
+      // so there is no window in which an event is clean and has no etag.
+      await asUser(userId, async (tx) => {
+        await tx`
+          update public.events
+             set is_dirty = false,
+                 external_id = ${pushed.externalId},
+                 external_etag = ${pushed.etag}
+           where id = ${e.id}::uuid
+        `;
+      });
+      if (pushed.created) result.created += 1;
+      else result.updated += 1;
+    } catch (err) {
+      result.failed.push({ title: e.title, reason: String(err) });
+    }
+  }
+
+  await recordPushState(userId, calendar, now, {
+    status: result.failed.length > 0 ? 'error' : 'ok',
+    error: result.failed.length > 0 ? result.failed.map((f) => `${f.title}: ${f.reason}`).join('; ') : undefined,
+  });
+
+  return result;
+}
+
+/** The `push` half of `calendar_sync_state`. No token: a push has nothing to resume from. */
+async function recordPushState(
+  userId: string,
+  calendar: CalendarRow,
+  at: Date,
+  outcome: { status: 'running' | 'ok' | 'error'; error?: string },
+): Promise<void> {
+  await asUser(userId, async (tx) => {
+    await tx`
+      insert into public.calendar_sync_state
+        (space_id, owner_id, calendar_id, direction, last_run_at, last_status, last_error)
+      values (${calendar.spaceId}::uuid, ${userId}::uuid, ${calendar.id}::uuid, 'push',
+              ${at}, ${outcome.status}, ${outcome.error ?? null})
+      on conflict (space_id, calendar_id, direction) do update
+        set last_run_at = excluded.last_run_at,
+            last_status = excluded.last_status,
+            last_error = excluded.last_error
+    `;
+  });
+}
+
 async function recordState(
   userId: string,
   calendar: CalendarRow,
@@ -321,6 +464,10 @@ export type ConnectedCalendar = {
   lastRunAt: string | null;
   hasToken: boolean;
   eventCount: number;
+  /** Local edits waiting to go back. Zero until something is edited here. */
+  dirtyCount: number;
+  pushStatus: string | null;
+  pushRunAt: string | null;
 };
 
 /** What the sources page lists. Policy-scoped like everything else. */
@@ -334,14 +481,21 @@ export async function listConnectedCalendars(userId: string): Promise<ConnectedC
         st.last_status as "lastStatus",
         st.last_run_at as "lastRunAt",
         (st.sync_token is not null) as "hasToken",
-        coalesce(ev.n, 0) as "eventCount"
+        coalesce(ev.n, 0) as "eventCount",
+        coalesce(ev.dirty, 0) as "dirtyCount",
+        ps.last_status as "pushStatus",
+        ps.last_run_at as "pushRunAt"
       from public.calendars c
       join public.spaces s on s.id = c.space_id
       left join public.calendar_accounts a on a.id = c.account_id
       left join public.calendar_sync_state st
         on st.calendar_id = c.id and st.direction = 'pull'
+      left join public.calendar_sync_state ps
+        on ps.calendar_id = c.id and ps.direction = 'push'
       left join lateral (
-        select count(*)::int as n from public.events e where e.calendar_id = c.id
+        select count(*)::int as n,
+               count(*) filter (where e.is_dirty)::int as dirty
+        from public.events e where e.calendar_id = c.id
       ) ev on true
       order by s.name, c.sort_order, c.name
     `;

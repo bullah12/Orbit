@@ -253,6 +253,67 @@ describe('FakeCalendarProvider', () => {
   it('refuses a calendar it does not have', async () => {
     await expect(provider.listEvents('nope@fixture', window)).rejects.toBeInstanceOf(IntegrationError);
   });
+
+  // The write side, added in Phase 6. Until it existed, `events.is_dirty` was
+  // set by every local edit and never cleared, and 'pull' was the only value
+  // ever written to calendar_sync_state.direction.
+  describe('pushing an edit back', () => {
+    const outgoing = {
+      externalId: null as string | null,
+      etag: null as string | null,
+      title: 'Bins out',
+      description: '',
+      location: null,
+      startsAt: '2026-08-03T18:00:00.000Z',
+      endsAt: '2026-08-03T18:30:00.000Z',
+      allDay: false,
+      timezone: 'Europe/London',
+      status: 'confirmed' as const,
+    };
+
+    it('creates when there is no external id, and hands back the id it chose', async () => {
+      const p = new FakeCalendarProvider(now);
+      const res = await p.pushEvent('family@fixture', outgoing);
+      expect(res.created).toBe(true);
+      expect(res.externalId).toMatch(/^fx-pushed-/);
+      expect(res.etag).toBeTruthy();
+    });
+
+    it('updates when there is one, and keeps the id it was given', async () => {
+      const p = new FakeCalendarProvider(now);
+      const res = await p.pushEvent('family@fixture', { ...outgoing, externalId: 'fx-funding' });
+      expect(res.created).toBe(false);
+      expect(res.externalId).toBe('fx-funding');
+    });
+
+    it('gives a new etag every time, so is_dirty is cleared against something real', async () => {
+      const p = new FakeCalendarProvider(now);
+      const a = await p.pushEvent('family@fixture', { ...outgoing, externalId: 'fx-funding' });
+      const b = await p.pushEvent('family@fixture', { ...outgoing, externalId: 'fx-funding' });
+      expect(a.etag).not.toBe(b.etag);
+    });
+
+    it('refuses a calendar it does not have', async () => {
+      await expect(new FakeCalendarProvider(now).pushEvent('nope@fixture', outgoing)).rejects.toMatchObject({
+        kind: 'not_found',
+      });
+    });
+
+    it('refuses a calendar that is subscribed rather than owned', async () => {
+      // The 'work@fixture' calendar is writable: false. A push that quietly
+      // succeeded against a read-only calendar would clear is_dirty on an edit
+      // that went nowhere, which is the exact lie the flag exists to prevent.
+      await expect(new FakeCalendarProvider(now).pushEvent('work@fixture', outgoing)).rejects.toMatchObject({
+        kind: 'read_only',
+      });
+    });
+
+    it('keeps what it was asked to push, so the demo can show it arrived', async () => {
+      const p = new FakeCalendarProvider(now);
+      const res = await p.pushEvent('family@fixture', { ...outgoing, title: 'Renamed here' });
+      expect(p.pushed.get(res.externalId)?.title).toBe('Renamed here');
+    });
+  });
 });
 
 describe('FakeIcsProvider and the parser', () => {

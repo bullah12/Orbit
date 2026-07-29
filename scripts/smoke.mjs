@@ -1216,7 +1216,7 @@ try {
     // Give it a condition and an action. A notify action, deliberately: it
     // proves the push path without rewriting a seeded task, so running this
     // section twice leaves the same tasks behind as running it once.
-    const condForm = page.locator('form:has(select[name="field"])');
+    const condForm = page.locator('#add-condition');
     await condForm.locator('select[name="field"]').selectOption('title');
     await condForm.locator('select[name="op"]').selectOption('contains');
     await condForm.locator('input[name="value"]').fill('bins');
@@ -1286,6 +1286,35 @@ try {
     );
 
     // ---- accessibility on both new pages ----
+    // A condition is edited where it sits, keeping its position — rough edge
+    // since Phase 4, when it could only be removed and re-added at the end.
+    {
+      const first = page.locator('#rule-conditions li').first();
+      const before = await first.innerText();
+      await first.locator('input[name="value"]').fill('recycling');
+      await first.getByRole('button', { name: 'Save this condition' }).click();
+      await settle(page);
+      const after = await page.locator('#rule-conditions li').first().innerText();
+      check(
+        'a condition can be changed in place',
+        after.includes('recycling') && !after.includes('bins'),
+        after.split('\n')[0],
+      );
+      check(
+        'and stays where it was rather than being removed and re-added at the end',
+        (await page.locator('#rule-conditions li').count()) === 1,
+      );
+      check(
+        'and editing it switches the rule back off, as any structural edit does',
+        await page.getByRole('button', { name: 'Switch on' }).isDisabled(),
+      );
+      // Put it back, so the section that follows still finds the rule it built.
+      await page.locator('#rule-conditions li').first().locator('input[name="value"]').fill('bins');
+      await page.locator('#rule-conditions li').first()
+        .getByRole('button', { name: 'Save this condition' }).click();
+      await settle(page);
+    }
+
     const ruleUnnamed = await labelAuditOn(page);
     check('every control on the rule page has a label', ruleUnnamed.length === 0, ruleUnnamed.join(', '));
     check(
@@ -1689,9 +1718,14 @@ try {
     // row of his own in Home and sees none of Priya's three in the same space.
     const dannyConsents = await page.locator('#ai-consents li').count();
     check('the partner has his own consent to give', dannyConsents === 1, `${dannyConsents}`);
+    // Scoped to the consent list, not the whole page: the *run log* names the
+    // feature that ran, and Danny legitimately sees runs in the space he
+    // shares. What he must not see is what Priya agreed to send.
+    const dannyConsentText = await page.locator('#ai-consents').innerText();
     check(
       'and none of the owner\u2019s, even in the space they share',
-      !text.includes('Review the week ahead') && !text.includes('Break a task into steps'),
+      !dannyConsentText.includes('Review the week ahead') &&
+        !dannyConsentText.includes('Break a task into steps'),
     );
     check(
       'and sees the AI runs in that space',
@@ -1711,6 +1745,477 @@ try {
       'and no runs',
       (await page.locator('main').innerText()).includes('Nothing has run yet'),
     );
+    await ctx.close();
+  }
+
+  // ------------------------------------------------- AI: the other two features
+  //
+  // Until now only note_summary had a surface: task_breakdown and weekly_review
+  // had consent rows, disclosure text and prompts, and nothing called them.
+  // Both are switched on and back off again here, so the suite runs twice.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    // ---- break a task into steps ----
+    // A task in Home, because that is where the seed's consent rows live: a
+    // task in a space with no consent row is refused for a different (and also
+    // correct) reason, which would make this assertion about the wrong thing.
+    await page.goto(`/tasks/all?space=${S_HOME}`);
+    await page.locator('main ul li a[href^="/tasks/item/"]').first().click();
+    await settle(page);
+    const taskUrl = page.url();
+    const taskTitle = await page.locator('h1').innerText();
+
+    check(
+      'a task offers to be broken into steps',
+      (await page.getByRole('button', { name: 'Break it into steps' }).count()) === 1,
+    );
+    await page.getByRole('button', { name: 'Break it into steps' }).click();
+    await settle(page);
+    check(
+      'and running it while the feature is off is refused',
+      (await page.locator('#ai-refusal').innerText()).includes('switched off'),
+    );
+    check('with nothing sent', (await page.locator('#ai-sent').count()) === 0);
+
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Break a task into steps' })
+      .first()
+      .getByRole('button', { name: 'Switch on, and send this' })
+      .click();
+    await settle(page);
+
+    await page.goto(taskUrl);
+    await page.getByRole('button', { name: 'Break it into steps' }).click();
+    await settle(page);
+    check(
+      'once switched on it runs, and shows what was sent',
+      (await page.locator('#ai-sent').innerText()).includes(taskTitle),
+    );
+    check('and what came back', (await page.locator('#ai-answer').count()) === 1);
+
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Break a task into steps' })
+      .first()
+      .getByRole('button', { name: 'Switch off' })
+      .click();
+    await settle(page);
+
+    // ---- review the week ahead ----
+    await page.goto('/');
+    const reviewButtons = await page.locator('#week-review li').count();
+    check('Today offers a weekly review, one per space', reviewButtons > 0, `${reviewButtons}`);
+    check(
+      'each one says which space it would read',
+      (await page.locator('#week-review li span[title^="Space:"]').count()) === reviewButtons,
+    );
+
+    await page.locator('#week-review button').first().click();
+    await settle(page);
+    check(
+      'running it while it is off is refused',
+      (await page.locator('#ai-refusal').innerText()).includes('switched off'),
+    );
+
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Review the week ahead' })
+      .first()
+      .getByRole('button', { name: 'Switch on, and send this' })
+      .click();
+    await settle(page);
+
+    await page.goto('/');
+    await page.locator('#week-review button').first().click();
+    await settle(page);
+    const weekSent = await page.locator('#ai-sent').innerText();
+    check('once on, the weekly review runs', weekSent.length > 0);
+    check(
+      'and what it sends is titles and dates, as the disclosure says',
+      /\d{4}-\d{2}-\d{2}/.test(weekSent) || weekSent.split('\n').length <= 2,
+      weekSent.slice(0, 120),
+    );
+
+    await page.goto('/ai');
+    await page
+      .locator('#ai-consents li', { hasText: 'Review the week ahead' })
+      .first()
+      .getByRole('button', { name: 'Switch off' })
+      .click();
+    await settle(page);
+    // Counted by the button rather than by the word: a row only offers
+    // "Switch off" when it is on, and `has-text` is case-insensitive, so
+    // looking for "On" would match "Switch on, and send this" on every row.
+    check(
+      'and both are switched back off, as they were found',
+      (await page.locator('#ai-consents li').getByRole('button', { name: 'Switch off' }).count()) === 0,
+    );
+
+    check(
+      'the run log now holds more than notes',
+      (await page.locator('#ai-runs li').count()) > 0,
+    );
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ sync
+  //
+  // Phase 6. The claim is that an edit made offline applies immediately, is
+  // visibly not sent, and then either lands or names the conflict — never a
+  // spinner that resolves into a lie. All of that is driven here in one browser
+  // context, because the queue lives in that context's localStorage.
+  //
+  // Everything it creates it deletes, and everything it switches it switches
+  // back, so the suite still passes twice against the same database.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/');
+    check('Sync is reachable from the sidebar', (await page.locator('nav a[href="/sync"]').count()) === 1);
+
+    await page.goto('/sync');
+    const deviceCount = await page.locator('#sync-devices li').count();
+    check('the sync page lists this account’s devices', deviceCount > 0, `${deviceCount}`);
+    check(
+      'every device row says which space it is for',
+      (await page.locator('#sync-devices li span[title^="Space:"]').count()) === deviceCount,
+    );
+    const cursorRows = await page.locator('#sync-cursors tbody tr').count();
+    check('with one cursor row per syncable kind', cursorRows === 5, `${cursorRows}`);
+    const changeRows = await page.locator('#sync-changes li').count();
+    check('and what has changed since it last caught up', changeRows > 0, `${changeRows}`);
+    check(
+      'every changed row carries its space indicator too',
+      (await page.locator('#sync-changes li span[title^="Space:"]').count()) === changeRows,
+    );
+    check(
+      'a locked row is listed as locked rather than left out',
+      (await page.locator('#sync-changes li', { hasText: 'no plaintext to show' }).count()) > 0,
+    );
+    check(
+      'nothing is queued on a browser that has not typed anything',
+      (await page.locator('#outbox-summary').innerText()).includes('has been sent'),
+    );
+
+    // ---- a task to do all this to, deleted at the end ----
+    const stamp = `Smoke sync ${Date.now()}`;
+    await page.goto('/tasks/all');
+    await page.locator('form[aria-label="Add a task"] input[name="title"]').fill(stamp);
+    await page.locator('form[aria-label="Add a task"] input[name="title"]').press('Enter');
+    await settle(page);
+    await page.goto('/tasks/all');
+    await page.locator('main ul li', { hasText: stamp }).first().locator('a[href^="/tasks/item/"]').click();
+    await settle(page);
+    const taskUrl = page.url();
+    check('a task to edit offline exists', taskUrl.includes('/tasks/item/'), taskUrl);
+
+    // ---- go offline, and edit ----
+    await page.getByLabel('Work offline').check();
+    const offlineTitle = `${stamp} — offline`;
+    const titleField = page.locator('#offline-edit-heading').locator('..').locator('..').locator('input[type="text"], input:not([type])').first();
+    await titleField.fill(offlineTitle);
+    await titleField.blur();
+    await page.waitForTimeout(400);
+    check(
+      'an edit made offline shows on the screen straight away',
+      (await titleField.inputValue()) === offlineTitle,
+    );
+    check(
+      'and says out loud that it has not been sent',
+      (await page.locator('text=not sent yet').count()) > 0,
+    );
+
+    await page.reload();
+    await page.waitForTimeout(500);
+    check(
+      'the queued edit survives a reload of the page',
+      (await page.locator('text=not sent yet').count()) > 0,
+    );
+    check(
+      'and the server still holds the title it had before',
+      (await page.locator('h1').innerText()) === stamp,
+      await page.locator('h1').innerText(),
+    );
+
+    await page.goto('/sync');
+    check(
+      'the sync page counts the edit waiting to be sent',
+      (await page.locator('#outbox-summary').innerText()).includes('1 edit'),
+      await page.locator('#outbox-summary').innerText(),
+    );
+    check(
+      'and the pending row carries its space indicator, like every other row',
+      (await page.locator('#outbox-queued li span[title^="Space:"]').count()) === 1,
+    );
+
+    // ---- send it, and it lands ----
+    await page.getByRole('button', { name: /^Send 1 queued edit$/ }).click();
+    await settle(page);
+    check(
+      'sending it says what happened rather than only redrawing',
+      (await page.locator('#outbox-results li').first().innerText()).includes('Applied'),
+      await page.locator('#outbox-results li').first().innerText(),
+    );
+    await page.goto(taskUrl);
+    check(
+      'and the edit is on the server afterwards',
+      (await page.locator('h1').innerText()) === offlineTitle,
+      await page.locator('h1').innerText(),
+    );
+
+    // ---- a real conflict: queue one edit, then move the row underneath it ----
+    const mine = `${stamp} — mine`;
+    const theirs = `${stamp} — theirs`;
+    const titleField2 = page.locator('#offline-edit-heading').locator('..').locator('..').locator('input[type="text"], input:not([type])').first();
+    await titleField2.fill(mine);
+    await titleField2.blur();
+    await page.waitForTimeout(400);
+
+    // The ordinary edit form is the "somebody else" here: a second writer that
+    // moves the row while the queued edit is still waiting.
+    await page.locator('#task-title').fill(theirs);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await settle(page);
+    check(
+      'the other writer’s change is what the server holds',
+      (await page.locator('h1').innerText()) === theirs,
+      await page.locator('h1').innerText(),
+    );
+
+    await page.goto('/sync');
+    await page.getByRole('button', { name: /^Send 1 queued edit$/ }).click();
+    await settle(page);
+    const conflictCount = await page.locator('#outbox-conflicts li').count();
+    check('sending an edit that clashed produces a conflict, not a silent win', conflictCount === 1);
+    const conflictText = await page.locator('#outbox-conflicts li').first().innerText();
+    check('the conflict names both versions', conflictText.includes(mine) && conflictText.includes(theirs));
+    check('and says nothing has been overwritten', conflictText.includes('nothing has been overwritten'));
+    check(
+      'and the conflict row carries its space indicator',
+      (await page.locator('#outbox-conflicts li span[title^="Space:"]').count()) === 1,
+    );
+    await page.goto(taskUrl);
+    check(
+      'an unanswered conflict has changed nothing on the server',
+      (await page.locator('h1').innerText()) === theirs,
+      await page.locator('h1').innerText(),
+    );
+
+    // ---- answer it ----
+    await page.goto('/sync');
+    await page.getByRole('button', { name: 'Keep theirs' }).click();
+    await settle(page);
+    check(
+      'answering the conflict clears it',
+      (await page.locator('#outbox-conflicts li').count()) === 0,
+    );
+    check(
+      'and says which version was kept',
+      (await page.locator('main').innerText()).includes('The other version was kept'),
+    );
+    await page.goto(taskUrl);
+    check(
+      'keeping theirs left the server exactly as it was',
+      (await page.locator('h1').innerText()) === theirs,
+      await page.locator('h1').innerText(),
+    );
+
+    const syncUnnamed = await labelAuditOn(page);
+    check('every control on the task page has a label', syncUnnamed.length === 0, syncUnnamed.join(', '));
+
+    // ---- cursors move forward, and only on purpose ----
+    await page.goto('/sync');
+    const syncPageUnnamed = await labelAuditOn(page);
+    check('every control on the sync page has a label', syncPageUnnamed.length === 0, syncPageUnnamed.join(', '));
+
+    await page.getByRole('button', { name: 'Mark caught up' }).click();
+    await settle(page);
+    check(
+      'marking a device caught up leaves nothing changed since',
+      (await page.locator('#sync-changes-none').count()) === 1,
+    );
+    await page.getByRole('button', { name: 'Rewind to the beginning' }).click();
+    await settle(page);
+    check(
+      'and rewinding it makes the next sync read everything again',
+      (await page.locator('#sync-changes li').count()) > 0,
+    );
+
+    // ---- leave nothing behind ----
+    await page.getByLabel('Work offline').uncheck();
+    await page.goto(taskUrl);
+    await page.getByRole('button', { name: 'Delete this task' }).click();
+    await settle(page);
+    await page.goto('/tasks/all');
+    check(
+      'and the task it created is deleted again',
+      !(await page.locator('main').innerText()).includes(stamp),
+    );
+    await page.goto('/sync');
+    check(
+      'with an empty queue and no conflicts left behind',
+      (await page.locator('#outbox-summary').innerText()).includes('has been sent'),
+      await page.locator('#outbox-summary').innerText(),
+    );
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(DANNY);
+    await page.goto('/sync');
+    const text = await page.locator('main').innerText();
+    // Devices and cursors stop at the space boundary like everything else:
+    // Danny has his own phone in his own space, and cannot see the laptop
+    // Priya registered in hers.
+    check('the partner sees his own device', text.includes('Danny — phone'));
+    check('and none of the owner’s', !text.includes('Priya — laptop'));
+    const dannyDevices = await page.locator('#sync-devices li').count();
+    check('exactly one of them', dannyDevices === 1, `${dannyDevices}`);
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/sync');
+    check(
+      'the outsider has no devices at all',
+      (await page.locator('#sync-devices li').count()) === 0,
+    );
+    check(
+      'and is told so rather than shown an error',
+      (await page.locator('main').innerText()).includes('No devices are registered'),
+    );
+    await ctx.close();
+  }
+
+  // --------------------------------------- calendar: the two Phase 2 gaps
+  //
+  // Both were rough edges 19 and 20 and both belong to sync. Nothing had ever
+  // pushed a local edit back to a provider — is_dirty was set and never
+  // cleared, and 'pull' was the only direction ever written — and there was no
+  // way at all to *create* a repeat from the UI.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    // ---- push back ----
+    await page.goto('/calendar/import');
+    const familyRow = page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first();
+    check(
+      'a connected calendar says whether anything is waiting to go back',
+      (await familyRow.innerText()).includes('waiting to go back'),
+    );
+
+    await page.goto('/search?q=checkup&kind=event');
+    await page.locator('#search-results a[href^="/calendar/event/"]').first().click();
+    await settle(page);
+    const eventUrl = page.url();
+    const originalLocation = await page.locator('input[name="locationText"]').inputValue();
+    const stampedLocation = `${originalLocation} (smoke)`;
+
+    await page.locator('input[name="locationText"]').fill(stampedLocation);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await settle(page);
+
+    await page.goto('/calendar/import');
+    const dirtyRow = page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first();
+    check(
+      'editing a pulled event leaves something waiting to go back',
+      (await dirtyRow.innerText()).includes('1 local edit waiting to go back'),
+      await dirtyRow.innerText(),
+    );
+
+    await dirtyRow.locator('button', { hasText: 'back' }).click();
+    await settle(page);
+    const pushBanner = await page.locator('#push-result').innerText();
+    check('pushing it back says what it did', /Pushed 1 event back/.test(pushBanner), pushBanner);
+    check(
+      'and nothing is waiting afterwards',
+      (await page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first().innerText())
+        .includes('nothing waiting to go back'),
+    );
+    check(
+      'the push is recorded as a push, not as another pull',
+      (await page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first().innerText())
+        .includes('last push ok'),
+    );
+
+    // ---- put it back, and push that too, so the suite runs twice ----
+    await page.goto(eventUrl);
+    await page.locator('input[name="locationText"]').fill(originalLocation);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await settle(page);
+    await page.goto('/calendar/import');
+    await page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first()
+      .locator('button', { hasText: 'back' }).click();
+    await settle(page);
+    check(
+      'and the edit that put it back went the same way',
+      (await page.locator('#connected-calendars li', { hasText: 'Family (fixture)' }).first().innerText())
+        .includes('nothing waiting to go back'),
+    );
+
+    // ---- create a repeat ----
+    const repeatTitle = `Smoke repeat ${Date.now()}`;
+    await page.goto('/calendar/week?date=2026-08-03');
+    await page.locator('select[name="repeatFreq"]').selectOption('WEEKLY');
+    await page.locator('form[aria-label="Add an event"] input[name="title"]').fill(repeatTitle);
+    await page.locator('input[name="onDate"]').fill('2026-08-03');
+    await page.locator('input[name="repeatUntil"]').fill('2026-08-31');
+    await page.getByRole('button', { name: 'Add' }).click();
+    await settle(page);
+
+    await page.goto('/calendar/month?date=2026-08-03');
+    const drawn = await page.locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle }).count();
+    check(
+      'an event created with a repeat is drawn on every occurrence',
+      drawn >= 4,
+      `${drawn} drawn`,
+    );
+
+    await page.locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle }).first().click();
+    await settle(page);
+    const repeatUrl = page.url();
+    check(
+      'and its detail page reads the rule back in words',
+      /(week|Week)/.test(await page.locator('main').innerText()),
+    );
+
+    // A repeat that cannot be built is refused with a sentence, not silently
+    // turned into something else.
+    await page.goto('/calendar/week?date=2026-08-03');
+    await page.locator('select[name="repeatFreq"]').selectOption('WEEKLY');
+    await page.locator('form[aria-label="Add an event"] input[name="title"]').fill('Smoke bad repeat');
+    await page.locator('input[name="onDate"]').fill('2026-08-03');
+    await page.locator('input[name="repeatUntil"]').fill('2026-07-01');
+    await page.getByRole('button', { name: 'Add' }).click();
+    await settle(page);
+    check(
+      'a repeat that stops before it starts is refused, and says so',
+      (await page.locator('#calendar-error').innerText()).includes('before it starts'),
+    );
+    await page.goto('/calendar/month?date=2026-08-03');
+    check(
+      'and nothing was created for it',
+      !(await page.locator('main').innerText()).includes('Smoke bad repeat'),
+    );
+
+    const composeUnnamed = await labelAuditOn(page);
+    check('every control on the calendar page has a label', composeUnnamed.length === 0, composeUnnamed.join(', '));
+
+    // ---- leave nothing behind ----
+    await page.goto(repeatUrl);
+    await page.getByRole('button', { name: 'Delete this event' }).click();
+    await settle(page);
+    await page.goto('/calendar/month?date=2026-08-03');
+    check(
+      'and the repeating event it created is deleted again',
+      !(await page.locator('main').innerText()).includes(repeatTitle),
+    );
+
     await ctx.close();
   }
 

@@ -17,7 +17,7 @@
 export class IntegrationError extends Error {
   constructor(
     readonly provider: string,
-    readonly kind: 'missing_credential' | 'not_found' | 'transport' | 'malformed',
+    readonly kind: 'missing_credential' | 'not_found' | 'transport' | 'malformed' | 'read_only',
     message: string,
   ) {
     super(`[${provider}] ${message}`);
@@ -88,12 +88,51 @@ export type CalendarPage = {
   nextSyncToken: string | null;
 };
 
+/**
+ * One event on its way *out*. A subset of ExternalEvent: everything a provider
+ * needs to write, and nothing Orbit could not honestly claim to know.
+ *
+ * `etag` is what was held when the local edit was made — the same bargain as a
+ * queued write's `baseUpdatedAt`. A provider that supports conditional writes
+ * uses it to refuse an overwrite of something that moved on their side; one
+ * that does not, ignores it, and the push is last-write-wins *there*, which is
+ * a fact about their API and is reported rather than hidden.
+ */
+export type OutgoingEvent = {
+  /** Null for an event that has never been pushed. */
+  externalId: string | null;
+  etag: string | null;
+  title: string;
+  description: string;
+  location: string | null;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  timezone: string;
+  status: 'confirmed' | 'tentative' | 'cancelled';
+};
+
+export type PushedEvent = {
+  externalId: string;
+  etag: string | null;
+  /** True when the provider created a row rather than updating one. */
+  created: boolean;
+};
+
 export interface CalendarProvider {
   readonly name: string;
   /** True when this implementation can actually reach the network here. */
   readonly isFake: boolean;
   listCalendars(): Promise<ExternalCalendar[]>;
   listEvents(calendarExternalId: string, window: CalendarWindow): Promise<CalendarPage>;
+  /**
+   * Write one event back. Creates when `externalId` is null, updates otherwise.
+   *
+   * A provider that cannot write throws `IntegrationError('read_only')` rather
+   * than returning quietly: an event that says it was pushed and was not is
+   * exactly the lie `is_dirty` exists to prevent.
+   */
+  pushEvent(calendarExternalId: string, event: OutgoingEvent): Promise<PushedEvent>;
 }
 
 // ---------------------------------------------------------------------------

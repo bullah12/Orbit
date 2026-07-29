@@ -25,6 +25,7 @@ import {
   type LegMode,
 } from '@/lib/travel';
 import { isTriggerKind, type Trigger } from '@/lib/rules';
+import { rruleFromForm } from '@/lib/recurrence';
 import {
   addAction,
   fireForTask,
@@ -34,14 +35,33 @@ import {
   removeAction,
   removeCondition,
   runRule,
+  updateAction,
+  updateCondition,
   setRuleEnabled,
   updateRuleParts,
 } from '@/lib/queries/rules';
 import { createFromCapture } from '@/lib/queries/capture';
+import {
+  advanceCursor,
+  flushQueue,
+  isSyncableField,
+  readCurrent,
+  resetCursors,
+  resolveConflictWrite,
+  SYNC_ENTITY_KINDS,
+} from '@/lib/queries/sync';
+import {
+  isSyncEntityKind,
+  type Conflict,
+  type ConflictChoice,
+  type PendingWrite,
+} from '@/lib/sync/conflict';
+import type { FlushOutcome } from '@/lib/sync/outbox';
 import { runAiFeature, setConsent } from '@/lib/queries/ai';
 import {
   connectProviderCalendar,
   pullCalendar,
+  pushCalendar,
   upsertExternalEvent,
 } from '@/lib/sync/calendar';
 
@@ -648,10 +668,43 @@ export async function createEvent(formData: FormData) {
   // event running into the next day, which is what the person meant.
   const finalEnd = endsAt < startsAt ? new Date(endsAt.getTime() + 86_400_000) : endsAt;
 
+  // A repeat is one row plus an RRULE, never expanded copies. The rule is
+  // built by the same pure module that reads one back, and a malformed one
+  // stops the write rather than producing an event that repeats at the wrong
+  // time forever.
+  const repeatFreq = String(formData.get('repeatFreq') ?? '');
+  let recurrenceRule: string | null = null;
+  if (repeatFreq) {
+    const built = rruleFromForm({
+      freq: repeatFreq as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY',
+      interval: Number(formData.get('repeatInterval') ?? 1),
+      byDay: formData.getAll('repeatByDay').map(String) as never,
+      endOn: String(formData.get('repeatUntil') ?? '') || null,
+      startOn: onDate,
+    });
+    if ('error' in built) {
+      redirect(`/calendar/week?error=${encodeURIComponent(built.error)}`);
+    }
+    recurrenceRule = built.rrule;
+  }
+
   await asUser(user.id, async (tx) => {
+    // The rule is written first so the event can point at it. Both carry the
+    // space of the event, because a rule is as much content as the event is.
+    let ruleId: string | null = null;
+    if (recurrenceRule) {
+      const [rule] = await tx<{ id: string }[]>`
+        insert into public.recurrence_rules (space_id, owner_id, rrule, dtstart)
+        values (${spaceId}::uuid, ${user.id}::uuid, ${recurrenceRule}, ${startsAt})
+        returning id
+      `;
+      ruleId = rule?.id ?? null;
+    }
+
     await tx`
       insert into public.events
-        (space_id, owner_id, calendar_id, category_id, title, starts_at, ends_at, all_day)
+        (space_id, owner_id, calendar_id, category_id, title, starts_at, ends_at, all_day,
+         recurrence_rule_id)
       values (
         ${spaceId}::uuid, ${user.id}::uuid,
         -- Both references are resolved against the chosen space rather than
@@ -667,7 +720,7 @@ export async function createEvent(formData: FormData) {
         ),
         (select k.id from public.categories k
           where k.id = ${categoryId}::uuid and k.space_id = ${spaceId}::uuid),
-        ${title}, ${startsAt}, ${finalEnd}, ${allDay}
+        ${title}, ${startsAt}, ${finalEnd}, ${allDay}, ${ruleId}::uuid
       )
     `;
   });
@@ -726,7 +779,21 @@ export async function deleteEvent(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
+    // A recurrence rule belongs to the event that carried it. The FK is
+    // `on delete set null`, so deleting the event alone would leave the rule
+    // behind as a row nothing points at — invisible, and still counted by the
+    // structural checks. It goes too, but only if no other event uses it.
+    const [row] = await tx<{ ruleId: string | null }[]>`
+      select recurrence_rule_id as "ruleId" from public.events where id = ${id}::uuid
+    `;
     await tx`delete from public.events where id = ${id}::uuid`;
+    if (row?.ruleId) {
+      await tx`
+        delete from public.recurrence_rules r
+        where r.id = ${row.ruleId}::uuid
+          and not exists (select 1 from public.events e where e.recurrence_rule_id = r.id)
+      `;
+    }
   });
 
   redirect('/calendar/week');
@@ -922,6 +989,25 @@ export async function connectCalendar(formData: FormData) {
   // type through `+` and the build stops being able to check the path.
   redirect(
     `/calendar/import?added=${result.added}&changed=${result.updated}&removed=${result.removed}&full=${result.wasFullPull ? 1 : 0}`,
+  );
+}
+
+/**
+ * Push local edits back to the provider.
+ *
+ * The other half of a sync that had only ever had one. Until this existed,
+ * `events.is_dirty` was set by every local edit and never cleared, and `'pull'`
+ * was the only value ever written to `calendar_sync_state.direction`.
+ */
+export async function pushCalendarEdits(formData: FormData) {
+  const user = await requireUser();
+  const calendarId = String(formData.get('calendarId') ?? '');
+  if (!calendarId) return;
+
+  const result = await pushCalendar(user.id, calendarId);
+  revalidatePath('/', 'layout');
+  redirect(
+    `/calendar/import?pushed=${result.created + result.updated}&created=${result.created}&locked=${result.skippedLocked}&failed=${result.failed.length}`,
   );
 }
 
@@ -1633,6 +1719,25 @@ export async function addRuleConditionAction(formData: FormData) {
   ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
 }
 
+/**
+ * Edit one condition where it sits, rather than removing it and adding it back
+ * at the end. Order is reading order, and a rule you have to re-read from the
+ * bottom every time you change a threshold is a rule nobody edits.
+ */
+export async function editRuleConditionAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const raw = {
+    field: String(formData.get('field') ?? ''),
+    op: String(formData.get('op') ?? ''),
+    value: String(formData.get('value') ?? ''),
+  };
+  const result = await updateCondition(user.id, id, Number(formData.get('index')), raw);
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
 export async function removeRuleConditionAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('ruleId') ?? '');
@@ -1659,6 +1764,26 @@ export async function addRuleActionAction(formData: FormData) {
   else if (kind === 'notify') raw.message = value;
 
   const result = await addAction(user.id, id, raw);
+  revalidatePath('/', 'layout');
+  ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
+}
+
+/** The same for an action: edited in place, keeping its position. */
+export async function editRuleActionAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('ruleId') ?? '');
+  if (!id) return;
+  const kind = String(formData.get('kind') ?? '');
+  const value = String(formData.get('value') ?? '').trim();
+
+  const raw: Record<string, unknown> = { kind };
+  if (kind === 'task.set_priority') raw.priority = value;
+  else if (kind === 'task.set_status') raw.status = value;
+  else if (kind === 'task.assign') raw.to = value;
+  else if (kind === 'task.defer_days' || kind === 'task.due_in_days') raw.days = Number(value || '0');
+  else if (kind === 'notify') raw.message = value;
+
+  const result = await updateAction(user.id, id, Number(formData.get('index')), raw);
   revalidatePath('/', 'layout');
   ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
 }
@@ -1785,6 +1910,40 @@ export async function setAiConsent(formData: FormData) {
  * engine's dry run makes. A refusal shows no prompt because there was none:
  * nothing was assembled and nothing was sent.
  */
+/**
+ * Run one AI feature against one subject, and come back to where you were.
+ *
+ * The same function behind all three surfaces: the AI page's note picker, the
+ * "break it into steps" button on a task, and "review the week ahead" on
+ * Today. What differs between them is the subject reader, which lives in
+ * `readSubject` — not the gate, not the consent check and not the run row.
+ *
+ * `back` is checked against a list rather than trusted: a redirect target from
+ * a form is an open redirect if it is not.
+ */
+export async function runAiFeatureFor(formData: FormData) {
+  const user = await requireUser();
+  const feature = String(formData.get('feature') ?? '');
+  const subjectId = String(formData.get('subjectId') ?? '');
+  const back = String(formData.get('back') ?? '');
+  if (!feature || !subjectId) return;
+
+  const result = await runAiFeature(user.id, feature, subjectId);
+  revalidatePath('/', 'layout');
+
+  const params = new URLSearchParams();
+  if (result.ok) {
+    params.set('sent', result.prompt);
+    params.set('answer', result.text);
+  } else {
+    params.set('refused', result.reason ?? 'It did not run.');
+  }
+
+  if (back === 'today') redirect(`/?${params.toString()}`);
+  if (back === 'task') redirect(`/tasks/item/${subjectId}?${params.toString()}`);
+  redirect(`/ai?${params.toString()}`);
+}
+
 export async function runAiOnNote(formData: FormData) {
   const user = await requireUser();
   const feature = String(formData.get('feature') ?? '');
@@ -1802,4 +1961,125 @@ export async function runAiOnNote(formData: FormData) {
     params.set('refused', result.reason ?? 'It did not run.');
   }
   redirect(`/ai?${params.toString()}`);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — sync
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a device's queue.
+ *
+ * Called from the client with the queue as data rather than as a form, because
+ * a queue is a list and a form is not. Everything it does still happens through
+ * `asUser`: **a queued write is still a write**, and one made offline into a
+ * space the account has since left is refused by the same policy that would
+ * have refused it online. There is no elevated path for catching up.
+ */
+export async function sendQueue(writes: PendingWrite[]): Promise<{
+  outcomes: FlushOutcome[];
+  dropped: string[];
+  serverNow: string;
+}> {
+  const user = await requireUser();
+
+  // The kind and the fields are checked here rather than trusted from the
+  // client, because this action is reachable with anything the client cares to
+  // send. A write naming a column that is not syncable is a bug or an attack,
+  // and either way it is refused before it reaches a query.
+  for (const w of writes) {
+    if (!isSyncEntityKind(w.entityKind)) throw new Error(`not a syncable kind: ${w.entityKind}`);
+    for (const f of Object.keys(w.changes)) {
+      if (!isSyncableField(w.entityKind, f)) {
+        throw new Error(`${f} is not a syncable field on a ${w.entityKind}`);
+      }
+    }
+  }
+
+  const result = await flushQueue(user.id, writes);
+  revalidatePath('/', 'layout');
+
+  return {
+    outcomes: result.results.map((r) => ({
+      opId: r.opId,
+      outcome: r.outcome,
+      note: r.outcome === 'conflict' ? r.conflict.reason : r.note,
+      conflict: r.outcome === 'conflict' ? r.conflict : null,
+    })),
+    dropped: result.droppedDuplicates,
+    serverNow: result.serverNow,
+  };
+}
+
+/**
+ * Answer a conflict.
+ *
+ * The answer is an ordinary write with a fresh base, not a privileged one. If
+ * the row moved again between reading the conflict and answering it, the answer
+ * conflicts in its turn rather than landing on top of a third edit nobody has
+ * seen.
+ */
+export async function answerConflict(
+  conflict: Conflict,
+  choice: ConflictChoice,
+): Promise<{ ok: boolean; note: string; conflict: Conflict | null }> {
+  const user = await requireUser();
+  if (!isSyncEntityKind(conflict.entityKind)) throw new Error('not a syncable kind');
+  for (const f of Object.keys(conflict.mergeable)) {
+    if (!isSyncableField(conflict.entityKind, f)) throw new Error('not a syncable field');
+  }
+  for (const c of conflict.clashes) {
+    if (!isSyncableField(conflict.entityKind, c.field)) throw new Error('not a syncable field');
+  }
+
+  const current = await readCurrent(user.id, conflict.entityKind, conflict.entityId);
+  if (!current) {
+    return {
+      ok: false,
+      note: 'That item is gone. Nothing has been written.',
+      conflict: { ...conflict, kind: 'deleted_elsewhere', clashes: [], mergeable: {} },
+    };
+  }
+
+  const outcome = await resolveConflictWrite(user.id, conflict, choice, current.updatedAt);
+  revalidatePath('/', 'layout');
+
+  if (outcome.outcome === 'conflict') {
+    return { ok: false, note: outcome.conflict.reason, conflict: outcome.conflict };
+  }
+  return {
+    ok: true,
+    note:
+      choice === 'mine'
+        ? 'Your version was written. The other one is in the item’s history, not lost.'
+        : 'The other version was kept. Everything nobody disagreed about was still applied.',
+    conflict: null,
+  };
+}
+
+/** Mark a device as having caught up with a space, to the instant the page was read. */
+export async function catchUpDevice(formData: FormData) {
+  const user = await requireUser();
+  const deviceId = String(formData.get('deviceId') ?? '');
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const upTo = String(formData.get('upTo') ?? '');
+  if (!deviceId || !spaceId || !upTo) return;
+
+  for (const kind of SYNC_ENTITY_KINDS) {
+    await advanceCursor(user.id, spaceId, deviceId, kind, upTo);
+  }
+  revalidatePath('/', 'layout');
+  redirect(`/sync?device=${deviceId}`);
+}
+
+/** Wind a device's cursors back to the epoch, so the next sync re-reads everything. */
+export async function rewindDevice(formData: FormData) {
+  const user = await requireUser();
+  const deviceId = String(formData.get('deviceId') ?? '');
+  const spaceId = String(formData.get('spaceId') ?? '');
+  if (!deviceId || !spaceId) return;
+
+  await resetCursors(user.id, spaceId, deviceId);
+  revalidatePath('/', 'layout');
+  redirect(`/sync?device=${deviceId}`);
 }

@@ -34,6 +34,8 @@ export type TaskRow = {
   priority: string;
   visibility: string;
   isLocked: boolean;
+  /** The version an optimistic edit is made against. See src/lib/sync/. */
+  updatedAt: string;
   dueOn: string | null;
   deferredUntil: string | null;
   completedAt: string | null;
@@ -189,6 +191,7 @@ export async function getTask(userId: string, id: string): Promise<TaskRow | nul
     return tx<TaskRow[]>`
       select
         t.id, t.title, t.body_md as "bodyMd", t.status::text as status,
+        t.updated_at as "updatedAt",
         t.priority::text as priority, t.visibility::text as visibility,
         t.is_locked as "isLocked", t.due_on as "dueOn",
         t.deferred_until as "deferredUntil", t.completed_at as "completedAt",

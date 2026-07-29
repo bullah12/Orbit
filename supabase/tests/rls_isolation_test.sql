@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(76);
+select plan(83);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -215,6 +215,29 @@ insert into public.ai_runs
   ('a8a8a8a8-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'note_summary', 'ai:fake', null,
    'note', 'refused', 'that item is locked');
+
+-- Devices and sync cursors — Phase 6.
+--
+-- A cursor says how far a named device has caught up in a named space. That is
+-- not content, and it is tempting to treat it as bookkeeping — but "Alice's
+-- laptop last read the Home tasks four minutes ago" is a fact about Alice, and
+-- a cursor in a space you are not in is a fact about a space you cannot see.
+-- So it is space-scoped like everything else, and asserted from both sides of
+-- the membership and from the free/busy side, exactly as `ai_runs` was.
+insert into public.devices (id, space_id, owner_id, label, platform) values
+  ('acacacac-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'Alice — laptop', 'web'),
+  ('acacacac-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'Alice — laptop', 'web');
+
+insert into public.sync_cursors
+  (id, space_id, owner_id, device_id, entity_kind, cursor_at, last_sync_at) values
+  ('adadadad-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'acacacac-0000-0000-0000-000000000001',
+   'task', '2026-07-27 08:00+01', '2026-07-27 08:00+01'),
+  ('adadadad-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'acacacac-0000-0000-0000-000000000002',
+   'task', '2026-07-27 08:00+01', '2026-07-27 08:00+01');
 
 -- ===========================================================================
 -- 1. RLS is on, everywhere
@@ -441,6 +464,16 @@ select is(
   0,
   'and no AI runs — that a feature ran over somebody''s notes is more than "busy"');
 
+select is(
+  (select count(*)::int from public.sync_cursors),
+  0,
+  'and no sync cursors — how far a device has caught up is more than "busy"');
+
+select is(
+  (select count(*)::int from public.devices),
+  0,
+  'and no devices — whose laptop reads this space is not availability');
+
 -- AI, from the partner's side. Both directions matter: the run row, and the
 -- consent row that would have allowed it.
 select tests.act_as('22222222-2222-2222-2222-222222222222');
@@ -487,6 +520,58 @@ select throws_ok(
   '42501',
   null,
   'nor record an AI run inside one');
+
+-- Sync cursors, from the partner's side. A cursor is not private *within* a
+-- space — "the laptop is three days behind on Home tasks" is a question a
+-- household should be able to answer — but it stops at the space boundary like
+-- everything else.
+select is(
+  (select count(*)::int from public.sync_cursors
+   where id in ('adadadad-0000-0000-0000-000000000001',
+                'adadadad-0000-0000-0000-000000000002')),
+  1,
+  'the partner sees the sync cursor in the shared space and not the one in Alice''s own');
+
+select is(
+  (select count(*)::int from public.devices
+   where id in ('acacacac-0000-0000-0000-000000000001',
+                'acacacac-0000-0000-0000-000000000002')),
+  1,
+  'and the device behind it, on the same terms — the shared one only');
+
+-- A queued write is still a write, and so is the cursor that says it landed.
+-- There is no elevated path for catching up: a device writing a cursor into a
+-- space it is not in is claiming to have read that space.
+select throws_ok(
+  $$insert into public.sync_cursors (space_id, owner_id, device_id, entity_kind, cursor_at)
+    values ('aaaaaaaa-0000-0000-0000-000000000001',
+            '22222222-2222-2222-2222-222222222222',
+            'acacacac-0000-0000-0000-000000000002', 'task', now())$$,
+  '42501',
+  null,
+  'the partner cannot record a sync cursor inside a space they are not in');
+
+select throws_ok(
+  $$insert into public.devices (space_id, owner_id, label)
+    values ('aaaaaaaa-0000-0000-0000-000000000001',
+            '22222222-2222-2222-2222-222222222222', 'Bob — phone')$$,
+  '42501',
+  null,
+  'nor register a device there');
+
+-- Catching up is a *read* of the space, and it moves the cursor. If the cursor
+-- could be dragged forward from outside, a device could be told it is up to
+-- date on a space it has never read.
+update public.sync_cursors set cursor_at = now()
+ where id = 'adadadad-0000-0000-0000-000000000002';
+
+select tests.as_owner();
+select is(
+  (select cursor_at from public.sync_cursors
+   where id = 'adadadad-0000-0000-0000-000000000002'),
+  '2026-07-27 08:00+01'::timestamptz,
+  'and dragging a cursor forward in a space they cannot see silently affects nothing');
+select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 -- A rule cannot be pointed at another space. The FK is to spaces, so the write
 -- that matters is the one where space_id says one thing and the rule's own
@@ -871,8 +956,7 @@ select is(
    from unnest(string_to_array(tests.tables_with_rows(), ', ')) as t
    where t <> ''
      and t <> all (array[
-       'attachments', 'person_relationships',
-       'space_invites', 'sync_cursors'
+       'attachments', 'person_relationships', 'space_invites'
      ])),
   '',
   'every table outside the known-empty ledger holds rows, so the outsider check is not vacuous'

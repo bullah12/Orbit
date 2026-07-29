@@ -3,6 +3,8 @@ import type {
   CalendarProvider,
   CalendarWindow,
   ExternalCalendar,
+  OutgoingEvent,
+  PushedEvent,
 } from '../types';
 import { IntegrationError } from '../types';
 import {
@@ -69,6 +71,51 @@ export class FakeCalendarProvider implements CalendarProvider {
     // Steady state: nothing has changed, and the token does not move.
     return { events: [], deletedIds: [], nextSyncToken: window.syncToken ?? 'fixture-v2' };
   }
+
+  /**
+   * Accept a write, and say honestly what it did with it.
+   *
+   * The fake keeps pushed events in memory for the life of the process, which
+   * is enough to model the part that matters to Orbit: a create comes back
+   * with an id we did not choose, an update keeps the id it was given, and both
+   * come back with a new etag — so `is_dirty` is cleared against something that
+   * actually changed rather than against nothing.
+   *
+   * It does **not** model a conditional write failing. A real provider can
+   * refuse a stale etag; this one cannot, and pretending otherwise would make
+   * the push path look tested when the interesting half of it never runs here.
+   */
+  async pushEvent(calendarExternalId: string, event: OutgoingEvent): Promise<PushedEvent> {
+    if (!FAKE_CALENDARS.some((c) => c.externalId === calendarExternalId)) {
+      throw new IntegrationError(
+        'calendar:fake',
+        'not_found',
+        `no fixture calendar "${calendarExternalId}"`,
+      );
+    }
+    const calendar = FAKE_CALENDARS.find((c) => c.externalId === calendarExternalId);
+    if (calendar && !calendar.writable) {
+      throw new IntegrationError(
+        'calendar:fake',
+        'read_only',
+        `fixture calendar "${calendarExternalId}" is subscribed, not owned — it cannot be written to`,
+      );
+    }
+
+    // Every write gets a number, not only every create: an update that came
+    // back with the etag it went out with would let a caller clear is_dirty
+    // against a version that had not moved.
+    const revision = ++this.pushCounter;
+    const created = event.externalId === null;
+    const externalId = event.externalId ?? `fx-pushed-${revision}`;
+    const etag = `fx-etag-${externalId}-${revision}`;
+    this.pushed.set(externalId, { ...event, externalId, etag });
+    return { externalId, etag, created };
+  }
+
+  /** What this process has been asked to push. Test and demo only. */
+  readonly pushed = new Map<string, OutgoingEvent>();
+  private pushCounter = 0;
 }
 
 function tokenRevision(token: string | null | undefined): number {

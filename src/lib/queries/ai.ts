@@ -133,6 +133,109 @@ export async function listNoteSubjects(userId: string, limit = 40): Promise<Subj
   });
 }
 
+/**
+ * The subject of a run, per feature.
+ *
+ * Every feature reads a different shape, and each reader is the *only* place
+ * that decides what a feature is allowed to see. `weekly_review` reads titles
+ * and dates and never a body, which is what its disclosure promises — the
+ * promise is kept here rather than in the prompt, because a prompt builder
+ * given a body will eventually be asked to include it.
+ *
+ * All three read through `asUser`, so a subject in a space the caller cannot
+ * see is not a refusal — it does not exist.
+ */
+export async function readSubject(
+  userId: string,
+  feature: AiFeature,
+  subjectId: string,
+): Promise<AiSubject | null> {
+  if (feature === 'note_summary') return readNoteSubject(userId, subjectId);
+  if (feature === 'task_breakdown') return readTaskSubject(userId, subjectId);
+  return readWeekSubject(userId, subjectId);
+}
+
+/** Which kind of thing a feature acts on. Recorded on the run row. */
+export const FEATURE_ENTITY_KIND: Record<AiFeature, 'note' | 'task' | 'space'> = {
+  note_summary: 'note',
+  task_breakdown: 'task',
+  weekly_review: 'space',
+};
+
+async function readTaskSubject(userId: string, taskId: string): Promise<AiSubject | null> {
+  return asUser(userId, async (tx) => {
+    const [row] = await tx<
+      { id: string; spaceId: string; isLocked: boolean; title: string; body: string }[]
+    >`
+      select t.id, t.space_id as "spaceId", t.is_locked as "isLocked",
+             t.title, t.body_md as body
+      from public.tasks t
+      where t.id = ${taskId}::uuid
+    `;
+    if (!row) return null;
+    return { kind: 'task' as const, ...row };
+  });
+}
+
+/**
+ * A week, as a subject: one space, seven days, titles and dates only.
+ *
+ * `subjectId` is a *space* id — the week is not a row, so there is nothing else
+ * for it to be, and it keeps the whole thing inside one space rather than
+ * assembling a view across several that the consent for one of them permitted.
+ *
+ * The body is deliberately empty. `is_locked` is false because nothing locked
+ * is ever in here: locked rows are excluded by the query, not filtered
+ * afterwards, so there is no version of this that has read one.
+ */
+async function readWeekSubject(userId: string, spaceId: string): Promise<AiSubject | null> {
+  return asUser(userId, async (tx) => {
+    const [space] = await tx<{ id: string; name: string }[]>`
+      select id, name from public.spaces where id = ${spaceId}::uuid
+    `;
+    if (!space) return null;
+
+    const events = await tx<{ title: string; startsAt: string }[]>`
+      select e.title, e.starts_at as "startsAt"
+      from public.events e
+      where e.space_id = ${spaceId}::uuid
+        and not e.is_locked
+        and e.status <> 'cancelled'
+        and e.starts_at >= now()
+        and e.starts_at < now() + interval '7 days'
+      order by e.starts_at
+      limit 40
+    `;
+    const tasks = await tx<{ title: string; dueOn: string | null }[]>`
+      select t.title, t.due_on as "dueOn"
+      from public.tasks t
+      where t.space_id = ${spaceId}::uuid
+        and not t.is_locked
+        and t.status in ('todo', 'doing', 'blocked')
+        and t.due_on is not null
+        and t.due_on <= (now() + interval '7 days')::date
+      order by t.due_on
+      limit 40
+    `;
+
+    const lines = [
+      ...events.map((e) => `${e.startsAt.slice(0, 10)} — ${e.title}`),
+      ...tasks.map((t) => `${t.dueOn} — ${t.title} (due)`),
+    ].sort();
+
+    return {
+      kind: 'week' as const,
+      // A week is not a row, so the space it belongs to is the most specific
+      // thing the run log can honestly name.
+      id: spaceId,
+      spaceId,
+      isLocked: false,
+      title: lines.join('\n'),
+      body: '',
+    };
+  });
+}
+
 async function readNoteSubject(userId: string, noteId: string): Promise<AiSubject | null> {
   return asUser(userId, async (tx) => {
     const [row] = await tx<
@@ -172,7 +275,7 @@ export type AiRunResult = {
 export async function runAiFeature(
   userId: string,
   feature: string,
-  noteId: string,
+  subjectId: string,
 ): Promise<AiRunResult> {
   const provider = aiProvider();
 
@@ -187,7 +290,7 @@ export async function runAiFeature(
     };
   }
 
-  const subject = await readNoteSubject(userId, noteId);
+  const subject = await readSubject(userId, feature, subjectId);
   if (!subject) {
     return {
       ok: false,
@@ -195,9 +298,10 @@ export async function runAiFeature(
       text: '',
       provider: provider.name,
       model: null,
-      reason: 'That note does not exist, or is not yours to read.',
+      reason: 'That does not exist, or is not yours to read.',
     };
   }
+  const entityKind = FEATURE_ENTITY_KIND[feature];
 
   // Every row `listConsents` can return is already the caller's own — the
   // policy sees to that. What is chosen here is the one for this feature in
@@ -225,6 +329,7 @@ export async function runAiFeature(
       feature,
       provider: provider.name,
       model: null,
+      entityKind,
       entityId: subject.id,
       status: 'refused',
       error: decision.reason,
@@ -247,6 +352,7 @@ export async function runAiFeature(
       feature,
       provider: provider.name,
       model: answer.model,
+      entityKind,
       entityId: subject.id,
       status: 'ok',
       error: null,
@@ -269,6 +375,7 @@ export async function runAiFeature(
       feature,
       provider: provider.name,
       model: null,
+      entityKind,
       entityId: subject.id,
       status: 'error',
       error: message,
@@ -290,6 +397,7 @@ type RunRecord = {
   feature: string;
   provider: string;
   model: string | null;
+  entityKind: 'note' | 'task' | 'space';
   entityId: string | null;
   status: 'ok' | 'error' | 'refused';
   error: string | null;
@@ -304,7 +412,7 @@ async function recordRun(userId: string, spaceId: string, r: RunRecord): Promise
         (space_id, owner_id, feature, provider, model, entity_kind, entity_id,
          input_tokens, output_tokens, status, error)
       values (${spaceId}::uuid, ${userId}::uuid, ${r.feature}, ${r.provider}, ${r.model},
-              'note'::app.entity_kind, ${r.entityId}::uuid,
+              ${r.entityKind}::app.entity_kind, ${r.entityId}::uuid,
               ${r.inputTokens}, ${r.outputTokens}, ${r.status}, ${r.error})
     `;
   });

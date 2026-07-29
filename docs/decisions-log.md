@@ -598,3 +598,163 @@ tracking, ever.
   phase and nothing else: search reads, capture writes, and AI is a setting
   with one demonstration attached. Putting them behind one nav item would make
   the AI consent screen something people arrive at by accident.
+
+## Session 7 — 2026-07-29
+
+- **Branch is `claude/orbit-phase-6-lqnx20`.** The designated branch again
+  differs from names elsewhere in the brief; the designated one wins, as it has
+  every session so far.
+- **There is no silent last-write-wins, and that is a stated decision rather
+  than an absent one.** Two people changing the same field to different values
+  is a question only a person can answer, so the write is *held* as a named
+  conflict with both values kept and neither thrown away. A silent
+  last-write-wins would have been a decision too; this is the other one, made
+  on purpose, because the loser of a silent race never finds out they lost.
+- **A queued write carries fields, not rows.** It records only the fields
+  somebody changed plus what each held when they changed it. That is what makes
+  the common case — she retitled it, he set the due date — a merge rather than a
+  fight. A whole-row write would make every concurrent edit a conflict and
+  teach people to click through the dialog without reading it.
+- **The client clock orders nothing.** Ordering across devices is decided by the
+  server's `updated_at` alone; `queuedAt` orders a queue against itself and is
+  otherwise only ever displayed. `clockSkew()` exists to *report* a disagreeing
+  clock on screen, never to correct for one — and a test asserts that a device
+  three hours out resolves identically to one in step.
+- **A replay is a duplicate, not a conflict.** The same op arriving twice finds
+  the server already holding the value it wanted, and that is `duplicate`: the
+  row is already what the person asked for. This is what makes the queue safe to
+  flush again after a failure **with no idempotency table anywhere** — which is
+  why Phase 6 needed no migration.
+- **Gone, locked and moved are decided before any field is compared.** All three
+  make the field comparison meaningless, and a locked row's `title` is `''` by
+  database constraint — comparing it would read as "they cleared the title",
+  which is the most misleading possible answer. The order is asserted from
+  several directions, the same treatment the AI gate's locked-first rule got.
+- **A conflict is answered as an ordinary write with a fresh base.** "Keep
+  theirs" is not "discard": the fields nobody disagreed about still land. And if
+  the row moved *again* between reading the conflict and answering it, the
+  answer conflicts in its turn rather than landing on top of a third edit
+  nobody has seen.
+- **One transaction per queued write, not one for the queue.** A conflict on the
+  third of five must not roll back the two that landed. A queue is a list of
+  independent edits somebody made, not a unit of work they intended to be
+  atomic, and "none of your five applied because one clashed" is a lie about
+  four of them. `pushCalendar` makes the same call for the same reason.
+- **The row is read `for update` and written in the same transaction, as the
+  user.** Without the lock two devices flushing at once could both read the same
+  `updated_at`, both decide they had a clean apply, and the second would
+  overwrite the first with neither ever seeing a conflict. A queued write is
+  still a write: it goes through `asUser` like every other one, and there is no
+  elevated path for catching up.
+- **A queued write may only touch a closed list of columns, per kind.** Same
+  reasoning as the rules engine's condition fields: an open list means a typo
+  becomes a column nobody has, and the failure arrives at flush time on somebody
+  else's device. It also means a queued write can never reach `space_id`,
+  `owner_id` or `is_locked` — those are moves and grants, not edits, and each
+  has its own confirmed path. The list is re-checked in the server action, not
+  trusted from the client.
+- **"Work offline" is a switch, not a network the browser noticed going away,
+  and the page says so in those words.** Orbit cannot install a service worker
+  here without a build pipeline it does not have, and pretending the browser
+  detected a dropped connection would be claiming a capability that is not
+  there. The queue lives in `localStorage` — kilobytes, and it survives a
+  reload, which is the only durability an unsent edit needs.
+- **The outbox is the one surface in Orbit rendered from `localStorage` rather
+  than from a query.** That is not a visibility decision — nothing in it is a
+  row somebody else could see — it is simply where the edits are while they are
+  unsent. Every pending and conflict row still carries its space indicator, on
+  the same terms as a task row: the moment somebody decides whether to overwrite
+  somebody else's typing is exactly the moment they should see whose space it is.
+- **Two edits to one row from one device are rebased, not collapsed.**
+  Collapsing them would leave the survivor carrying the *first* edit's base, so
+  a merge would be computed against a version the person never saw. `rebase()`
+  folds what landed into the later write's base, so a device never conflicts
+  with itself — which it demonstrably does without it, and there is a test that
+  shows both.
+- **A cursor is space-scoped like everything else.** "Alice's laptop last read
+  the Home tasks four minutes ago" is a fact about Alice, and a cursor in a
+  space you are not in is a fact about a space you cannot see. `sync_cursors`
+  and `devices` are both asserted from the partner's side and from the free/busy
+  side, and a cursor cannot be dragged forward from outside its space.
+- **A cursor moves forward only.** `greatest(cursor_at, excluded)` on the
+  upsert: two tabs flushing out of order would otherwise wind it back and
+  re-deliver everything between, which for a device that is catching up is the
+  difference between a quiet sync and a full re-download. Rewinding is a
+  separate, deliberate button.
+- **A locked row is *listed* in the change feed rather than hidden.** A device
+  that never hears it changed can never fetch its ciphertext either. Its title
+  is empty on the server by constraint, so there is nothing to show and nothing
+  leaked by saying it moved.
+- **Phase 6 needed no migration.** `sync_cursors`, `devices` and
+  `calendar_sync_state` already had every column it wanted, and the
+  no-idempotency-table decision above is what kept it that way. Fourth phase in
+  a row that extended nothing; still two extensions in seven sessions.
+- **`CalendarProvider` gains a write side rather than a seventh interface.**
+  Pushing an event back is the same provider doing the other direction, not a
+  new integration. The fake accepts a write honestly — a create gets an id it
+  chose, an update keeps the id it was given, every write gets a new etag, and a
+  calendar marked `writable: false` is refused — but it does **not** model a
+  conditional write failing, and saying so out loud matters: the interesting
+  half of the real implementation never runs here.
+- **A push never sends a locked event, never invents an external id, and never
+  clears `is_dirty` on a failure.** A row that says it was sent and was not is
+  exactly the lie the flag exists to prevent. Google's implementation writes
+  with `If-Match`, so a 412 is reported as a conflict and the local edit is kept
+  — written, never run, like every other real provider.
+- **The repeat builder is a small subset on purpose**: daily, weekly on chosen
+  days, monthly, yearly, and an end date. Anything more expressive is a form
+  nobody can read back — the same call the rules engine made about its condition
+  fields. It refuses rather than guesses, and `UNTIL` is the end of the whole
+  last day, because "until 31 August" said by a person includes the 31st.
+- **Deleting an event now takes an orphaned recurrence rule with it.** The FK is
+  `on delete set null`, so the rule survived as a row nothing pointed at —
+  invisible, and still counted by the structural checks. Only if no other event
+  uses it.
+- **Each AI feature is run from where the thing it acts on lives.** A note on
+  the AI page, a task from its own page, the week from Today — once per space,
+  because consent is per space and a review reading three spaces on one consent
+  would be the consent meaning more than it said. `readSubject` dispatches per
+  feature and each reader is the only place that decides what that feature may
+  see; the weekly review's promise of "no note bodies" is kept in the *query*,
+  not in the prompt builder, because a prompt builder handed a body will
+  eventually be asked to include it.
+- **A week's run records `entity_kind = 'space'`.** A week is not a row, so the
+  space it belongs to is the most specific thing the run log can honestly name.
+  `ai_runs.entity_kind` is therefore no longer always `'note'`.
+
+### Accepted rather than fixed (session 6's list, numbers 1–12)
+
+- **1. Search still covers five kinds.** Adding a sixth means adding a partial
+  GIN index, which is a migration for a feature nobody has asked for. Accepted.
+- **3. The AI result is still carried on the URL**, and now on three pages
+  rather than one. A refresh re-displays it and a long subject makes a long URL.
+  Persisting it would mean storing model output, which is the one thing
+  `ai_runs` deliberately does not do. Accepted, and the shared `AiResult`
+  component means it is one rough edge rather than three.
+- **4. `ai_runs` still records no token counts.** Nothing counts tokens and a
+  fabricated number in an audit trail is worse than a null. Accepted.
+- **5, 6, 7, 8, 9, 10.** Search's caps, the crude stemmer, capture's one-token
+  space hint, a captured note's empty body, a captured event's missing location,
+  and the parser's fixed matcher order — all still true, all cosmetic or
+  bounded, and each already has the mitigation that makes it visible rather than
+  silent. Accepted unchanged.
+- **11. `pnpm smoke` leaves more behind than it did**, now including `ai_runs`
+  rows for all three features and a `calendar_sync_state` push row. All
+  harmless, all cleared by `pnpm seed`, and everything the suite *creates* it
+  still deletes — verified twice in a row against the same database.
+- **12. `runAiFeature` still reads every consent row on every run.** Three round
+  trips at this data size; still not close to mattering. Accepted.
+
+### After the phase landed
+
+- **A rule's condition is edited where it sits.** Order is not evaluation order
+  — every condition has to hold — but it *is* reading order, and a rule you have
+  to re-read from the bottom every time you change a threshold is a rule nobody
+  edits. The whole list is re-validated on save rather than only the changed
+  one, so a rule stored before a shape changed cannot be half-saved, and an edit
+  is structural like any other: it switches the rule off and clears its preview.
+- **`updateAction` exists and nothing calls it yet.** The action form is one
+  select and one free-text box that means a different thing per kind, and
+  repeating that per row without rebuilding the form first would be four
+  differently-labelled boxes stacked up. Recorded as a rough edge with the
+  query already written, rather than half-built.

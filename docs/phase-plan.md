@@ -127,8 +127,33 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
 
 ## Phase 6 — Sync and offline
 
-- Sync cursors, conflict handling, optimistic local writes
-- Test coverage second only to RLS
+- [x] Sync cursors — `sync_cursors` keyed (space_id, device_id, entity_kind),
+      seeded deliberately behind, advanced forward only, rewound only on
+      purpose. Out of the pgTAP known-empty ledger, with isolation cases from
+      the partner's and the free/busy participant's side
+- [x] Conflict handling in a pure module, `src/lib/sync/conflict.ts`, with its
+      tests written before any UI. **There is no silent last-write-wins**: a
+      field both sides changed is held with both values kept; disjoint fields
+      merge; a replay is a duplicate, not a conflict; a deleted or newly locked
+      or moved row is refused by name. The client clock orders nothing
+- [x] Optimistic local writes — an edit applies on screen immediately, is
+      marked *not sent yet*, survives a reload, and either lands or surfaces
+      the conflict by name. `/sync` shows the queue, the conflicts and both
+      answers, with the space indicator on every row
+- [x] A queued write goes through `asUser` like every other one. There is no
+      elevated path for catching up, and the applier reads the row `for update`
+      and writes it in the same transaction
+- [x] Push local edits back to a provider — `CalendarProvider.pushEvent`, the
+      fake accepting one honestly, Google's conditional `If-Match` write
+      **written, never run**. `events.is_dirty` is now cleared, and `'push'` is
+      written to `calendar_sync_state.direction`
+- [x] A UI for creating a recurring event — `rruleFromForm` builds a small
+      honest subset and refuses rather than guesses. Still one row plus an
+      RRULE, never expanded copies
+- [x] Test coverage second only to RLS — 51 Vitest cases in `tests/sync.test.ts`,
+      12 more for the repeat builder, 6 for the provider's write side, 7 new
+      pgTAP assertions, and 49 smoke checks driving the whole sequence
+      including a real conflict
 
 ---
 
