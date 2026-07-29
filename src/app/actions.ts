@@ -37,6 +37,7 @@ import {
   setRuleEnabled,
   updateRuleParts,
 } from '@/lib/queries/rules';
+import { createFromCapture } from '@/lib/queries/capture';
 import {
   connectProviderCalendar,
   pullCalendar,
@@ -1712,4 +1713,42 @@ export async function deleteRuleAction(formData: FormData) {
   await deleteRule(user.id, id);
   revalidatePath('/', 'layout');
   redirect('/rules');
+}
+
+// ---------------------------------------------------------------------------
+// Capture
+// ---------------------------------------------------------------------------
+
+/**
+ * Create whatever a captured line described.
+ *
+ * The **text** is what the form carries, not the parse. Re-parsing it here
+ * costs nothing and means the thing that gets created is produced by the same
+ * function that produced the preview somebody read — a form carrying a resolved
+ * date would be a form somebody could edit into a date the preview never
+ * showed.
+ *
+ * The parser is local-only by decision 8; nothing on this path sends the text
+ * anywhere except into the row it creates.
+ */
+export async function captureCreate(formData: FormData) {
+  const user = await requireUser();
+  const text = String(formData.get('text') ?? '');
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const rawKind = String(formData.get('kind') ?? '');
+  const kind =
+    rawKind === 'task' || rawKind === 'note' || rawKind === 'event' ? rawKind : undefined;
+
+  const result = await createFromCapture(user.id, text, { spaceId, kind });
+
+  if ('error' in result) {
+    redirect(`/capture?text=${encodeURIComponent(text)}&error=${encodeURIComponent(result.error)}`);
+  }
+
+  // A capture that produced a task fires the task rules, exactly as the compose
+  // bar does. A rule the user wrote should not care which surface typed it.
+  if (result.kind === 'task') await fireForTask(user.id, 'task.created', result.id);
+
+  revalidatePath('/', 'layout');
+  redirect(result.href as never);
 }

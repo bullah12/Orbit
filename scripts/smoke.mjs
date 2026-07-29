@@ -1336,6 +1336,105 @@ try {
     await ctx.close();
   }
 
+  // --------------------------------------------------------------- capture
+  //
+  // Creates one task and deletes it again, so the suite still passes twice in a
+  // row against the same database. What it asserts is the *bargain*: the parse
+  // is shown before anything is created, and what gets created is what the
+  // preview said.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    const stamp = `smoke capture ${Date.now()}`;
+
+    await page.goto('/');
+    check(
+      'capture is reachable from the sidebar',
+      (await page.locator('nav a[href="/capture"]').count()) === 1,
+    );
+
+    await page.goto('/capture');
+    check(
+      'capture says plainly that nothing leaves the device',
+      (await page.locator('main').innerText()).includes('Nothing you type here is sent anywhere'),
+    );
+
+    await page.locator('#capture-text').fill(`${stamp} a week on Tuesday !high`);
+    await page.getByRole('button', { name: 'Read it back' }).click();
+    await settle(page);
+
+    const preview = await page.locator('main').innerText();
+    check('the parse is read back before anything is created', preview.includes(stamp));
+    check('and it resolved the date phrase to a real day', /a week on Tuesday/.test(preview));
+
+    const chips = await page.locator('#capture-matches li').count();
+    check('and shows one chip per phrase it consumed', chips === 2, `${chips} chips`);
+    check(
+      'and names the priority it read',
+      (await page.locator('#capture-matches').innerText()).includes('high priority'),
+    );
+
+    // The space indicator is a hard requirement on every compose surface, and
+    // what you capture is readable by everyone in the space you put it in.
+    const composeIndicators = await page
+      .locator('form[aria-label="Create what was captured"] span[title^="Space:"]')
+      .count();
+    check('the capture compose surface carries space indicators', composeIndicators > 0);
+
+    const captureUnnamed = await labelAuditOn(page);
+    check('every control on the capture page has a label', captureUnnamed.length === 0, captureUnnamed.join(', '));
+
+    await page.getByRole('button', { name: 'Create it' }).click();
+    await settle(page);
+    check(
+      'creating it lands on the thing it created',
+      page.url().includes('/tasks/item/'),
+      page.url(),
+    );
+    check(
+      'with the title the preview showed and none of the phrases it consumed',
+      (await page.locator('#task-title').inputValue()) === stamp,
+      await page.locator('#task-title').inputValue(),
+    );
+    const due = await page.locator('#task-due').inputValue();
+    check('and the date it resolved', /^\d{4}-\d{2}-\d{2}$/.test(due), due);
+
+    // A line with nothing but a date creates nothing.
+    await page.goto('/capture?text=tomorrow');
+    check(
+      'a line that is only a date cannot be created',
+      await page.getByRole('button', { name: 'Create it' }).isDisabled(),
+    );
+
+    // ---- leave nothing behind ----
+    await page.goto('/tasks/all');
+    const found = page.locator('main ul li', { hasText: stamp }).first();
+    await found.locator('a[href^="/tasks/item/"]').click();
+    await settle(page);
+    await page.getByRole('button', { name: 'Delete this task' }).click();
+    await settle(page);
+    await page.goto('/tasks/all');
+    check(
+      'and the task it created is deleted again',
+      !(await page.locator('main').innerText()).includes(stamp),
+    );
+
+    await ctx.close();
+  }
+
+  {
+    const { ctx, page } = await pageAs(OUTSIDER);
+    await page.goto('/capture?text=something%20tomorrow');
+    check(
+      'the outsider has no space to capture into',
+      (await page.locator('form[aria-label="Create what was captured"] input[name="spaceId"]').count()) === 0,
+    );
+    check(
+      'so capture is refused rather than offered',
+      await page.getByRole('button', { name: 'Create it' }).isDisabled(),
+    );
+    await ctx.close();
+  }
+
   // ---------------------------------------------------------------- search
   //
   // Search is the one surface where "the client filtered it" and "the policy
