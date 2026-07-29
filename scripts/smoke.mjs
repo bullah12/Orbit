@@ -2403,10 +2403,144 @@ try {
 
     await page.locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle }).first().click();
     await settle(page);
-    const repeatUrl = page.url();
+    const repeatUrl = page.url().split('?')[0];
     check(
       'and its detail page reads the rule back in words',
-      /(week|Week)/.test(await page.locator('main').innerText()),
+      /(week|Week)/.test(await page.locator('body').innerText()),
+    );
+
+    // ---- editing a repeat, not only creating one ----
+    //
+    // Rough edges 11 and 20. rruleFromForm could build a rule and nothing could
+    // read one back, so a repeat was fixed at the moment it was made.
+    const occurrencesDrawn = async () => {
+      await page.goto('/calendar/month?date=2026-08-03');
+      return page.locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle }).count();
+    };
+
+    await occurrencesDrawn(); // back to the month view, where the blocks are
+    check(
+      'a block links to the occurrence that was clicked, not just to the series',
+      /[?&]on=/.test(
+        await page
+          .locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle })
+          .first()
+          .getAttribute('href'),
+      ),
+    );
+
+    await page.goto(repeatUrl);
+    check(
+      'the stored rule is read back into the form that built it',
+      (await page.locator('select[name="repeatFreq"]').inputValue()) === 'WEEKLY' &&
+        (await page.locator('input[name="repeatUntil"]').inputValue()) === '2026-08-31',
+      `${await page.locator('select[name="repeatFreq"]').inputValue()} until ${await page.locator('input[name="repeatUntil"]').inputValue()}`,
+    );
+    check(
+      'including which day it lands on — 3 August 2026 is a Monday',
+      await page.locator('input[name="repeatByDay"][value="MO"]').isChecked(),
+    );
+
+    // Change it: every two weeks instead of every week.
+    await page.locator('input[name="repeatInterval"]').fill('2');
+    await page.getByRole('button', { name: 'Change the repeat' }).click();
+    await settle(page);
+    const fortnightly = await occurrencesDrawn();
+    check(
+      'changing the repeat changes how often it is drawn',
+      fortnightly < drawn && fortnightly >= 2,
+      `${drawn} weekly → ${fortnightly} fortnightly`,
+    );
+    await page.goto(repeatUrl);
+    check(
+      'and the changed rule reads back as the change, in words',
+      (await page.locator('body').innerText()).includes('2 weeks'),
+    );
+
+    // Put it back to weekly, and check it is the same series it was.
+    await page.locator('input[name="repeatInterval"]').fill('1');
+    await page.getByRole('button', { name: 'Change the repeat' }).click();
+    await settle(page);
+    check('and back to weekly draws what it drew before', (await occurrencesDrawn()) === drawn);
+
+    // ---- one occurrence, skipped and put back ----
+    //
+    // The first use of recurrence_rules.exdates from the UI: migration 0010 added
+    // the column in Phase 2 and only the importer ever wrote it.
+    const secondBlock = page
+      .locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle })
+      .nth(1);
+    const secondHref = await secondBlock.getAttribute('href');
+    await secondBlock.click();
+    await settle(page);
+    check(
+      'the page says which occurrence you came from',
+      (await page.locator('section[aria-label="This occurrence"]').innerText()).includes(
+        'one occurrence of this series',
+      ),
+    );
+    await page.getByRole('button', { name: /^Skip / }).click();
+    await settle(page);
+    const afterSkip = await occurrencesDrawn();
+    check(
+      'skipping one occurrence removes exactly that one',
+      afterSkip === drawn - 1,
+      `${drawn} → ${afterSkip}`,
+    );
+    await page.goto(repeatUrl);
+    check(
+      'and the series says so, rather than the occurrence vanishing silently',
+      (await page.locator('body').innerText()).includes('1 occurrence is skipped'),
+    );
+
+    // The same link now describes it as skipped, and offers it back. Nothing was
+    // deleted: an occurrence is not a row.
+    await page.goto(secondHref);
+    check(
+      'the skipped occurrence says it is skipped and nothing was deleted',
+      (await page.locator('section[aria-label="This occurrence"]').innerText()).includes(
+        'nothing was deleted',
+      ),
+    );
+    await page.getByRole('button', { name: 'Put it back' }).click();
+    await settle(page);
+    check(
+      'and putting it back restores exactly that one',
+      (await occurrencesDrawn()) === drawn,
+    );
+
+    // An instant the series does not generate is refused rather than stored as a
+    // junk exclusion — the URL is a claim from the client.
+    await page.goto(`${repeatUrl}?on=2026-08-04T09:00:00.000Z`);
+    check(
+      'an instant the series never generates is not an occurrence to skip',
+      (await page.locator('section[aria-label="This occurrence"]').innerText()).includes(
+        'no occurrence starting then',
+      ),
+    );
+
+    const eventUnnamed = await labelAuditOn(page);
+    check('every control on the event page has a label', eventUnnamed.length === 0, eventUnnamed.join(', '));
+
+    // ---- and a repeat can be removed without deleting the event ----
+    // Choosing "Does not repeat" is what removes it, and the button says so
+    // rather than a separate destructive-looking control sitting there always.
+    await page.goto(repeatUrl);
+    await page.locator('select[name="repeatFreq"]').selectOption('');
+    await page.getByRole('button', { name: 'Stop repeating' }).click();
+    await settle(page);
+    check(
+      'a repeat can be removed, leaving one event where the series was',
+      (await occurrencesDrawn()) === 1,
+    );
+    await page.goto(repeatUrl);
+    check(
+      'and the event itself survived losing its repeat',
+      (await page.locator('h1').innerText()) === repeatTitle,
+    );
+    check(
+      'and it is offered a repeat again rather than left unable to have one',
+      (await page.locator('select[name="repeatFreq"]').inputValue()) === '',
     );
 
     // A repeat that cannot be built is refused with a sentence, not silently

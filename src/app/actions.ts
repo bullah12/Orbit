@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { asUser } from '@/lib/db';
 import { listSelectableUsers, requireUser, USER_COOKIE } from '@/lib/auth';
-import { addDaysISO, londonInstant } from '@/lib/format';
+import { addDaysISO, londonDayISO, londonInstant } from '@/lib/format';
 import {
   calendarProvider,
   geocodingProvider,
@@ -25,7 +25,8 @@ import {
   type LegMode,
 } from '@/lib/travel';
 import { isTriggerKind, rawActionFrom, type Trigger } from '@/lib/rules';
-import { rruleFromForm } from '@/lib/recurrence';
+import { occurrenceAt, parseRrule, rruleFromForm } from '@/lib/recurrence';
+import { getEvent } from '@/lib/queries/events';
 import {
   addAction,
   fireForTask,
@@ -771,6 +772,192 @@ export async function updateEvent(formData: FormData) {
   });
 
   revalidatePath('/', 'layout');
+}
+
+function eventRedirect(id: string, error?: string, done?: string): never {
+  const q = new URLSearchParams();
+  if (error) q.set('error', error);
+  if (done) q.set('done', done);
+  const suffix = q.toString();
+  redirect(suffix ? `/calendar/event/${id}?${suffix}` : `/calendar/event/${id}`);
+}
+
+/**
+ * Add, change or remove an event's repeat.
+ *
+ * Rough edge since Phase 6: `rruleFromForm` could build a rule and nothing could
+ * read one back, so a repeat could be created at compose time and then never
+ * touched — no changing Tuesday to Wednesday, no moving the end date, and no way
+ * to stop it repeating short of deleting the event.
+ *
+ * Still one row plus an RRULE. This writes the rule, changes the rule, or drops
+ * it; it never writes expanded copies, and it never touches the event's own start
+ * — the series' `DTSTART` is the event, so moving the series means editing the
+ * event above, which is a different form and a different sentence.
+ *
+ * `exdates` survive a change to the rule on purpose. "Not that week" is a
+ * statement about a date, not about the shape of the repeat, and somebody who
+ * changes an end date has not withdrawn it. A skipped occurrence that the new
+ * rule no longer generates is simply an exclusion that matches nothing, which is
+ * what RFC 5545 says an EXDATE outside the series is.
+ */
+export async function setEventRepeat(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('eventId') ?? '');
+  if (!id) return;
+
+  const event = await getEvent(user.id, id);
+  if (!event) eventRedirect(id, 'That event does not exist, or is not yours to change.');
+  if (event.isLocked) eventRedirect(id, 'A locked event cannot be given a repeat here.');
+
+  const freq = String(formData.get('repeatFreq') ?? '');
+  const startOn = londonDayISO(event.startsAt);
+
+  // No frequency means "stop repeating". The rule row goes with it, but only if
+  // no other event points at it — the same care `deleteEvent` takes.
+  if (freq === '') {
+    await asUser(user.id, async (tx) => {
+      const [row] = await tx<{ ruleId: string | null }[]>`
+        select recurrence_rule_id as "ruleId" from public.events
+        where id = ${id}::uuid and not is_locked
+      `;
+      if (!row?.ruleId) return;
+      await tx`
+        update public.events set recurrence_rule_id = null,
+                                 is_dirty = (external_id is not null)
+        where id = ${id}::uuid and not is_locked
+      `;
+      await tx`
+        delete from public.recurrence_rules r
+        where r.id = ${row.ruleId}::uuid
+          and not exists (select 1 from public.events e where e.recurrence_rule_id = r.id)
+      `;
+    });
+    revalidatePath('/', 'layout');
+    eventRedirect(id, undefined, 'norepeat');
+  }
+
+  const built = rruleFromForm({
+    freq: freq as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY',
+    interval: Number(String(formData.get('repeatInterval') ?? '1')),
+    byDay: formData.getAll('repeatByDay').map(String) as never,
+    endOn: String(formData.get('repeatUntil') ?? '') || null,
+    startOn,
+  });
+  if ('error' in built) eventRedirect(id, built.error);
+
+  const until = parseRrule(built.rrule).until;
+
+  await asUser(user.id, async (tx) => {
+    const [row] = await tx<{ ruleId: string | null }[]>`
+      select recurrence_rule_id as "ruleId" from public.events
+      where id = ${id}::uuid and not is_locked
+    `;
+    if (row?.ruleId) {
+      // Updated in place, so the exdates on it survive.
+      await tx`
+        update public.recurrence_rules
+        set rrule = ${built.rrule}, dtstart = ${event.startsAt}, until = ${until}
+        where id = ${row.ruleId}::uuid
+      `;
+    } else {
+      const [rule] = await tx<{ id: string }[]>`
+        insert into public.recurrence_rules (space_id, owner_id, rrule, dtstart, until)
+        values (${event.space.id}::uuid, ${user.id}::uuid, ${built.rrule},
+                ${event.startsAt}, ${until})
+        returning id
+      `;
+      if (!rule) return;
+      await tx`
+        update public.events set recurrence_rule_id = ${rule.id}::uuid,
+                                 is_dirty = (external_id is not null)
+        where id = ${id}::uuid and not is_locked
+      `;
+    }
+  });
+
+  revalidatePath('/', 'layout');
+  eventRedirect(id, undefined, 'repeat');
+}
+
+/**
+ * Skip one occurrence of a series, or put a skipped one back.
+ *
+ * The first use of `recurrence_rules.exdates` from the UI — migration 0010 added
+ * the column in Phase 2 and only the ICS importer has ever written it. An
+ * occurrence is named by its own start instant, which is RFC 5545's
+ * RECURRENCE-ID and what the calendar block's key has carried since Phase 2.
+ *
+ * The instant arrives on a form, so it is a claim from the client and it is
+ * checked against the expansion rather than trusted: `occurrenceAt` has to agree
+ * that the series genuinely has an occurrence starting there. Without that,
+ * "skip the occurrence on anything" would append whatever was submitted, and a
+ * rule quietly carrying junk exclusions is a rule that eventually drops an
+ * occurrence nobody excluded.
+ *
+ * Both directions are one array operation and both are reversible, which is why
+ * neither needs a confirmation. Nothing is deleted: an occurrence is not a row.
+ */
+export async function skipOccurrence(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('eventId') ?? '');
+  const on = String(formData.get('on') ?? '');
+  const put = String(formData.get('put') ?? 'back') === 'skip' ? 'skip' : 'back';
+  if (!id || !on) return;
+
+  const event = await getEvent(user.id, id);
+  if (!event) eventRedirect(id, 'That event does not exist, or is not yours to change.');
+  if (!event.rrule) eventRedirect(id, 'That event does not repeat, so it has no occurrences to skip.');
+
+  const t = Date.parse(on);
+  if (!Number.isFinite(t)) eventRedirect(id, 'That is not an occurrence of this event.');
+  const instant = new Date(t).toISOString();
+
+  if (put === 'skip') {
+    // Checked against the series as it stands, exclusions included — an instant
+    // already skipped is not an occurrence, so this cannot append it twice.
+    const found = occurrenceAt(
+      {
+        rrule: event.rrule,
+        dtstart: event.startsAt,
+        dtend: event.endsAt,
+        exdates: event.exdates,
+      },
+      instant,
+    );
+    if (!found) eventRedirect(id, 'That is not an occurrence of this event, or it is already skipped.');
+  }
+
+  await asUser(user.id, async (tx) => {
+    if (put === 'skip') {
+      await tx`
+        update public.recurrence_rules r
+        set exdates = r.exdates || ${instant}::timestamptz
+        where r.id = (
+          select e.recurrence_rule_id from public.events e
+          where e.id = ${id}::uuid and not e.is_locked
+        )
+      `;
+    } else {
+      // Compared as instants rather than as text: the array holds timestamptz
+      // and '2026-04-06T08:00:00.000Z' and '2026-04-06 09:00:00+01' are the same
+      // moment written two ways.
+      await tx`
+        update public.recurrence_rules r
+        set exdates = coalesce((
+          select array_agg(x order by x) from unnest(r.exdates) as x
+          where x <> ${instant}::timestamptz
+        ), '{}'::timestamptz[])
+        where r.id = (
+          select e.recurrence_rule_id from public.events e
+          where e.id = ${id}::uuid and not e.is_locked
+        )
+      `;
+    }
+  });
+
+  revalidatePath('/', 'layout');
+  eventRedirect(id, undefined, put === 'skip' ? 'skipped' : 'restored');
 }
 
 export async function deleteEvent(formData: FormData) {

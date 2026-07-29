@@ -5,11 +5,19 @@ import { getEvent } from '@/lib/queries/events';
 import { listCategories, type CategoryOption } from '@/lib/queries/tasks';
 import { listSpaces, previewMove, type SpaceSummary } from '@/lib/queries/spaces';
 import { listPlaceOptions } from '@/lib/queries/places';
-import { deleteEvent, moveEventToSpace, setEventPlace, updateEvent } from '@/app/actions';
+import {
+  deleteEvent,
+  moveEventToSpace,
+  setEventPlace,
+  setEventRepeat,
+  skipOccurrence,
+  updateEvent,
+} from '@/app/actions';
 import { Icon } from '@/components/Icon';
 import { Markdown } from '@/components/Markdown';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
-import { describeRrule } from '@/lib/recurrence';
+import { describeRrule, occurrenceAt, repeatFormFromRrule } from '@/lib/recurrence';
+import { RepeatEditor } from '@/components/RepeatEditor';
 import { formatDate, formatTime, londonDayISO, zonedWallClock } from '@/lib/format';
 import type { EventDetail } from '@/lib/queries/events';
 
@@ -27,10 +35,10 @@ export default async function EventPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ moveTo?: string }>;
+  searchParams: Promise<{ moveTo?: string; on?: string; error?: string; done?: string }>;
 }) {
   const { id } = await params;
-  const { moveTo } = await searchParams;
+  const { moveTo, on, error, done } = await searchParams;
   const user = await requireUser();
 
   const event = await getEvent(user.id, id);
@@ -47,6 +55,28 @@ export default async function EventPage({
   const preview = target ? await previewMove(user.id, 'event', event.id, target.id) : null;
 
   const day = londonDayISO(event.startsAt);
+
+  // The repeat, read back into the form that builds one. `null` means one of two
+  // different things and the section below says which: either it does not repeat,
+  // or it repeats in a way the builder cannot express — an ordinal BYDAY, a
+  // COUNT, a BYMONTHDAY. Opening a form that cannot express a rule on that rule
+  // would save it back as something narrower, so it is shown in words instead.
+  const repeatForm = event.rrule ? repeatFormFromRrule(event.rrule, day) : null;
+
+  // Which occurrence was clicked, if any. An instant on the URL is a claim from
+  // the client, so it is checked against the expansion here exactly as the server
+  // action checks it before writing an exclusion.
+  const occurrence =
+    on && event.rrule
+      ? occurrenceAt(
+          { rrule: event.rrule, dtstart: event.startsAt, dtend: event.endsAt, exdates: event.exdates },
+          on,
+        )
+      : null;
+  const skippedInstant =
+    on && event.rrule && !occurrence
+      ? (event.exdates.find((x) => Date.parse(x) === Date.parse(on)) ?? null)
+      : null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -80,13 +110,96 @@ export default async function EventPage({
         {event.isRecurring && event.rrule && (
           <p className="faint mt-1 flex items-center gap-1 text-[12px]">
             <Icon name="undo" size={11} />
-            {safeDescribe(event.rrule)} — editing changes the whole series.
+            {safeDescribe(event.rrule)} — the fields below are the whole series.
+            {event.exdates.length > 0 &&
+              ` ${event.exdates.length} ${event.exdates.length === 1 ? 'occurrence is' : 'occurrences are'} skipped.`}
           </p>
         )}
         <Link href="/calendar/week" className="faint mt-2 inline-block text-[12px]">
           ← Back to the calendar
         </Link>
       </header>
+
+      {/* One live region for everything the page says back, as on the rule page. */}
+      <div aria-live="polite" className="empty:hidden">
+        {error && (
+          <p
+            role="alert"
+            className="hairline border-b px-5 py-2 text-[12px]"
+            style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
+          >
+            {error}
+          </p>
+        )}
+        {!error && done && (
+          <p className="hairline muted border-b px-5 py-2 text-[12px]">
+            {done === 'repeat' && 'Repeat saved. It is still one row plus a rule — nothing was copied.'}
+            {done === 'norepeat' && 'It no longer repeats. The event itself is untouched.'}
+            {done === 'skipped' && 'That occurrence is skipped. The rest of the series is unchanged, and you can put it back.'}
+            {done === 'restored' && 'That occurrence is back.'}
+          </p>
+        )}
+      </div>
+
+      {/* ---- one occurrence, named by its own start instant ---- */}
+      {on && event.isRecurring && (
+        <section
+          className="hairline border-b px-5 py-3"
+          style={{ background: 'var(--bg-raised)' }}
+          aria-label="This occurrence"
+        >
+          {occurrence ? (
+            <>
+              <p className="text-[13px]">
+                <Icon name="calendar" size={12} className="faint mr-1 inline" />
+                You came here from{' '}
+                <strong>
+                  {formatDate(londonDayISO(occurrence.startsAt))}
+                  {!event.allDay && `, ${formatTime(occurrence.startsAt)}`}
+                </strong>{' '}
+                — one occurrence of this series.
+              </p>
+              <p className="muted mt-0.5 text-[12px]">
+                Skipping it leaves the series alone: it is RFC 5545’s “not that
+                week”, stored as an exclusion rather than by deleting anything. To
+                change just this one, skip it and add an ordinary event on the day.
+              </p>
+              <form action={skipOccurrence} className="mt-2">
+                <input type="hidden" name="eventId" value={event.id} />
+                <input type="hidden" name="on" value={occurrence.startsAt} />
+                <input type="hidden" name="put" value="skip" />
+                <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
+                  Skip {formatDate(londonDayISO(occurrence.startsAt))}
+                </button>
+              </form>
+            </>
+          ) : skippedInstant ? (
+            <>
+              <p className="text-[13px]">
+                <Icon name="pause" size={12} className="faint mr-1 inline" />
+                <strong>
+                  {formatDate(londonDayISO(skippedInstant))}
+                  {!event.allDay && `, ${formatTime(skippedInstant)}`}
+                </strong>{' '}
+                is skipped. It is not drawn on the calendar and nothing was deleted.
+              </p>
+              <form action={skipOccurrence} className="mt-2">
+                <input type="hidden" name="eventId" value={event.id} />
+                <input type="hidden" name="on" value={skippedInstant} />
+                <input type="hidden" name="put" value="back" />
+                <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
+                  Put it back
+                </button>
+              </form>
+            </>
+          ) : (
+            <p className="muted text-[13px]">
+              This series has no occurrence starting then, so there is nothing here
+              to skip. The rule may have changed since that link was made.
+            </p>
+          )}
+        </section>
+      )}
 
       {event.isLocked ? (
         <div className="muted flex items-start gap-2 px-5 py-6 text-[13px]">
@@ -98,6 +211,42 @@ export default async function EventPage({
         </div>
       ) : (
         <EditForm event={event} categories={categories} day={day} />
+      )}
+
+      {!event.isLocked && (
+        <section className="hairline border-b px-5 py-4">
+          <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+            <Icon name="undo" size={11} />
+            Repeat
+          </h2>
+          {event.rrule && !repeatForm ? (
+            <>
+              <p className="muted mb-2 text-[12px]">
+                This repeat is more specific than the builder can express —{' '}
+                <span className="font-medium">{safeDescribe(event.rrule)}</span>. It is
+                stored, it expands correctly and the calendar draws every occurrence;
+                it is left alone here rather than reopened in a form that would save it
+                back as something narrower. Removing it is still offered.
+              </p>
+              <form action={setEventRepeat}>
+                <input type="hidden" name="eventId" value={event.id} />
+                <input type="hidden" name="repeatFreq" value="" />
+                <button type="submit" className="hairline rounded border px-3 py-1.5 text-[12px]">
+                  Stop repeating
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <p className="muted mb-2 text-[12px]">
+                One row and one rule, never copies. Changing it changes every
+                occurrence; the date above is the series’ own start, so moving that
+                moves all of them.
+              </p>
+              <RepeatEditor eventId={event.id} current={repeatForm} startOn={day} />
+            </>
+          )}
+        </section>
       )}
 
       {!event.isLocked && (
