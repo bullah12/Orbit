@@ -758,3 +758,172 @@ tracking, ever.
   repeating that per row without rebuilding the form first would be four
   differently-labelled boxes stacked up. Recorded as a rough edge with the
   query already written, rather than half-built.
+
+## Session 8 — 2026-07-29
+
+- **Branch is `claude/orbit-rough-edges-qw12jt`.** The session designated it and
+  the designated one wins, as it has in all eight sessions. No pull request.
+- **This is a rough-edge session, not a phase.** Nothing new was started; the
+  work is the list in STATUS.md, in its order.
+
+### “This occurrence” versus “the whole series” — decided before it was built
+
+The brief asked for this in writing first, so here it is, in the order the
+options were weighed.
+
+- **What a repeat is, in Orbit, is not up for revision.** One row plus an RRULE,
+  expanded on read. Every option below was judged on whether it keeps that true.
+- **Editing the *series* is the operation that was missing, and it is now built.**
+  `rruleFromForm` could build a rule and nothing could read one back into the
+  form, so a repeat could be created and then never touched: no changing Tuesday
+  to Wednesday, no moving the end date, no removing the repeat without deleting
+  the event. `repeatFormFromRrule` is the inverse, and the event page now adds,
+  changes and removes a repeat. This is the honest bulk of edges 11 and 20.
+- **A rule the builder cannot express is shown in words and left alone, never
+  silently narrowed.** An imported `BYDAY=3TH`, a `COUNT`, a `BYMONTHDAY` — all
+  parse and all expand correctly, and none can be *typed* (edge 10). Reading one
+  into a builder that cannot express it would save it back as something else, so
+  the form refuses to open on it and says why in a sentence. Losing "the third
+  Thursday" by round-tripping it through a form that does not have the concept
+  would be exactly the kind of quiet data loss the conflict model exists to
+  prevent.
+- **A single occurrence can now be *skipped*, and put back.** This is the first
+  use of `recurrence_rules.exdates` from the UI — migration 0010 added the column
+  in Phase 2 and only the importer ever wrote it. An occurrence is named by its
+  own start instant on the URL (`?on=…`), which is what RFC 5545 calls a
+  RECURRENCE-ID and what the calendar block's key has carried since Phase 2 for
+  exactly this reason. Skipping is one array append; putting it back is one
+  removal. Both are reversible, and being reversible is what makes them safe to
+  offer without a confirmation.
+- **Editing *one occurrence's details* — EXDATE plus a new one-off event — is
+  deliberately NOT in this session.** It is the right shape and it is written
+  down here so the next session does not have to re-derive it. What stopped it
+  was not the write: it is that the new one-off event is a second row that has to
+  carry the series' calendar, category, place, attendees and space, and then
+  answer four questions this session cannot answer honestly in the context it has
+  left — what happens to it when the series' rule changes underneath it, whether
+  it appears in the series' own page at all, what a push to a provider does with
+  it (`pushEvent` has no RECURRENCE-ID concept), and what deleting the series
+  does to it. A half-built version of that is worse than none: it would put rows
+  in the database that no later session could interpret. Skipping an occurrence
+  has none of those questions, because it creates nothing.
+- **So the shipped answer is: the series is edited, one occurrence is skipped or
+  restored, and one occurrence's details are edited by skipping it and adding an
+  ordinary event on the day — which the page says, in those words.** That is not
+  the full RFC 5545 model and the page does not pretend it is.
+
+### What was built, and the decisions inside it
+
+- **The action form had to be rebuilt before an action could be edited in place,
+  and that was the whole rough edge.** `updateAction` and `editRuleActionAction`
+  were written in session 7 and wired to nothing on purpose. The blocker was never
+  the query: it was that the form was one select plus one free-text box captioned
+  "a priority, a status, me / partner / nobody, a number of days, or a message" —
+  six answers to a question the form already knew — and repeating that per row
+  would have stacked four differently-meaning boxes with identical labels up the
+  page. `ACTION_PARAMS` names, per kind, which key of the action object the box
+  fills in and whether that key wants a choice, a number of days or a message.
+- **`rawActionFrom` is now the only place the kind→parameter mapping lives.** It
+  was written twice in `actions.ts`, once for adding and once for editing, and two
+  copies of a mapping is one copy waiting to drift. It deliberately does not
+  validate: `parseActions` is the single authority on whether an action is well
+  formed, and a second opinion one layer up would eventually disagree with it.
+- **An empty days box is refused by name rather than read as zero.** It was
+  `Number(value || '0')`, so leaving the box alone meant "due today" — a real
+  change to somebody's tasks, made by not typing. `NaN` reaches `parseActions` and
+  comes back as "needs a whole number of days between 0 and 3650".
+- **Order matters more for an action than for a condition.** Every condition has
+  to hold, so their order is only reading order; actions are *applied* in order, so
+  removing one and re-adding it at the end to change a value could change what the
+  rule does to a task. That is why editing in place was worth building rather than
+  "remove and add again" being good enough.
+- **`travel_sessions.is_active` is a cache the app does not trust, and that is now
+  written down rather than implied.** It was set once at creation and never
+  updated. Every write now sets it from the dates — including the trip page's — and
+  nothing reads it: `tripStanding()` derives the answer from the dates on every
+  render. Nothing sweeps the column and Orbit has no scheduler by decision, so a
+  stored "away" is stale the moment a trip ends, while a date range cannot go
+  stale. Same call the calendar makes by expanding a recurrence rule rather than
+  storing occurrences. Dropping the column would be a migration for nothing and
+  the partial index on it is genuinely useful if a scheduler ever arrives.
+- **A trip's space is deliberately not editable.** Moving one would have to move
+  its journeys, and every journey's two places, and a place in another space is a
+  place the other member cannot see — so it needs `app.space_move_preview()` and a
+  confirmation on the same terms as a task. Nothing in this session makes a trip
+  movable, so nothing in this session owes one.
+- **A trip's endpoint pickers offer only places in the trip's own space.** The
+  list is already filtered by policy; this narrows it further, which is a different
+  question — a place you *can* see in another space would still be a place your
+  partner cannot, on a trip they can.
+- **The recurrence round-trip test found a real off-by-one in the shipped
+  builder.** `UNTIL` was `'<endOn>T23:59:59.000Z'`, a UTC instant, which during BST
+  is 00:59:59 the next London morning — so a series repeating at 00:30 told to stop
+  on 31 August produced one on 1 September. It is now the end of the last *London*
+  day. Written down because it is the second time a wall-clock/UTC confusion has
+  hidden in this module, and both times a test that compared a value against
+  itself in the other direction is what caught it.
+- **The device label is a cookie, not `localStorage`.** `/sync` is a server
+  component: a label only the client can read cannot pick the right device row, so
+  the halves of the page could never be made to agree. A cookie has exactly the
+  scope the queue has — one browser profile, surviving a reload — so the tie is
+  structural rather than hopeful. It is unsigned like `orbit_user` and names a
+  device, not a permission; every write still goes through `asUser`, so the worst a
+  forged value does is claim a device row in a space its owner can already write to.
+- **A device is identified by its label, and one browser is one row per space.**
+  `devices` is keyed `(space_id, owner_id, label)`, which is what a space-scoped
+  cursor requires (session 7's decision), so a label is the only thing that
+  identifies a browser across its rows. The page says this out loud rather than
+  leaving somebody to wonder why their laptop appears three times. Normalisation
+  lives in exactly one function because the label is half of a unique key:
+  " Laptop " and "Laptop" becoming two devices would show one browser twice on the
+  very page this change exists to fix.
+- **Renaming a browser updates its rows rather than replacing them**
+  (`on conflict … do update`), so it does not forget how far it had caught up
+  because somebody corrected a typo.
+- **Coming back online sends the queue once, on the browser's own `online` event
+  — a listener, never a retry.** A retry that cannot tell "never arrived" from
+  "arrived and the answer was lost" would send the same edit twice, which is the
+  same standing rule that keeps push from retrying. `online` fires when the browser
+  *learns* it has a network, which is a fact rather than a timer, and one attempt
+  per fact is honest. It does nothing while *Work offline* is ticked: that switch
+  is a person saying "not yet", and a network reappearing does not overrule them.
+
+### Accepted rather than fixed (session 7's list, numbers 1–13)
+
+- **1 and 2 are fixed** — the queue is tied to a device row and the two halves of
+  `/sync` now describe the same thing and say so; the `online` event flushes.
+- **3. A dismissed conflict is still lost with no undo and no record.** Both
+  "Discard" and dismissing a conflict say what they do and neither writes anything,
+  but neither leaves a trace. Recording it properly means a table — an outbox
+  history — which is a migration, and the honest place for that decision is a
+  session that has the context to design it rather than one closing three other
+  edges. Accepted, and it stays the top of the next-three list.
+- **4. The queue still survives a user switch.** Fixing it needs the queue to
+  record which profile made each write, which means a shape change to
+  `PendingWrite` and a migration path for queues already in a browser. The dev
+  switcher is impersonation by design (edge 22), so this is a rough edge of a rough
+  edge. Accepted, and now slightly better: the device section names the browser, so
+  a queue belonging to somebody else at least has something to disagree with.
+- **5 is half fixed.** `SYNCABLE_FIELDS` is unchanged and still narrower than the
+  forms, and only `/tasks/item/[id]` has an offline surface — a note body does not,
+  and it is the field somebody is most likely to be typing when the connection
+  goes. Widening the list is cheap; widening it without a smoke check per new field
+  is not, and that was the part there was no context left for. Accepted for this
+  session and named first in the next three.
+- **6, 7, 8.** `changesSince`'s five queries and its 40-per-kind cap, `applyWrite`
+  interpolating column names from a closed list, and the 200-event push window —
+  all unchanged, all bounded, all already stated. Accepted.
+- **9. A push still never deletes.** `pushEvent` has no delete verb, so an event
+  deleted locally stays on the provider. Real, and it is the other one with teeth.
+  Accepted this session, named in the next three.
+- **10. The repeat builder still cannot express "the third Thursday" or a
+  COUNT** — but it no longer *silently narrows* one, which was the dangerous half:
+  `repeatFormFromRrule` returns null and the page shows the rule in words and
+  offers only to remove it. Accepted in its remaining form.
+- **11 and 12 are fixed** — a repeat can be added, changed and removed on the
+  event page, and one occurrence skipped and put back.
+- **12 (the weekly review's window) and 13 (what smoke leaves behind)** are
+  unchanged and accepted; 13 grew slightly, since naming a browser now creates a
+  device row in Priya's Work space that the seed did not have. Harmless, cleared by
+  `pnpm seed`, and it is the same after every subsequent run — which is what
+  "passes twice in a row" actually requires.

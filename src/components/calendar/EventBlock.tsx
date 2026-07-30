@@ -97,9 +97,17 @@ export function EventBlock({
     );
   }
 
+  // A recurring event's block names which occurrence was clicked, by its own
+  // start instant — RFC 5545's RECURRENCE-ID. Every occurrence of a series links
+  // to the same row, so without this the detail page cannot tell Tuesday's
+  // instance from next Tuesday's, and "skip this one" has nothing to skip.
   return (
     <Link
-      href={`/calendar/event/${item.id}`}
+      href={
+        item.isRecurring
+          ? `/calendar/event/${item.id}?on=${encodeURIComponent(item.startsAt)}`
+          : `/calendar/event/${item.id}`
+      }
       className={`hairline row-hover border-y border-r ${className}`}
       style={style}
       aria-label={`${item.title || 'Untitled event'}, ${

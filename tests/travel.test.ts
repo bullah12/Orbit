@@ -14,6 +14,7 @@ import {
   sessionFromEvent,
   sessionIsActive,
   type TravelEvent,
+  tripStanding,
 } from '@/lib/travel';
 import { londonInstant } from '@/lib/format';
 
@@ -475,5 +476,81 @@ describe('dayFraction', () => {
   it('clamps to the day it is drawn against', () => {
     expect(dayFraction(londonInstant('2026-05-04', '12:00'), '2026-05-05')).toBe(0);
     expect(dayFraction(londonInstant('2026-05-06', '12:00'), '2026-05-05')).toBe(1);
+  });
+});
+
+/**
+ * Where a trip stands.
+ *
+ * This is the sentence a trip's own page opens with, and it is derived from the
+ * dates every single time rather than read from `travel_sessions.is_active`. The
+ * column is a cache written from the dates at every write; nothing sweeps it and
+ * Orbit has no scheduler by decision, so it goes stale the moment a trip ends
+ * while a date range never can. These cases pin the derivation, including on the
+ * two days a year when 24-hour arithmetic gives the wrong answer.
+ */
+describe('where a trip stands', () => {
+  const trip = (from: string, to: string) => ({
+    startsAt: londonInstant(from, '00:00').toISOString(),
+    endsAt: londonInstant(to, '23:59').toISOString(),
+  });
+  const at = (day: string, time: string) => londonInstant(day, time);
+
+  it('is running while it is running, and counts no days away', () => {
+    const s = tripStanding(trip('2026-05-03', '2026-05-07'), at('2026-05-05', '12:00'));
+    expect(s).toEqual({ phase: 'running', days: 5, daysAway: 0 });
+  });
+
+  it('is running on its first and last day, both ends inclusive', () => {
+    expect(tripStanding(trip('2026-05-03', '2026-05-07'), at('2026-05-03', '00:30')).phase).toBe('running');
+    expect(tripStanding(trip('2026-05-03', '2026-05-07'), at('2026-05-07', '23:00')).phase).toBe('running');
+  });
+
+  it('counts whole days until an upcoming trip starts', () => {
+    const s = tripStanding(trip('2026-05-10', '2026-05-12'), at('2026-05-07', '18:00'));
+    expect(s.phase).toBe('upcoming');
+    expect(s.daysAway).toBe(3);
+    expect(s.days).toBe(3);
+  });
+
+  it('says one day away for a trip starting tomorrow, whatever the time of day', () => {
+    expect(tripStanding(trip('2026-05-08', '2026-05-09'), at('2026-05-07', '00:05')).daysAway).toBe(1);
+    expect(tripStanding(trip('2026-05-08', '2026-05-09'), at('2026-05-07', '23:55')).daysAway).toBe(1);
+  });
+
+  it('counts whole days since a past trip ended', () => {
+    const s = tripStanding(trip('2026-05-01', '2026-05-04'), at('2026-05-07', '09:00'));
+    expect(s.phase).toBe('past');
+    expect(s.daysAway).toBe(3);
+    expect(s.days).toBe(4);
+  });
+
+  it('is past, zero days away, on the day a trip ended', () => {
+    // 23:59 on the 4th has gone; it is still the 4th.
+    const s = tripStanding(trip('2026-05-01', '2026-05-04'), londonInstant('2026-05-04', '23:59:30'));
+    expect(s.phase).toBe('past');
+    expect(s.daysAway).toBe(0);
+  });
+
+  it('counts days across the spring clock change, where 24-hour arithmetic is out', () => {
+    // 27 to 30 March 2026: one of those days is 23 hours long.
+    const s = tripStanding(trip('2026-03-30', '2026-03-31'), at('2026-03-27', '12:00'));
+    expect(s.phase).toBe('upcoming');
+    expect(s.daysAway).toBe(3);
+  });
+
+  it('counts days across the autumn clock change too', () => {
+    // 24 to 27 October 2026: one of those days is 25 hours long.
+    const s = tripStanding(trip('2026-10-23', '2026-10-24'), at('2026-10-27', '12:00'));
+    expect(s.phase).toBe('past');
+    expect(s.daysAway).toBe(3);
+  });
+
+  it('agrees with sessionIsActive, which is what the stored column was set from', () => {
+    const s = trip('2026-05-03', '2026-05-07');
+    for (const day of ['2026-05-01', '2026-05-03', '2026-05-05', '2026-05-07', '2026-05-09']) {
+      const now = at(day, '12:00');
+      expect(tripStanding(s, now).phase === 'running').toBe(sessionIsActive(s, now));
+    }
   });
 });

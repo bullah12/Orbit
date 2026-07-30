@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { asUser } from '@/lib/db';
 import { listSelectableUsers, requireUser, USER_COOKIE } from '@/lib/auth';
-import { addDaysISO, londonInstant } from '@/lib/format';
+import { addDaysISO, londonDayISO, londonInstant } from '@/lib/format';
 import {
   calendarProvider,
   geocodingProvider,
@@ -24,8 +24,9 @@ import {
   sessionIsActive,
   type LegMode,
 } from '@/lib/travel';
-import { isTriggerKind, type Trigger } from '@/lib/rules';
-import { rruleFromForm } from '@/lib/recurrence';
+import { isTriggerKind, rawActionFrom, type Trigger } from '@/lib/rules';
+import { occurrenceAt, parseRrule, rruleFromForm } from '@/lib/recurrence';
+import { getEvent } from '@/lib/queries/events';
 import {
   addAction,
   fireForTask,
@@ -56,7 +57,9 @@ import {
   type ConflictChoice,
   type PendingWrite,
 } from '@/lib/sync/conflict';
-import type { FlushOutcome } from '@/lib/sync/outbox';
+import { normaliseDeviceLabel, type FlushOutcome } from '@/lib/sync/outbox';
+import { setThisDeviceLabel } from '@/lib/sync/device';
+import { listSpaces } from '@/lib/queries/spaces';
 import { runAiFeature, setConsent } from '@/lib/queries/ai';
 import {
   connectProviderCalendar,
@@ -771,6 +774,192 @@ export async function updateEvent(formData: FormData) {
   });
 
   revalidatePath('/', 'layout');
+}
+
+function eventRedirect(id: string, error?: string, done?: string): never {
+  const q = new URLSearchParams();
+  if (error) q.set('error', error);
+  if (done) q.set('done', done);
+  const suffix = q.toString();
+  redirect(suffix ? `/calendar/event/${id}?${suffix}` : `/calendar/event/${id}`);
+}
+
+/**
+ * Add, change or remove an event's repeat.
+ *
+ * Rough edge since Phase 6: `rruleFromForm` could build a rule and nothing could
+ * read one back, so a repeat could be created at compose time and then never
+ * touched — no changing Tuesday to Wednesday, no moving the end date, and no way
+ * to stop it repeating short of deleting the event.
+ *
+ * Still one row plus an RRULE. This writes the rule, changes the rule, or drops
+ * it; it never writes expanded copies, and it never touches the event's own start
+ * — the series' `DTSTART` is the event, so moving the series means editing the
+ * event above, which is a different form and a different sentence.
+ *
+ * `exdates` survive a change to the rule on purpose. "Not that week" is a
+ * statement about a date, not about the shape of the repeat, and somebody who
+ * changes an end date has not withdrawn it. A skipped occurrence that the new
+ * rule no longer generates is simply an exclusion that matches nothing, which is
+ * what RFC 5545 says an EXDATE outside the series is.
+ */
+export async function setEventRepeat(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('eventId') ?? '');
+  if (!id) return;
+
+  const event = await getEvent(user.id, id);
+  if (!event) eventRedirect(id, 'That event does not exist, or is not yours to change.');
+  if (event.isLocked) eventRedirect(id, 'A locked event cannot be given a repeat here.');
+
+  const freq = String(formData.get('repeatFreq') ?? '');
+  const startOn = londonDayISO(event.startsAt);
+
+  // No frequency means "stop repeating". The rule row goes with it, but only if
+  // no other event points at it — the same care `deleteEvent` takes.
+  if (freq === '') {
+    await asUser(user.id, async (tx) => {
+      const [row] = await tx<{ ruleId: string | null }[]>`
+        select recurrence_rule_id as "ruleId" from public.events
+        where id = ${id}::uuid and not is_locked
+      `;
+      if (!row?.ruleId) return;
+      await tx`
+        update public.events set recurrence_rule_id = null,
+                                 is_dirty = (external_id is not null)
+        where id = ${id}::uuid and not is_locked
+      `;
+      await tx`
+        delete from public.recurrence_rules r
+        where r.id = ${row.ruleId}::uuid
+          and not exists (select 1 from public.events e where e.recurrence_rule_id = r.id)
+      `;
+    });
+    revalidatePath('/', 'layout');
+    eventRedirect(id, undefined, 'norepeat');
+  }
+
+  const built = rruleFromForm({
+    freq: freq as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY',
+    interval: Number(String(formData.get('repeatInterval') ?? '1')),
+    byDay: formData.getAll('repeatByDay').map(String) as never,
+    endOn: String(formData.get('repeatUntil') ?? '') || null,
+    startOn,
+  });
+  if ('error' in built) eventRedirect(id, built.error);
+
+  const until = parseRrule(built.rrule).until;
+
+  await asUser(user.id, async (tx) => {
+    const [row] = await tx<{ ruleId: string | null }[]>`
+      select recurrence_rule_id as "ruleId" from public.events
+      where id = ${id}::uuid and not is_locked
+    `;
+    if (row?.ruleId) {
+      // Updated in place, so the exdates on it survive.
+      await tx`
+        update public.recurrence_rules
+        set rrule = ${built.rrule}, dtstart = ${event.startsAt}, until = ${until}
+        where id = ${row.ruleId}::uuid
+      `;
+    } else {
+      const [rule] = await tx<{ id: string }[]>`
+        insert into public.recurrence_rules (space_id, owner_id, rrule, dtstart, until)
+        values (${event.space.id}::uuid, ${user.id}::uuid, ${built.rrule},
+                ${event.startsAt}, ${until})
+        returning id
+      `;
+      if (!rule) return;
+      await tx`
+        update public.events set recurrence_rule_id = ${rule.id}::uuid,
+                                 is_dirty = (external_id is not null)
+        where id = ${id}::uuid and not is_locked
+      `;
+    }
+  });
+
+  revalidatePath('/', 'layout');
+  eventRedirect(id, undefined, 'repeat');
+}
+
+/**
+ * Skip one occurrence of a series, or put a skipped one back.
+ *
+ * The first use of `recurrence_rules.exdates` from the UI — migration 0010 added
+ * the column in Phase 2 and only the ICS importer has ever written it. An
+ * occurrence is named by its own start instant, which is RFC 5545's
+ * RECURRENCE-ID and what the calendar block's key has carried since Phase 2.
+ *
+ * The instant arrives on a form, so it is a claim from the client and it is
+ * checked against the expansion rather than trusted: `occurrenceAt` has to agree
+ * that the series genuinely has an occurrence starting there. Without that,
+ * "skip the occurrence on anything" would append whatever was submitted, and a
+ * rule quietly carrying junk exclusions is a rule that eventually drops an
+ * occurrence nobody excluded.
+ *
+ * Both directions are one array operation and both are reversible, which is why
+ * neither needs a confirmation. Nothing is deleted: an occurrence is not a row.
+ */
+export async function skipOccurrence(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('eventId') ?? '');
+  const on = String(formData.get('on') ?? '');
+  const put = String(formData.get('put') ?? 'back') === 'skip' ? 'skip' : 'back';
+  if (!id || !on) return;
+
+  const event = await getEvent(user.id, id);
+  if (!event) eventRedirect(id, 'That event does not exist, or is not yours to change.');
+  if (!event.rrule) eventRedirect(id, 'That event does not repeat, so it has no occurrences to skip.');
+
+  const t = Date.parse(on);
+  if (!Number.isFinite(t)) eventRedirect(id, 'That is not an occurrence of this event.');
+  const instant = new Date(t).toISOString();
+
+  if (put === 'skip') {
+    // Checked against the series as it stands, exclusions included — an instant
+    // already skipped is not an occurrence, so this cannot append it twice.
+    const found = occurrenceAt(
+      {
+        rrule: event.rrule,
+        dtstart: event.startsAt,
+        dtend: event.endsAt,
+        exdates: event.exdates,
+      },
+      instant,
+    );
+    if (!found) eventRedirect(id, 'That is not an occurrence of this event, or it is already skipped.');
+  }
+
+  await asUser(user.id, async (tx) => {
+    if (put === 'skip') {
+      await tx`
+        update public.recurrence_rules r
+        set exdates = r.exdates || ${instant}::timestamptz
+        where r.id = (
+          select e.recurrence_rule_id from public.events e
+          where e.id = ${id}::uuid and not e.is_locked
+        )
+      `;
+    } else {
+      // Compared as instants rather than as text: the array holds timestamptz
+      // and '2026-04-06T08:00:00.000Z' and '2026-04-06 09:00:00+01' are the same
+      // moment written two ways.
+      await tx`
+        update public.recurrence_rules r
+        set exdates = coalesce((
+          select array_agg(x order by x) from unnest(r.exdates) as x
+          where x <> ${instant}::timestamptz
+        ), '{}'::timestamptz[])
+        where r.id = (
+          select e.recurrence_rule_id from public.events e
+          where e.id = ${id}::uuid and not e.is_locked
+        )
+      `;
+    }
+  });
+
+  revalidatePath('/', 'layout');
+  eventRedirect(id, undefined, put === 'skip' ? 'skipped' : 'restored');
 }
 
 export async function deleteEvent(formData: FormData) {
@@ -1635,6 +1824,80 @@ export async function createSessionFromEvent(formData: FormData) {
   revalidatePath('/', 'layout');
 }
 
+/**
+ * Edit a trip: its title, its dates, where it goes and its notes.
+ *
+ * Rough edge since Phase 4 — a trip could be created and deleted and nothing in
+ * between, so a date typed wrong meant deleting the trip and its journeys with
+ * it, because the FK cascades.
+ *
+ * `is_active` is written from the dates here, the same way both create paths
+ * write it, which is the other half of that rough edge: the column was set once
+ * at creation and never touched again. It still is not read anywhere — every
+ * surface derives from the dates through `tripStanding`, because nothing sweeps
+ * the column and Orbit has no scheduler by decision, so a stored "away" goes
+ * stale the moment a trip ends. Keeping it correct at every write costs one
+ * expression; trusting it would cost the truth.
+ *
+ * The space is deliberately not editable. Moving a trip would have to move its
+ * journeys, and every journey's two places, and a place in another space is a
+ * place the other member cannot see — so it needs `space_move_preview()` and a
+ * confirmation, on the same terms as a task. Nothing here makes it movable.
+ */
+export async function updateTravelSession(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('sessionId') ?? '');
+  if (!id) return;
+
+  const title = String(formData.get('title') ?? '').trim();
+  const startDate = String(formData.get('startDate') ?? '');
+  const endDate = String(formData.get('endDate') ?? '');
+  const notesMd = String(formData.get('notesMd') ?? '');
+  const originPlaceId = String(formData.get('originPlaceId') ?? '') || null;
+  const destinationPlaceId = String(formData.get('destinationPlaceId') ?? '') || null;
+
+  if (!title) return tripRedirect(id, 'A trip needs a name.');
+  const startsAt = instantFromForm(startDate, '00:00');
+  const endsAt = instantFromForm(endDate, '23:59');
+  if (!startsAt || !endsAt) return tripRedirect(id, 'A trip needs a start date and an end date.');
+  // The database has the same check as a constraint; catching it here is what
+  // turns a 500 into a sentence.
+  if (endsAt < startsAt) return tripRedirect(id, 'A trip cannot end before it starts.');
+
+  const updated = await asUser(user.id, async (tx) => {
+    const rows = await tx<{ id: string }[]>`
+      update public.travel_sessions set
+        title                = ${title},
+        starts_at            = ${startsAt},
+        ends_at              = ${endsAt},
+        notes_md             = ${notesMd},
+        origin_place_id      = ${originPlaceId}::uuid,
+        destination_place_id = ${destinationPlaceId}::uuid,
+        is_active            = ${sessionIsActive({
+          startsAt: startsAt.toISOString(),
+          endsAt: endsAt.toISOString(),
+        })}
+      where id = ${id}::uuid
+      returning id
+    `;
+    return rows.length > 0;
+  });
+
+  revalidatePath('/', 'layout');
+  // A trip in a space you are not in updates nothing, and says so as a sentence
+  // rather than pretending it saved.
+  if (!updated) tripRedirect(id, 'That trip does not exist, or is not yours to change.');
+  tripRedirect(id, undefined, '1');
+}
+
+function tripRedirect(id: string, error?: string, saved?: string): never {
+  const q = new URLSearchParams();
+  if (error) q.set('error', error);
+  if (saved) q.set('saved', saved);
+  const suffix = q.toString();
+  redirect(suffix ? `/travel/trip/${id}?${suffix}` : `/travel/trip/${id}`);
+}
+
 export async function deleteTravelSession(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('sessionId') ?? '');
@@ -1647,6 +1910,10 @@ export async function deleteTravelSession(formData: FormData) {
   });
 
   revalidatePath('/', 'layout');
+  // Deleted from its own page, there is no page left to stay on. The value is
+  // compared against a literal rather than redirected to, so this can never
+  // become somewhere a form field chose.
+  if (String(formData.get('then') ?? '') === 'travel') redirect('/travel');
 }
 
 // ===========================================================================
@@ -1751,37 +2018,37 @@ export async function addRuleActionAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('ruleId') ?? '');
   if (!id) return;
-  const kind = String(formData.get('kind') ?? '');
-  const value = String(formData.get('value') ?? '').trim();
-
-  // Each action kind names its parameter differently; one select plus one
-  // free-text box is the whole form, so this is where the two meet.
-  const raw: Record<string, unknown> = { kind };
-  if (kind === 'task.set_priority') raw.priority = value;
-  else if (kind === 'task.set_status') raw.status = value;
-  else if (kind === 'task.assign') raw.to = value;
-  else if (kind === 'task.defer_days' || kind === 'task.due_in_days') raw.days = Number(value || '0');
-  else if (kind === 'notify') raw.message = value;
+  // One kind plus one string. `rawActionFrom` knows which key of the action
+  // object the string belongs in — it is the same table the form renders itself
+  // from, so the two halves cannot drift apart — and `parseActions`, one layer
+  // down, is still the only thing that decides whether the result is valid.
+  const raw = rawActionFrom(
+    String(formData.get('kind') ?? ''),
+    String(formData.get('value') ?? '').trim(),
+  );
 
   const result = await addAction(user.id, id, raw);
   revalidatePath('/', 'layout');
   ruleRedirect(id, { error: 'error' in result ? result.error : undefined });
 }
 
-/** The same for an action: edited in place, keeping its position. */
+/**
+ * The same for an action: edited in place, keeping its position.
+ *
+ * Position matters more here than it does for a condition. Every condition has
+ * to hold, so their order is only reading order; actions are *applied* in order,
+ * so removing one and re-adding it at the end to change a value could change
+ * what the rule does to a task. That is why this exists rather than "remove and
+ * add again" being good enough.
+ */
 export async function editRuleActionAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('ruleId') ?? '');
   if (!id) return;
-  const kind = String(formData.get('kind') ?? '');
-  const value = String(formData.get('value') ?? '').trim();
-
-  const raw: Record<string, unknown> = { kind };
-  if (kind === 'task.set_priority') raw.priority = value;
-  else if (kind === 'task.set_status') raw.status = value;
-  else if (kind === 'task.assign') raw.to = value;
-  else if (kind === 'task.defer_days' || kind === 'task.due_in_days') raw.days = Number(value || '0');
-  else if (kind === 'notify') raw.message = value;
+  const raw = rawActionFrom(
+    String(formData.get('kind') ?? ''),
+    String(formData.get('value') ?? '').trim(),
+  );
 
   const result = await updateAction(user.id, id, Number(formData.get('index')), raw);
   revalidatePath('/', 'layout');
@@ -2055,6 +2322,51 @@ export async function answerConflict(
         : 'The other version was kept. Everything nobody disagreed about was still applied.',
     conflict: null,
   };
+}
+
+/**
+ * Say which device this browser is, and make sure the rows exist to say it with.
+ *
+ * Rough edge since Phase 6: the outbox is scoped to a browser profile and every
+ * cursor belongs to a row in `devices`, and nothing connected the two — `/sync`
+ * showed "this device's queue" above "how far Priya — laptop has caught up" with
+ * no reason to believe they were the same device, and did not say so.
+ *
+ * A label, in a cookie, because `/sync` is a server component and a value only
+ * the client can read cannot pick the right row. `devices` is keyed
+ * `(space_id, owner_id, label)`, so one browser is one row per space — which is
+ * what a space-scoped cursor requires, and which is why this claims a row in
+ * every space the caller can write to rather than one row overall.
+ *
+ * `on conflict … do update` rather than an insert: claiming the same label twice
+ * is somebody pressing the button again, not an error, and it is how the label is
+ * *renamed* too — the old rows keep their cursors, so renaming a browser does not
+ * make it forget how far it had caught up. Only the spaces the caller can write
+ * to: registering a device in a space you can only read would be writing a row
+ * into somebody else's space, which the policies refuse anyway.
+ */
+export async function nameThisDevice(formData: FormData) {
+  const user = await requireUser();
+  const label = normaliseDeviceLabel(String(formData.get('label') ?? ''));
+  if (label === '') redirect('/sync?error=A+device+needs+a+name.');
+
+  const spaces = await listSpaces(user.id);
+  const writable = spaces.filter((s) => s.canWrite);
+
+  await asUser(user.id, async (tx) => {
+    for (const space of writable) {
+      await tx`
+        insert into public.devices (space_id, owner_id, label, platform, last_seen_at)
+        values (${space.id}::uuid, ${user.id}::uuid, ${label}, 'web', now())
+        on conflict (space_id, owner_id, label)
+        do update set last_seen_at = now(), revoked_at = null
+      `;
+    }
+  });
+
+  await setThisDeviceLabel(label);
+  revalidatePath('/', 'layout');
+  redirect('/sync?named=1');
 }
 
 /** Mark a device as having caught up with a space, to the instant the page was read. */

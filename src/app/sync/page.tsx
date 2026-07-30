@@ -1,3 +1,4 @@
+import { headers } from 'next/headers';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { changesSince, listCursors, listDevices } from '@/lib/queries/sync';
@@ -6,7 +7,9 @@ import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { OutboxPanel } from '@/components/OutboxPanel';
 import { formatRelative } from '@/lib/format';
-import { catchUpDevice, rewindDevice } from '@/app/actions';
+import { catchUpDevice, nameThisDevice, rewindDevice } from '@/app/actions';
+import { thisDeviceLabel } from '@/lib/sync/device';
+import { DEVICE_LABEL_MAX, suggestDeviceLabel } from '@/lib/sync/outbox';
 import { asUser } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -30,18 +33,30 @@ export const dynamic = 'force-dynamic';
 export default async function SyncPage({
   searchParams,
 }: {
-  searchParams: Promise<{ device?: string }>;
+  searchParams: Promise<{ device?: string; named?: string; error?: string }>;
 }) {
-  const { device: chosenDevice } = await searchParams;
+  const { device: chosenDevice, named, error } = await searchParams;
   const user = await requireUser();
 
-  const [spaces, devices, cursors] = await Promise.all([
+  const [spaces, devices, cursors, myLabel] = await Promise.all([
     listSpaces(user.id),
     listDevices(user.id),
     listCursors(user.id),
+    thisDeviceLabel(),
   ]);
 
-  const device = devices.find((d) => d.id === chosenDevice) ?? devices[0] ?? null;
+  // Which rows in `devices` are *this browser*. One browser is one row per space,
+  // because a cursor is space-scoped, so this is a set rather than a row.
+  const mine = myLabel === null ? [] : devices.filter((d) => d.label === myLabel);
+  const isMine = (id: string) => mine.some((d) => d.id === id);
+
+  // The chosen device, or this browser's, or any. Preferring this browser's is
+  // the point of the change: with `devices[0]` the cursors half of the page could
+  // describe a phone while the queue above it was a laptop's, and nothing said so.
+  const device =
+    devices.find((d) => d.id === chosenDevice) ?? mine[0] ?? devices[0] ?? null;
+
+  const suggestion = suggestDeviceLabel((await headers()).get('user-agent') ?? '');
 
   // The instant the page was read. `catchUpDevice` writes exactly this, so
   // "caught up" means "up to what was on this screen" rather than "up to
@@ -76,7 +91,80 @@ export default async function SyncPage({
         </p>
       </header>
 
-      <OutboxPanel spaces={spaces} serverNow={now} />
+      <div aria-live="polite" className="empty:hidden">
+        {error && (
+          <p
+            role="alert"
+            className="hairline border-b px-5 py-2 text-[12px]"
+            style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
+          >
+            {error}
+          </p>
+        )}
+        {!error && named && (
+          <p className="hairline muted border-b px-5 py-2 text-[12px]">
+            This browser is now {myLabel}. Its queue above and its cursors below are
+            the same device — one row per space, because a cursor is space-scoped.
+          </p>
+        )}
+      </div>
+
+      <OutboxPanel spaces={spaces} serverNow={now} deviceLabel={myLabel} />
+
+      {/* ------------------------------------------------------------------
+          Which device this browser is.
+
+          Rough edge since Phase 6: the queue above is scoped to a browser
+          profile and every cursor below belongs to a row in `devices`, and
+          nothing tied the two together — the page showed both and did not say
+          they might be different devices. Naming the browser writes a row per
+          writable space and a cookie the server can read, so the halves agree.
+      */}
+      <section className="hairline border-b px-5 py-4" aria-labelledby="thisdevice-heading">
+        <h2 id="thisdevice-heading" className="text-[13px] font-semibold">
+          This browser
+        </h2>
+        {myLabel === null ? (
+          <p className="muted mt-1 text-[12px]">
+            This browser has not said which device it is, so the queue above is not
+            tied to any of the rows below: it is one browser profile’s
+            <code className="mx-1 text-[11px]">localStorage</code>, and a cursor
+            belongs to a device. Name it and the two halves of this page describe
+            the same thing.
+          </p>
+        ) : (
+          <p className="muted mt-1 text-[12px]">
+            This browser is <strong>{myLabel}</strong>
+            {mine.length === 0
+              ? ' — but no device rows carry that name, so nothing below is its cursor. Save it again to create them.'
+              : `, which is ${mine.length === 1 ? 'one row' : `${mine.length} rows`} in ${
+                  mine.length === 1 ? 'one space' : `${mine.length} spaces`
+                }: one per space, because a cursor is space-scoped.`}
+          </p>
+        )}
+        <form action={nameThisDevice} className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1">
+            <span className="faint text-[11px]">What to call this browser</span>
+            <input
+              name="label"
+              defaultValue={myLabel ?? suggestion}
+              maxLength={DEVICE_LABEL_MAX}
+              required
+              autoComplete="off"
+              className="input text-[12px]"
+            />
+          </label>
+          <button type="submit" className="hairline rounded border px-2.5 py-1 text-[12px]">
+            {myLabel === null ? 'Name this browser' : 'Save this name'}
+          </button>
+        </form>
+        <p className="faint mt-1 text-[11px]">
+          Renaming keeps the cursors: the rows are updated, not replaced, so a
+          browser does not forget how far it had caught up because you renamed it.
+          The name is a label, never a permission — every write still goes through
+          the same policies.
+        </p>
+      </section>
 
       <section className="hairline border-b px-5 py-4" aria-labelledby="devices-heading">
         <h2 id="devices-heading" className="text-[13px] font-semibold">
@@ -103,6 +191,14 @@ export default async function SyncPage({
                 >
                   <SpaceIndicator space={d.space} />
                   <span className="font-medium">{d.label}</span>
+                  {isMine(d.id) && (
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                      style={{ background: 'var(--bg-sunken)', color: 'var(--accent)' }}
+                    >
+                      this browser
+                    </span>
+                  )}
                   <span className="faint text-[11px]">
                     {d.lastSeenAt ? `seen ${formatRelative(d.lastSeenAt)}` : 'never seen'}
                   </span>

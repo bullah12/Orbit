@@ -5,13 +5,10 @@ import { getRule, listRuleRuns, parseRuleRow } from '@/lib/queries/rules';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { RunDetail, RunKindChip, RunSummaryLine } from '@/components/RuleParts';
+import { RuleActionForm } from '@/components/RuleActionForm';
 import {
-  ACTION_KINDS,
-  ASSIGNEE_REFS,
   CONDITION_FIELDS,
   CONDITION_OPS,
-  PRIORITIES,
-  STATUSES,
   TRIGGER_KINDS,
   TRIGGER_LABEL,
   describeAction,
@@ -20,7 +17,6 @@ import {
 } from '@/lib/rules';
 import { formatRelative, plural } from '@/lib/format';
 import {
-  addRuleActionAction,
   addRuleConditionAction,
   deleteRuleAction,
   dryRunRuleAction,
@@ -295,21 +291,27 @@ export default async function RulePage({
               nothing is not performed and does not appear in the audit trail.
             </p>
 
-            <ul className="mt-2 flex flex-col gap-1">
+            <ul className="mt-2 flex flex-col gap-1" id="rule-actions">
+              {/* Edited where it sits, on the same terms as a condition — except
+                  that order here *is* evaluation order, so re-adding an action at
+                  the end to change it could change what the rule does. */}
               {actions.map((a, i) => (
-                <li key={i} className="hairline flex items-center gap-2 rounded border px-2 py-1.5">
-                  <span className="flex-1 text-[12px]">{describeAction(a)}</span>
-                  <form action={removeRuleActionAction}>
-                    <input type="hidden" name="ruleId" value={row.id} />
-                    <input type="hidden" name="index" value={i} />
-                    <button
-                      type="submit"
-                      className="faint rounded p-1"
-                      aria-label={`Remove action: ${describeAction(a)}`}
-                    >
-                      <Icon name="x" size={12} />
-                    </button>
-                  </form>
+                <li key={i} className="hairline flex flex-col gap-1 rounded border px-2 py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 text-[12px]">{describeAction(a)}</span>
+                    <form action={removeRuleActionAction}>
+                      <input type="hidden" name="ruleId" value={row.id} />
+                      <input type="hidden" name="index" value={i} />
+                      <button
+                        type="submit"
+                        className="faint rounded p-1"
+                        aria-label={`Remove action: ${describeAction(a)}`}
+                      >
+                        <Icon name="x" size={12} />
+                      </button>
+                    </form>
+                  </div>
+                  <RuleActionForm mode="edit" ruleId={row.id} index={i} action={a} />
                 </li>
               ))}
               {actions.length === 0 && (
@@ -319,38 +321,9 @@ export default async function RulePage({
               )}
             </ul>
 
-            <form action={addRuleActionAction} className="mt-2 flex flex-wrap items-end gap-2">
-              <input type="hidden" name="ruleId" value={row.id} />
-              <label className="flex flex-col gap-1">
-                <span className="faint text-[11px]">Do this</span>
-                <select name="kind" className="input text-[12px]">
-                  {ACTION_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {ACTION_LABEL[k]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="faint text-[11px]">
-                  Value — a priority, a status, {ASSIGNEE_REFS.join(' / ')}, a number of days, or a message
-                </span>
-                <input
-                  name="value"
-                  className="input text-[12px]"
-                  autoComplete="off"
-                  list="rule-action-values"
-                />
-              </label>
-              <datalist id="rule-action-values">
-                {[...PRIORITIES, ...STATUSES, ...ASSIGNEE_REFS].map((v) => (
-                  <option key={v} value={v} />
-                ))}
-              </datalist>
-              <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
-                Add action
-              </button>
-            </form>
+            <div className="mt-2">
+              <RuleActionForm mode="add" ruleId={row.id} />
+            </div>
           </section>
 
           {/* ---------------------------------------------------------- */}
@@ -488,12 +461,3 @@ export default async function RulePage({
     </div>
   );
 }
-
-const ACTION_LABEL: Record<string, string> = {
-  'task.set_priority': 'Set the priority',
-  'task.set_status': 'Set the status',
-  'task.assign': 'Assign it',
-  'task.defer_days': 'Defer it, in days',
-  'task.due_in_days': 'Make it due, in days',
-  notify: 'Notify me',
-};

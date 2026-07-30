@@ -236,6 +236,14 @@ export type EventDetail = EventRow & {
   placeId: string | null;
   calendarId: string | null;
   timezone: string;
+  /**
+   * The occurrences this series skips (RFC 5545 EXDATE). Already selected by the
+   * query below; exposed on the type because the detail page and the exclusion
+   * actions both need to know which occurrences are already excluded — asking
+   * "is this an occurrence?" without them would answer yes for one that is
+   * skipped, and appending it again would be a duplicate exclusion.
+   */
+  exdates: string[];
   attendees: {
     id: string;
     displayName: string | null;

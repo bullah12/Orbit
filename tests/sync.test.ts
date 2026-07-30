@@ -15,6 +15,11 @@ import {
   type PendingWrite,
   type ServerRow,
 } from '@/lib/sync/conflict';
+import {
+  DEVICE_LABEL_MAX,
+  normaliseDeviceLabel,
+  suggestDeviceLabel,
+} from '@/lib/sync/outbox';
 
 /**
  * Conflict handling.
@@ -540,5 +545,76 @@ describe('the small pieces', () => {
     expect(displayValue(false)).toBe('no');
     expect(displayValue('high')).toBe('high');
     expect(displayValue(30)).toBe('30');
+  });
+});
+
+/**
+ * Which device this browser is.
+ *
+ * The queue lives in `localStorage`, scoped to a browser profile; every cursor
+ * belongs to a row in `devices`, keyed `(space_id, owner_id, label)`. Nothing
+ * connected the two, so `/sync` showed both halves and did not say they might be
+ * describing different devices. The connection is a label, and a label that is
+ * half of a unique key has to be normalised in exactly one place — otherwise
+ * " Laptop " and "Laptop" become two devices and the page it was meant to fix
+ * shows one browser twice.
+ */
+describe('naming this browser', () => {
+  it('collapses whitespace so one browser cannot become two devices', () => {
+    expect(normaliseDeviceLabel('  Priya — laptop  ')).toBe('Priya — laptop');
+    expect(normaliseDeviceLabel('Priya\t—\n laptop')).toBe('Priya — laptop');
+    expect(normaliseDeviceLabel('Priya  —  laptop')).toBe('Priya — laptop');
+  });
+
+  it('is idempotent, so saving the same name twice claims the same row', () => {
+    const once = normaliseDeviceLabel('  the   Kitchen iPad ');
+    expect(normaliseDeviceLabel(once)).toBe(once);
+  });
+
+  it('gives back nothing for a name that is only whitespace', () => {
+    // The server action refuses this rather than creating a device called "".
+    expect(normaliseDeviceLabel('   ')).toBe('');
+    expect(normaliseDeviceLabel('')).toBe('');
+  });
+
+  it('cuts a very long name to a length that fits a row', () => {
+    const long = normaliseDeviceLabel('x'.repeat(200));
+    expect(long.length).toBe(DEVICE_LABEL_MAX);
+  });
+
+  it('suggests a name from the user agent, without inventing precision', () => {
+    expect(
+      suggestDeviceLabel(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
+      ),
+    ).toBe('Mac Chrome');
+    expect(suggestDeviceLabel('Mozilla/5.0 (X11; Linux x86_64) Firefox/141.0')).toBe('Linux Firefox');
+    expect(
+      suggestDeviceLabel('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1'),
+    ).toBe('iPhone Safari');
+  });
+
+  it('tells Edge and Opera from the Chrome they both claim to be', () => {
+    // Both send "Chrome/..." in their user agent, so order of checks matters.
+    expect(suggestDeviceLabel('Windows NT 10.0 Chrome/140.0 Safari/537.36 Edg/140.0')).toBe(
+      'Windows Edge',
+    );
+    expect(suggestDeviceLabel('Windows NT 10.0 Chrome/140.0 Safari/537.36 OPR/120.0')).toBe(
+      'Windows Opera',
+    );
+  });
+
+  it('falls back to something honest for a user agent it does not know', () => {
+    expect(suggestDeviceLabel('')).toBe('Browser browser');
+    expect(suggestDeviceLabel('curl/8.5.0')).toBe('Browser browser');
+  });
+
+  it('always suggests something a device row would accept', () => {
+    for (const ua of ['', 'curl/8.5.0', 'x'.repeat(500), 'Mozilla/5.0 (Android 15) Chrome/140.0']) {
+      const s = suggestDeviceLabel(ua);
+      expect(s).toBe(normaliseDeviceLabel(s));
+      expect(s.length).toBeGreaterThan(0);
+      expect(s.length).toBeLessThanOrEqual(DEVICE_LABEL_MAX);
+    }
   });
 });

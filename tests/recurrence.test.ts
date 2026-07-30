@@ -4,7 +4,9 @@ import {
   expandRecurrence,
   formatRrule,
   parseRrule,
+  occurrenceAt,
   RecurrenceError,
+  repeatFormFromRrule,
   rruleFromForm,
 } from '@/lib/recurrence';
 import { londonInstant, londonTimeHHMM } from '@/lib/format';
@@ -357,8 +359,32 @@ describe('building a repeat from a form', () => {
   });
 
   it('ends on the whole of the last day, not at midnight on it', () => {
+    // The last London day, not the last UTC one: 31 August 2026 is in BST, so
+    // the end of it is 22:59:59Z. `T235959Z` would be 00:59:59 on 1 September in
+    // London, and a series repeating at 00:30 would run a day past the day it
+    // was told to stop.
     const r = rruleFromForm({ ...base, byDay: ['MO'], endOn: '2026-08-31' });
-    expect(r).toEqual({ rrule: 'FREQ=WEEKLY;BYDAY=MO;UNTIL=20260831T235959Z' });
+    expect(r).toEqual({ rrule: 'FREQ=WEEKLY;BYDAY=MO;UNTIL=20260831T225959Z' });
+  });
+
+  it('stops on the London day it was given, for an occurrence just after midnight', () => {
+    // The case that made the UTC end-of-day wrong. An 00:30 repeat told to stop
+    // on 31 August must not produce one on 1 September.
+    const built = rruleFromForm({
+      freq: 'DAILY', interval: 1, byDay: [], endOn: '2026-08-31', startOn: '2026-08-24',
+    });
+    if ('error' in built) throw new Error(built.error);
+    const starts = expandRecurrence({
+      rrule: built.rrule,
+      dtstart: londonInstant('2026-08-24', '00:30').toISOString(),
+      from: londonInstant('2026-08-01', '00:00').toISOString(),
+      to: londonInstant('2026-09-30', '00:00').toISOString(),
+    }).map((o) => o.startsAt);
+    // Every occurrence is 00:30 London time, and the last is on the 31st.
+    expect(starts.every((s) => londonTimeHHMM(new Date(s)) === '00:30')).toBe(true);
+    expect(starts.length).toBe(8); // 24 to 31 August inclusive
+    const firstSeptember = londonInstant('2026-09-01', '00:00').toISOString();
+    expect(starts.every((s) => Date.parse(s) < Date.parse(firstSeptember))).toBe(true);
   });
 
   it('keeps the occurrence on the day it was told to stop', () => {
@@ -408,5 +434,161 @@ describe('building a repeat from a form', () => {
       expect(() => parseRrule(built.rrule)).not.toThrow();
       expect(describeRrule(built.rrule)).toBeTruthy();
     }
+  });
+});
+
+/**
+ * Reading a stored rule back into the form that builds one.
+ *
+ * The inverse of `rruleFromForm`, and the reason a repeat can now be changed
+ * rather than only created. The important cases are the refusals: a rule the form
+ * cannot express has to come back as `null`, because opening the form on it and
+ * saving would rewrite it as something narrower — and "the third Thursday"
+ * quietly becoming "every Thursday" is data loss nobody would see happen.
+ */
+describe('reading a repeat back into the form', () => {
+  it('round-trips every repeat the builder can build', () => {
+    const forms = [
+      { freq: 'DAILY', interval: 1, byDay: [], endOn: null, startOn: '2026-05-04' },
+      { freq: 'DAILY', interval: 3, byDay: [], endOn: '2026-08-31', startOn: '2026-05-04' },
+      { freq: 'WEEKLY', interval: 1, byDay: ['MO', 'WE'], endOn: null, startOn: '2026-05-04' },
+      { freq: 'WEEKLY', interval: 2, byDay: ['FR'], endOn: '2026-12-25', startOn: '2026-05-04' },
+      { freq: 'MONTHLY', interval: 1, byDay: [], endOn: null, startOn: '2026-05-04' },
+      { freq: 'YEARLY', interval: 1, byDay: [], endOn: '2030-01-01', startOn: '2026-05-04' },
+    ] as const;
+
+    for (const form of forms) {
+      const built = rruleFromForm(form);
+      expect(built, JSON.stringify(form)).not.toHaveProperty('error');
+      if ('error' in built) continue;
+      expect(repeatFormFromRrule(built.rrule, form.startOn), built.rrule).toEqual(form);
+    }
+  });
+
+  it('brings the end date back as the day a person typed, not the instant stored', () => {
+    // UNTIL is stored as the end of the last day; the form asked for the day.
+    const built = rruleFromForm({
+      freq: 'WEEKLY', interval: 1, byDay: ['TH'], endOn: '2026-10-25', startOn: '2026-09-03',
+    });
+    if ('error' in built) throw new Error(built.error);
+    // 25 October 2026 is the day the clocks go back: the London day ends at
+    // 23:59:59 GMT, which is the same wall clock and a different offset from the
+    // day before it.
+    expect(built.rrule).toContain('UNTIL=20261025T235959Z');
+    expect(repeatFormFromRrule(built.rrule, '2026-09-03')?.endOn).toBe('2026-10-25');
+  });
+
+  it('fills in the weekly day the builder implied, rather than leaving it empty', () => {
+    // A weekly repeat with no day chosen uses the start day; read back, the box
+    // for that day is ticked, which is what was stored.
+    const built = rruleFromForm({
+      freq: 'WEEKLY', interval: 1, byDay: [], endOn: null, startOn: '2026-05-04',
+    });
+    if ('error' in built) throw new Error(built.error);
+    expect(repeatFormFromRrule(built.rrule, '2026-05-04')?.byDay).toEqual(['MO']);
+  });
+
+  it('refuses an ordinal BYDAY rather than flattening it to every week', () => {
+    // "The third Thursday" parses and expands correctly; the form has no control
+    // for it, so it must not be opened on it.
+    expect(parseRrule('FREQ=MONTHLY;BYDAY=3TH').byDay).toEqual([{ weekday: 'TH', nth: 3 }]);
+    expect(repeatFormFromRrule('FREQ=MONTHLY;BYDAY=3TH', '2026-05-21')).toBeNull();
+    expect(repeatFormFromRrule('FREQ=MONTHLY;BYDAY=-1FR', '2026-05-29')).toBeNull();
+  });
+
+  it('refuses a COUNT, a BYMONTHDAY and a BYMONTH, all of which it cannot show', () => {
+    expect(repeatFormFromRrule('FREQ=DAILY;COUNT=10', '2026-05-04')).toBeNull();
+    expect(repeatFormFromRrule('FREQ=MONTHLY;BYMONTHDAY=31', '2026-05-31')).toBeNull();
+    expect(repeatFormFromRrule('FREQ=YEARLY;BYMONTH=3', '2026-03-04')).toBeNull();
+    expect(repeatFormFromRrule('FREQ=WEEKLY;WKST=SU', '2026-05-04')).toBeNull();
+  });
+
+  it('refuses a BYDAY on a frequency that is not weekly, which has no control at all', () => {
+    expect(repeatFormFromRrule('FREQ=MONTHLY;BYDAY=TU', '2026-05-05')).toBeNull();
+  });
+
+  it('refuses a rule it cannot even parse, rather than throwing at the caller', () => {
+    expect(repeatFormFromRrule('FREQ=FORTNIGHTLY', '2026-05-04')).toBeNull();
+    expect(repeatFormFromRrule('nonsense', '2026-05-04')).toBeNull();
+    expect(repeatFormFromRrule('FREQ=DAILY;BYSETPOS=1', '2026-05-04')).toBeNull();
+  });
+
+  it('reads a rule with no INTERVAL as every one', () => {
+    expect(repeatFormFromRrule('FREQ=WEEKLY;BYDAY=TU', '2026-05-05')).toEqual({
+      freq: 'WEEKLY', interval: 1, byDay: ['TU'], endOn: null, startOn: '2026-05-05',
+    });
+  });
+});
+
+/**
+ * Naming one occurrence of a series.
+ *
+ * An occurrence has no id — the database holds one row and one rule — so it is
+ * named by its own start instant, RFC 5545's RECURRENCE-ID. That instant reaches
+ * the server on a URL, which makes it a claim from the client, and the whole
+ * point of this function is that the claim is checked rather than trusted: an
+ * unchecked instant appended to EXDATE is a rule quietly carrying an exclusion
+ * that matches nothing, or worse, one that matches something later.
+ */
+describe('naming one occurrence of a series', () => {
+  const series = {
+    rrule: 'FREQ=WEEKLY;BYDAY=MO',
+    dtstart: londonInstant('2026-05-04', '09:00').toISOString(),
+    dtend: londonInstant('2026-05-04', '10:00').toISOString(),
+    exdates: [] as string[],
+  };
+
+  it('finds an occurrence at an instant the series really generates', () => {
+    const third = londonInstant('2026-05-18', '09:00').toISOString();
+    const found = occurrenceAt(series, third);
+    expect(found?.startsAt).toBe(third);
+    expect(found?.endsAt).toBe(londonInstant('2026-05-18', '10:00').toISOString());
+  });
+
+  it('finds the first occurrence, which is the event row itself', () => {
+    expect(occurrenceAt(series, series.dtstart)?.startsAt).toBe(series.dtstart);
+  });
+
+  it('refuses an instant a minute off, rather than snapping to the nearest', () => {
+    expect(occurrenceAt(series, londonInstant('2026-05-18', '09:01').toISOString())).toBeNull();
+    expect(occurrenceAt(series, londonInstant('2026-05-19', '09:00').toISOString())).toBeNull();
+  });
+
+  it('refuses an instant that is not a date at all', () => {
+    expect(occurrenceAt(series, 'next Tuesday')).toBeNull();
+    expect(occurrenceAt(series, '')).toBeNull();
+  });
+
+  it('says an already-skipped occurrence is not an occurrence', () => {
+    // Which is what makes "already skipped" distinguishable from "never
+    // existed", and what stops the same instant being excluded twice.
+    const skipped = londonInstant('2026-05-11', '09:00').toISOString();
+    expect(occurrenceAt(series, skipped)?.startsAt).toBe(skipped);
+    expect(occurrenceAt({ ...series, exdates: [skipped] }, skipped)).toBeNull();
+    // And the ones either side are untouched by the exclusion.
+    expect(occurrenceAt({ ...series, exdates: [skipped] }, series.dtstart)).not.toBeNull();
+  });
+
+  it('holds the wall clock across the spring clock change', () => {
+    // A weekly 09:00 on a Friday is 09:00 in March and 09:00 in April, even
+    // though the UTC instant moves by an hour between them.
+    const s = {
+      rrule: 'FREQ=WEEKLY;BYDAY=FR',
+      dtstart: londonInstant('2026-03-27', '09:00').toISOString(),
+      dtend: londonInstant('2026-03-27', '10:00').toISOString(),
+      exdates: [] as string[],
+    };
+    const afterBst = londonInstant('2026-04-03', '09:00').toISOString();
+    expect(s.dtstart).toBe('2026-03-27T09:00:00.000Z'); // GMT
+    expect(afterBst).toBe('2026-04-03T08:00:00.000Z'); // BST
+    expect(occurrenceAt(s, afterBst)?.startsAt).toBe(afterBst);
+    // The naive "same UTC instant a week later" is not an occurrence.
+    expect(occurrenceAt(s, '2026-04-03T09:00:00.000Z')).toBeNull();
+  });
+
+  it('refuses an instant past the end of a series that stops', () => {
+    const s = { ...series, rrule: 'FREQ=WEEKLY;BYDAY=MO;UNTIL=20260518T235959Z' };
+    expect(occurrenceAt(s, londonInstant('2026-05-18', '09:00').toISOString())).not.toBeNull();
+    expect(occurrenceAt(s, londonInstant('2026-05-25', '09:00').toISOString())).toBeNull();
   });
 });

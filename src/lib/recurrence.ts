@@ -20,7 +20,14 @@
  * Silently dropping one of those would produce a plausible wrong calendar.
  */
 
-import { addDaysISO, TZ, zonedInstant, zonedWallClock, type DateOnly } from '@/lib/format';
+import {
+  addDaysISO,
+  londonDayISO,
+  TZ,
+  zonedInstant,
+  zonedWallClock,
+  type DateOnly,
+} from '@/lib/format';
 
 export const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
@@ -189,7 +196,12 @@ export function rruleFromForm(form: RepeatForm): { rrule: string } | { error: st
     }
     // Inclusive of the whole last day. UNTIL is an instant, and 00:00 on the
     // last day would drop an occurrence somebody expected to keep.
-    until = `${form.endOn}T23:59:59.000Z`;
+    //
+    // The end of the last *London* day, not the last UTC one. `T23:59:59Z` is
+    // 00:59:59 the next morning in BST, so a series repeating at 00:30 would run
+    // one day past the day it was told to stop — and reading the rule back into
+    // the form would show the wrong end date, which is how this was found.
+    until = zonedInstant(form.endOn, '23:59:59').toISOString();
   }
 
   return {
@@ -204,6 +216,84 @@ export function rruleFromForm(form: RepeatForm): { rrule: string } | { error: st
       wkst: 'MO',
     }),
   };
+}
+
+/**
+ * A stored rule, read back into the form that builds one — the inverse of
+ * `rruleFromForm`, and the reason a repeat can now be *changed* rather than only
+ * created.
+ *
+ * It returns `null` rather than an approximation for any rule the builder cannot
+ * express: a `COUNT`, an ordinal `BYDAY` like "the third Thursday", a
+ * `BYMONTHDAY` or a `BYMONTH`, or a week starting on anything but Monday. All of
+ * those parse and all of them expand correctly — an imported feed using one
+ * works — but the form has no control for them, so opening it on one and saving
+ * would silently rewrite the rule as something narrower. A caller that gets
+ * `null` must show the rule in words and leave it alone. Losing "the third
+ * Thursday" by round-tripping it through a form without the concept is exactly
+ * the quiet data loss the whole conflict model exists to prevent.
+ *
+ * `endOn` comes back as the London day `UNTIL` falls on, which is what the form
+ * asked for and what `rruleFromForm` turns back into an end-of-day instant. The
+ * round trip is asserted in both directions by the tests.
+ */
+export function repeatFormFromRrule(rrule: string, startOn: DateOnly): RepeatForm | null {
+  let parsed: Rrule;
+  try {
+    parsed = parseRrule(rrule);
+  } catch {
+    return null;
+  }
+
+  if (parsed.count !== null) return null;
+  if (parsed.byMonthDay.length > 0 || parsed.byMonth.length > 0) return null;
+  if (parsed.wkst !== 'MO') return null;
+  if (parsed.byDay.some((d) => d.nth !== null)) return null;
+  // A BYDAY on anything but a weekly repeat is a shape the form cannot show:
+  // "every month on a Tuesday" has no control, and dropping the BYDAY would
+  // change which days it lands on.
+  if (parsed.freq !== 'WEEKLY' && parsed.byDay.length > 0) return null;
+  if (parsed.interval > 99) return null;
+
+  return {
+    freq: parsed.freq,
+    interval: parsed.interval,
+    byDay: parsed.freq === 'WEEKLY' ? parsed.byDay.map((d) => d.weekday) : [],
+    endOn: parsed.until === null ? null : londonDayISO(parsed.until),
+    startOn,
+  };
+}
+
+/**
+ * Is `instant` genuinely an occurrence of this series, and if so which one?
+ *
+ * A single occurrence is named by its own start instant — RFC 5545's
+ * RECURRENCE-ID, and what the calendar block's key has carried since Phase 2. An
+ * instant that arrives on a URL is a claim from the client, so it is checked
+ * against the expansion rather than trusted: without this, "skip the occurrence
+ * on <anything>" would append any instant somebody typed to the series' EXDATE
+ * list, and a rule quietly carrying junk exclusions is a rule that eventually
+ * drops an occurrence nobody excluded.
+ *
+ * An instant already excluded is not an occurrence, which is the answer that
+ * makes "already skipped" distinguishable from "never existed".
+ */
+export function occurrenceAt(
+  opts: Omit<ExpandOptions, 'from' | 'to' | 'maxOccurrences'>,
+  instant: string,
+): Occurrence | null {
+  const t = Date.parse(instant);
+  if (!Number.isFinite(t)) return null;
+  // A one-second window around the instant: expansion is inclusive of `from`
+  // and exclusive of `to`, and an occurrence starting exactly at `t` is the only
+  // one that can overlap it.
+  const found = expandRecurrence({
+    ...opts,
+    from: new Date(t).toISOString(),
+    to: new Date(t + 1000).toISOString(),
+    maxOccurrences: 4,
+  });
+  return found.find((o) => Date.parse(o.startsAt) === t) ?? null;
 }
 
 // ---------------------------------------------------------------------------

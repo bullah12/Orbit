@@ -137,6 +137,65 @@ export function outboxSummary(outbox: Outbox): { queued: number; conflicts: numb
 }
 
 // ---------------------------------------------------------------------------
+// Which device this browser is
+//
+// The queue lives in `localStorage`, which is scoped to a browser profile, and
+// every cursor on /sync belongs to a row in `devices`. Nothing connected the two,
+// so the page described two different things without saying so. A device is
+// identified by its *label*, because `devices` is keyed
+// (space_id, owner_id, label): one browser is one row per space, which is what a
+// space-scoped cursor requires. The label reaches the server in a cookie — see
+// src/lib/sync/device.ts for why a cookie and not this file's `localStorage`.
+// ---------------------------------------------------------------------------
+
+/** The longest label the form accepts. The column is `text`; this is for reading. */
+export const DEVICE_LABEL_MAX = 40;
+
+/**
+ * Trim, collapse the whitespace, cut to length.
+ *
+ * The label is half of a unique key, so " Laptop " and "Laptop" must not become
+ * two devices: a browser appearing twice because somebody typed a trailing space
+ * is exactly the confusion this whole change exists to remove.
+ */
+export function normaliseDeviceLabel(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim().slice(0, DEVICE_LABEL_MAX);
+}
+
+/**
+ * A first suggestion for what to call this browser, from its own user agent.
+ *
+ * A suggestion only — it is put in the box and the person can change it. Nothing
+ * is derived from it and nothing is sent anywhere: this is the same string the
+ * server already sees on every request, used to save somebody typing "Laptop".
+ */
+export function suggestDeviceLabel(userAgent: string): string {
+  const os = /Android/i.test(userAgent)
+    ? 'Android'
+    : /iPhone|iPad|iPod/i.test(userAgent)
+      ? 'iPhone'
+      : /Mac OS X|Macintosh/i.test(userAgent)
+        ? 'Mac'
+        : /Windows/i.test(userAgent)
+          ? 'Windows'
+          : /Linux/i.test(userAgent)
+            ? 'Linux'
+            : 'Browser';
+  const browser = /Firefox\//i.test(userAgent)
+    ? 'Firefox'
+    : /Edg\//i.test(userAgent)
+      ? 'Edge'
+      : /OPR\//i.test(userAgent)
+        ? 'Opera'
+        : /Chrome\//i.test(userAgent)
+          ? 'Chrome'
+          : /Safari\//i.test(userAgent)
+            ? 'Safari'
+            : 'browser';
+  return normaliseDeviceLabel(`${os} ${browser}`);
+}
+
+// ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
 

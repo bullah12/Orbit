@@ -131,10 +131,15 @@ export default async function TravelPage({
         {sessions.length === 0 ? (
           <p className="faint mb-3 text-[12px]">No trips recorded.</p>
         ) : (
-          <ul className="mb-3 flex flex-col gap-1" aria-label="Trips">
+          <ul className="mb-3 flex flex-col gap-1" aria-label="Trips" id="trip-list">
             {sessions.map((s) => (
               <li key={s.id} className="hairline row-hover flex flex-wrap items-baseline gap-2 border-b py-1.5">
-                <span className="min-w-0 flex-1 truncate text-[13px]">{s.title}</span>
+                <Link
+                  href={`/travel/trip/${s.id}`}
+                  className="min-w-0 flex-1 truncate text-[13px] underline-offset-2 hover:underline"
+                >
+                  {s.title}
+                </Link>
                 {sessionIsActive(s) && (
                   <span className="text-[11px] font-medium" style={{ color: 'var(--accent)' }}>
                     now

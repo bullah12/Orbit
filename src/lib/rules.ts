@@ -164,6 +164,149 @@ export const ACTION_KINDS = [
 ] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
+export function isActionKind(v: unknown): v is ActionKind {
+  return typeof v === 'string' && (ACTION_KINDS as readonly string[]).includes(v);
+}
+
+export const ACTION_LABEL: Record<ActionKind, string> = {
+  'task.set_priority': 'Set the priority',
+  'task.set_status': 'Set the status',
+  'task.assign': 'Assign it',
+  'task.defer_days': 'Defer it',
+  'task.due_in_days': 'Make it due',
+  notify: 'Notify me',
+};
+
+export const PRIORITY_LABEL: Record<Priority, string> = {
+  none: 'no priority',
+  low: 'low',
+  normal: 'normal',
+  high: 'high',
+  urgent: 'urgent',
+};
+
+export const STATUS_LABEL: Record<Status, string> = {
+  todo: 'to do',
+  doing: 'in progress',
+  blocked: 'blocked',
+  done: 'done',
+  dropped: 'dropped',
+};
+
+export const ASSIGNEE_LABEL: Record<AssigneeRef, string> = {
+  me: 'me',
+  partner: 'my partner',
+  nobody: 'nobody',
+};
+
+/**
+ * What each action kind's one parameter actually *is*.
+ *
+ * Every action in Orbit takes exactly one parameter, but each kind names it
+ * something different and each accepts a different set of values. Until this
+ * existed the form was one select plus one free-text box captioned "a priority,
+ * a status, me / partner / nobody, a number of days, or a message" — which is
+ * six answers to a question the form already knew the answer to, and it is why
+ * an action could not be edited where it sits: repeating that box per row would
+ * have stacked up four differently-meaning boxes with the same label.
+ *
+ * With this, one control renders per kind, and it knows which key of the action
+ * object it is filling in. `control` picks the widget; `name` is the key. The
+ * list stays closed for the same reason `SYNCABLE_FIELDS` and the condition
+ * fields do: an open one turns a typo into a shape nothing can parse.
+ */
+export type ActionParamSpec = {
+  /** The key inside the action object this control sets. */
+  name: 'priority' | 'status' | 'to' | 'days' | 'message';
+  /** Used as the visible label when composing and the accessible name per row. */
+  label: string;
+  control: 'choice' | 'days' | 'text';
+  /** Present exactly when `control` is `choice`: value → what to call it. */
+  options?: Record<string, string>;
+  /** A `notify` with no message is a valid action; the rest need an answer. */
+  required: boolean;
+};
+
+export const ACTION_PARAMS: Record<ActionKind, ActionParamSpec> = {
+  'task.set_priority': {
+    name: 'priority',
+    label: 'To which priority',
+    control: 'choice',
+    options: PRIORITY_LABEL,
+    required: true,
+  },
+  'task.set_status': {
+    name: 'status',
+    label: 'To which status',
+    control: 'choice',
+    options: STATUS_LABEL,
+    required: true,
+  },
+  'task.assign': {
+    name: 'to',
+    label: 'To whom',
+    control: 'choice',
+    options: ASSIGNEE_LABEL,
+    required: true,
+  },
+  'task.defer_days': {
+    name: 'days',
+    label: 'By how many days',
+    control: 'days',
+    required: true,
+  },
+  'task.due_in_days': {
+    name: 'days',
+    label: 'Due in how many days',
+    control: 'days',
+    required: true,
+  },
+  notify: {
+    name: 'message',
+    label: 'What it should say',
+    control: 'text',
+    required: false,
+  },
+};
+
+/**
+ * The action's current parameter as a string, so a form can be pre-filled with
+ * what is stored. The inverse of `rawActionFrom`.
+ */
+export function actionParamValue(a: Action): string {
+  switch (a.kind) {
+    case 'task.set_priority':
+      return a.priority;
+    case 'task.set_status':
+      return a.status;
+    case 'task.assign':
+      return a.to;
+    case 'task.defer_days':
+    case 'task.due_in_days':
+      return String(a.days);
+    case 'notify':
+      return a.message ?? '';
+  }
+}
+
+/**
+ * One kind plus one submitted string, turned into the shape `parseActions`
+ * checks. It deliberately does **not** validate: `parseActions` is the single
+ * place that decides whether an action is well formed, and duplicating that
+ * here would eventually mean two answers to the same question. An unknown kind
+ * produces `{ kind }`, which `parseActions` then refuses by name.
+ */
+export function rawActionFrom(kind: string, value: string): Record<string, unknown> {
+  if (!isActionKind(kind)) return { kind };
+  const spec = ACTION_PARAMS[kind];
+  if (spec.control === 'days') {
+    // An empty box is not zero days: "" would silently become "due today",
+    // which is a real change nobody asked for. NaN is refused by name instead.
+    return { kind, days: value.trim() === '' ? NaN : Number(value) };
+  }
+  return { kind, [spec.name]: value };
+}
+
 // ---------------------------------------------------------------------------
 // Facts
 // ---------------------------------------------------------------------------
@@ -489,22 +632,6 @@ export function matchConditions(
 // ---------------------------------------------------------------------------
 // Actions — effects
 // ---------------------------------------------------------------------------
-
-const PRIORITY_LABEL: Record<Priority, string> = {
-  none: 'no priority',
-  low: 'low',
-  normal: 'normal',
-  high: 'high',
-  urgent: 'urgent',
-};
-
-const STATUS_LABEL: Record<Status, string> = {
-  todo: 'to do',
-  doing: 'in progress',
-  blocked: 'blocked',
-  done: 'done',
-  dropped: 'dropped',
-};
 
 function resolveAssignee(to: AssigneeRef, members: Members): { id: string | null; name: string } {
   if (to === 'nobody') return { id: null, name: 'nobody' };

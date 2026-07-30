@@ -38,8 +38,23 @@ const S_WORK = '00000000-0000-4000-8000-000000000005';
 const TRAVEL_DAY = '2026-07-29';
 let placeUrl;
 let privatePlaceUrl;
+let tripUrl;
 let failures = 0;
 const results = [];
+
+/**
+ * One day on from a `yyyy-mm-dd`, in UTC.
+ *
+ * Only ever used to move a date *box* by a day and then move it back, so the
+ * London/UTC distinction cannot bite here: it never crosses a clock change
+ * because it is always immediately undone. `src/lib/format.ts` is the place that
+ * does this properly, and the suite deliberately does not import from the app.
+ */
+function addDays(iso, n) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 function check(name, ok, detail = '') {
   results.push({ name, ok, detail });
@@ -1128,6 +1143,108 @@ try {
     await manual.first().locator('button[aria-label^="Delete the journey"]').click();
     await settle(page);
 
+    // ---- a trip's own page ----
+    //
+    // Rough edge since Phase 4: a trip could be created and deleted and nothing
+    // in between, so a date typed wrong meant deleting the trip — and the FK
+    // cascades, so that took its journeys with it.
+    await page.goto(`/travel?day=${TRAVEL_DAY}`);
+    const pembroke = page.locator('#trip-list li', { hasText: 'Pembrokeshire' }).first();
+    const journeysOnRow = (await pembroke.innerText()).match(/(\d+) journe/);
+    await pembroke.locator('a[href^="/travel/trip/"]').click();
+    await settle(page);
+    tripUrl = page.url().split('?')[0];
+    check('a trip opens on its own page', /\/travel\/trip\/[0-9a-f-]{36}$/.test(tripUrl), tripUrl);
+
+    const tripText = await page.locator('main, body').first().innerText();
+    check(
+      'and says where the trip stands, worked out from its dates rather than stored',
+      /days? ago|Away now|Ended today|In \d+ day/.test(tripText) &&
+        tripText.includes('worked out from these dates'),
+      (tripText.match(/days? ago|Away now|Ended today|In \d+ days?/) ?? [''])[0],
+    );
+    check(
+      'and repeats that Orbit does not know where you are',
+      tripText.includes('no background location'),
+    );
+    check(
+      'and lists the journeys attached to it, the same number the list row counted',
+      (await page.locator('ul[aria-label="Journeys on this trip"] li').count()) ===
+        Number(journeysOnRow?.[1] ?? -1),
+      `${await page.locator('ul[aria-label="Journeys on this trip"] li').count()} listed, row said ${journeysOnRow?.[1]}`,
+    );
+    check(
+      'every journey on the trip carries a space indicator',
+      (await page.locator('ul[aria-label="Journeys on this trip"] li span[title^="Space:"]').count()) ===
+        (await page.locator('ul[aria-label="Journeys on this trip"] li').count()),
+    );
+
+    // Its dates and notes are editable — and a range that ends before it starts
+    // is refused with a sentence rather than a 500 from the check constraint.
+    const originalEnd = await page.locator('#trip-end').inputValue();
+    const originalStart = await page.locator('#trip-start').inputValue();
+    await page.fill('#trip-end', '2020-01-01');
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    check(
+      'a trip that would end before it starts is refused, and says so',
+      // Scoped to the page's own live region: Next's route announcer is also a
+      // role="alert", and an unscoped locator matches both.
+      (await page.locator('[aria-live="polite"] [role="alert"]').innerText()).includes(
+        'cannot end before it starts',
+      ),
+    );
+    check(
+      'and nothing was changed by the refusal',
+      (await page.locator('#trip-end').inputValue()) === originalEnd,
+      await page.locator('#trip-end').inputValue(),
+    );
+
+    await page.fill('#trip-title', 'Half term — Pembrokeshire (smoke)');
+    await page.fill('#trip-notes', 'Cottage booked. Take the big cool bag.\n\nSmoke ran here.');
+    await page.fill('#trip-end', addDays(originalEnd, 1));
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    const savedTrip = await page.locator('main, body').first().innerText();
+    check(
+      'a trip can be renamed, redated and annotated in one save',
+      savedTrip.includes('Half term — Pembrokeshire (smoke)') && savedTrip.includes('Smoke ran here.'),
+    );
+    check(
+      'and its notes render as Markdown below the form',
+      (await page.locator('h2:has-text("Rendered")').count()) === 1,
+    );
+    check(
+      'and the new dates change the number of days it covers',
+      (await page.locator('#trip-end').inputValue()) === addDays(originalEnd, 1),
+    );
+    check(
+      'and its journeys are untouched by a change of dates',
+      (await page.locator('ul[aria-label="Journeys on this trip"] li').count()) ===
+        Number(journeysOnRow?.[1] ?? -1),
+    );
+    check(
+      'and the page says the journeys were left alone',
+      savedTrip.includes('editing a trip’s dates does not'),
+    );
+
+    const tripUnnamed = await labelAuditOn(page);
+    check('every control on the trip page has a label', tripUnnamed.length === 0, tripUnnamed.join(', '));
+
+    // Put it back, all three fields, so this passes twice in a row.
+    await page.fill('#trip-title', 'Half term — Pembrokeshire');
+    await page.fill('#trip-notes', 'Cottage booked. Take the big cool bag.');
+    await page.fill('#trip-end', originalEnd);
+    await page.fill('#trip-start', originalStart);
+    await page.click('button:has-text("Save changes")');
+    await settle(page);
+    check(
+      'and it is put back exactly as it was found',
+      (await page.locator('h1').first().innerText()) === 'Half term — Pembrokeshire' &&
+        (await page.locator('#trip-end').inputValue()) === originalEnd &&
+        (await page.locator('#trip-start').inputValue()) === originalStart,
+    );
+
     await ctx.close();
   }
 
@@ -1145,11 +1262,23 @@ try {
       'and not the trip in the space he only sees as free/busy',
       !titles.some((t) => t.includes('Leeds')),
     );
+    // The trip page is a page, so it is a policy question too.
+    await page.goto(tripUrl);
+    check(
+      'the partner can open the trip in the space he shares',
+      (await page.locator('h1').first().innerText()).includes('Pembrokeshire'),
+    );
     await ctx.close();
   }
 
   {
     const { ctx, page } = await pageAs(OUTSIDER);
+    const res = await page.goto(tripUrl);
+    check(
+      'the outsider gets a not-found on the trip page, never a forbidden',
+      res.status() === 404,
+      `HTTP ${res.status()}`,
+    );
     await page.goto(`/travel?day=${TRAVEL_DAY}`);
     const body = await page.locator('main').innerText();
     check('the outsider sees no trips', body.includes('No trips recorded'));
@@ -1223,7 +1352,7 @@ try {
     await condForm.getByRole('button', { name: 'Add condition' }).click();
     await settle(page);
 
-    const actForm = page.locator('form:has(select[name="kind"])');
+    const actForm = page.locator('form[aria-label="Add an action"]');
     await actForm.locator('select[name="kind"]').selectOption('notify');
     await actForm.locator('input[name="value"]').fill('Bins tonight');
     await actForm.getByRole('button', { name: 'Add action' }).click();
@@ -1313,6 +1442,102 @@ try {
       await page.locator('#rule-conditions li').first()
         .getByRole('button', { name: 'Save this condition' }).click();
       await settle(page);
+    }
+
+    // An action is edited where it sits too — rough edge 15, half-closed last
+    // session. The interesting part is not that it saves: it is that the one box
+    // knows which parameter it is setting, so changing the kind changes the
+    // control in front of you rather than leaving a free-text box that now means
+    // something else.
+    {
+      const row = () => page.locator('#rule-actions li').first();
+      check(
+        'an action carries a form of its own, where it sits',
+        (await row().locator('select[name="kind"]').count()) === 1,
+      );
+      check(
+        'and a notify action offers a message box, because that is its parameter',
+        (await row().locator('input[name="value"]').count()) === 1 &&
+          (await row().locator('select[name="value"]').count()) === 0,
+      );
+
+      await row().locator('input[name="value"]').fill('Recycling tonight');
+      await row().getByRole('button', { name: 'Save this action' }).click();
+      await settle(page);
+      check(
+        'an action can be changed in place',
+        (await row().innerText()).includes('notify me: “Recycling tonight”'),
+        (await row().innerText()).split('\n')[0],
+      );
+      check(
+        'and stays where it was, rather than being re-added at the end where it would run later',
+        (await page.locator('#rule-actions li').count()) === 1,
+      );
+
+      // Prove the switch-off is caused by the edit, not left over: preview it
+      // first so the rule is genuinely ready to run, then change an action.
+      await page.getByRole('button', { name: /Dry run/ }).click();
+      await settle(page);
+      check(
+        'a previewed rule is ready to run again',
+        await page.getByRole('button', { name: 'Switch on' }).isEnabled(),
+      );
+
+      // Change the kind: the message box has to become a list of priorities.
+      await row().locator('select[name="kind"]').selectOption('task.set_priority');
+      const valueOptions = await row().locator('select[name="value"] option').allInnerTexts();
+      check(
+        'changing the kind changes the control, so the box always knows what it sets',
+        (await row().locator('input[name="value"]').count()) === 0 &&
+          valueOptions.includes('urgent') && valueOptions.includes('no priority'),
+        valueOptions.join(' / '),
+      );
+      check(
+        'and it does not carry the old kind’s value across into the new vocabulary',
+        (await row().locator('select[name="value"]').inputValue()) === '',
+      );
+
+      await row().locator('select[name="value"]').selectOption('high');
+      await row().getByRole('button', { name: 'Save this action' }).click();
+      await settle(page);
+      check(
+        'an action can be changed to a different kind entirely',
+        (await row().innerText()).includes('set priority to high'),
+        (await row().innerText()).split('\n')[0],
+      );
+      check(
+        'and editing an action switches the rule off, as any structural edit does',
+        await page.getByRole('button', { name: 'Switch on' }).isDisabled(),
+      );
+
+      // A number of days left empty is refused by name rather than read as zero,
+      // which would quietly mean "due today".
+      await row().locator('select[name="kind"]').selectOption('task.due_in_days');
+      check(
+        'a days action offers a number box, not free text',
+        (await row().locator('input[name="value"][type="number"]').count()) === 1,
+      );
+      await row().locator('input[name="value"]').fill('3');
+      await row().getByRole('button', { name: 'Save this action' }).click();
+      await settle(page);
+      check(
+        'and a number of days reads back as days',
+        (await row().innerText()).includes('make it due in 3 days'),
+      );
+
+      // Put it back, so what follows finds the rule it built.
+      await row().locator('select[name="kind"]').selectOption('notify');
+      await row().locator('input[name="value"]').fill('Bins tonight');
+      await row().getByRole('button', { name: 'Save this action' }).click();
+      await settle(page);
+      check(
+        'and back to the notify it started as',
+        (await row().innerText()).includes('notify me: “Bins tonight”'),
+      );
+      check(
+        'with one action throughout, never two',
+        (await page.locator('#rule-actions li').count()) === 1,
+      );
     }
 
     const ruleUnnamed = await labelAuditOn(page);
@@ -2026,6 +2251,119 @@ try {
     const syncUnnamed = await labelAuditOn(page);
     check('every control on the task page has a label', syncUnnamed.length === 0, syncUnnamed.join(', '));
 
+    // ---- coming back online sends what is queued, once ----
+    //
+    // Rough edge 2: nothing flushed automatically, so an edit made on a train sat
+    // there until somebody noticed the page. This is a listener on the browser's
+    // own `online` event, not a retry ladder — a retry that cannot tell "never
+    // arrived" from "arrived and the answer was lost" is banned by the same rule
+    // that keeps a push from retrying.
+    const backOnline = `${stamp} online`;
+    await page.goto(taskUrl);
+    await page.getByLabel('Work offline').check();
+    await settle(page);
+    const onlineField = page
+      .locator('#offline-edit-heading')
+      .locator('..')
+      .locator('..')
+      .locator('input[type="text"], input:not([type])')
+      .first();
+    await onlineField.fill(backOnline);
+    await onlineField.blur();
+    await page.waitForTimeout(400);
+    await page.goto('/sync');
+    check(
+      'an edit made while offline is waiting, as before',
+      (await page.locator('#outbox-queued li').count()) === 1,
+    );
+    // Untick first: the switch is a person saying "not yet", and the browser
+    // regaining a network must not overrule them.
+    await page.getByLabel('Work offline').uncheck();
+    await settle(page);
+    check(
+      'unticking Work offline does not itself send anything',
+      (await page.locator('#outbox-queued li').count()) === 1,
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await settle(page);
+    check(
+      'the browser coming back online sends the queue by itself',
+      (await page.locator('#outbox-queued li').count()) === 0,
+      await page.locator('#outbox-summary').innerText(),
+    );
+    check(
+      'and says that is why it sent, rather than looking like a button was pressed',
+      (await page.locator('main, body').first().innerText()).includes('Back online'),
+    );
+    await page.goto(taskUrl);
+    check(
+      'and the edit really landed on the server',
+      (await page.locator('h1').innerText()) === backOnline,
+      await page.locator('h1').innerText(),
+    );
+
+    // ---- the queue and the cursors are the same device, and say so ----
+    //
+    // Rough edge 1: the outbox is one browser profile's localStorage and every
+    // cursor belongs to a row in `devices`, and nothing connected them.
+    await page.goto('/sync');
+    check(
+      'until it is named, the page says the queue is not tied to a device',
+      (await page.locator('section[aria-labelledby="thisdevice-heading"]').innerText()).includes(
+        'has not said which device it is',
+      ),
+    );
+    check(
+      'and the queue heading claims only to be this browser’s',
+      (await page.locator('#outbox-heading').innerText()) === 'This browser’s queue',
+      await page.locator('#outbox-heading').innerText(),
+    );
+    check(
+      'and no device row is marked as this browser',
+      (await page.locator('#sync-devices li', { hasText: 'this browser' }).count()) === 0,
+    );
+
+    // Named as the seeded laptop, so the chip lands on rows that already have
+    // cursors — which is the whole point: the halves now describe one device.
+    await page.locator('section[aria-labelledby="thisdevice-heading"] input[name="label"]').fill(
+      '  Priya —   laptop  ',
+    );
+    await page.getByRole('button', { name: /^(Name this browser|Save this name)$/ }).click();
+    await settle(page);
+    check(
+      'naming the browser ties the queue to a device row',
+      (await page.locator('#outbox-heading').innerText()) === 'Priya — laptop — its queue',
+      await page.locator('#outbox-heading').innerText(),
+    );
+    const marked = await page.locator('#sync-devices li', { hasText: 'this browser' }).count();
+    check(
+      'and every row with that name is marked as this browser, one per space',
+      marked >= 2,
+      `${marked} marked`,
+    );
+    check(
+      // The name was typed with stray whitespace on purpose. Unnormalised it
+      // would be a label no seeded row carries, so nothing above would be marked
+      // and the box would read back with the spaces still in it.
+      'and the stray whitespace was normalised rather than making a second device',
+      (await page
+        .locator('section[aria-labelledby="thisdevice-heading"] input[name="label"]')
+        .inputValue()) === 'Priya — laptop',
+      await page
+        .locator('section[aria-labelledby="thisdevice-heading"] input[name="label"]')
+        .inputValue(),
+    );
+    check(
+      'and the page says why there is more than one row for one browser',
+      (await page.locator('section[aria-labelledby="thisdevice-heading"]').innerText()).includes(
+        'because a cursor is space-scoped',
+      ),
+    );
+    check(
+      'and it still shows a cursor per kind for it',
+      (await page.locator('#sync-cursors tbody tr').count()) === 5,
+    );
+
     // ---- cursors move forward, and only on purpose ----
     await page.goto('/sync');
     const syncPageUnnamed = await labelAuditOn(page);
@@ -2178,10 +2516,144 @@ try {
 
     await page.locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle }).first().click();
     await settle(page);
-    const repeatUrl = page.url();
+    const repeatUrl = page.url().split('?')[0];
     check(
       'and its detail page reads the rule back in words',
-      /(week|Week)/.test(await page.locator('main').innerText()),
+      /(week|Week)/.test(await page.locator('body').innerText()),
+    );
+
+    // ---- editing a repeat, not only creating one ----
+    //
+    // Rough edges 11 and 20. rruleFromForm could build a rule and nothing could
+    // read one back, so a repeat was fixed at the moment it was made.
+    const occurrencesDrawn = async () => {
+      await page.goto('/calendar/month?date=2026-08-03');
+      return page.locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle }).count();
+    };
+
+    await occurrencesDrawn(); // back to the month view, where the blocks are
+    check(
+      'a block links to the occurrence that was clicked, not just to the series',
+      /[?&]on=/.test(
+        await page
+          .locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle })
+          .first()
+          .getAttribute('href'),
+      ),
+    );
+
+    await page.goto(repeatUrl);
+    check(
+      'the stored rule is read back into the form that built it',
+      (await page.locator('select[name="repeatFreq"]').inputValue()) === 'WEEKLY' &&
+        (await page.locator('input[name="repeatUntil"]').inputValue()) === '2026-08-31',
+      `${await page.locator('select[name="repeatFreq"]').inputValue()} until ${await page.locator('input[name="repeatUntil"]').inputValue()}`,
+    );
+    check(
+      'including which day it lands on — 3 August 2026 is a Monday',
+      await page.locator('input[name="repeatByDay"][value="MO"]').isChecked(),
+    );
+
+    // Change it: every two weeks instead of every week.
+    await page.locator('input[name="repeatInterval"]').fill('2');
+    await page.getByRole('button', { name: 'Change the repeat' }).click();
+    await settle(page);
+    const fortnightly = await occurrencesDrawn();
+    check(
+      'changing the repeat changes how often it is drawn',
+      fortnightly < drawn && fortnightly >= 2,
+      `${drawn} weekly → ${fortnightly} fortnightly`,
+    );
+    await page.goto(repeatUrl);
+    check(
+      'and the changed rule reads back as the change, in words',
+      (await page.locator('body').innerText()).includes('2 weeks'),
+    );
+
+    // Put it back to weekly, and check it is the same series it was.
+    await page.locator('input[name="repeatInterval"]').fill('1');
+    await page.getByRole('button', { name: 'Change the repeat' }).click();
+    await settle(page);
+    check('and back to weekly draws what it drew before', (await occurrencesDrawn()) === drawn);
+
+    // ---- one occurrence, skipped and put back ----
+    //
+    // The first use of recurrence_rules.exdates from the UI: migration 0010 added
+    // the column in Phase 2 and only the importer ever wrote it.
+    const secondBlock = page
+      .locator('main a[href^="/calendar/event/"]', { hasText: repeatTitle })
+      .nth(1);
+    const secondHref = await secondBlock.getAttribute('href');
+    await secondBlock.click();
+    await settle(page);
+    check(
+      'the page says which occurrence you came from',
+      (await page.locator('section[aria-label="This occurrence"]').innerText()).includes(
+        'one occurrence of this series',
+      ),
+    );
+    await page.getByRole('button', { name: /^Skip / }).click();
+    await settle(page);
+    const afterSkip = await occurrencesDrawn();
+    check(
+      'skipping one occurrence removes exactly that one',
+      afterSkip === drawn - 1,
+      `${drawn} → ${afterSkip}`,
+    );
+    await page.goto(repeatUrl);
+    check(
+      'and the series says so, rather than the occurrence vanishing silently',
+      (await page.locator('body').innerText()).includes('1 occurrence is skipped'),
+    );
+
+    // The same link now describes it as skipped, and offers it back. Nothing was
+    // deleted: an occurrence is not a row.
+    await page.goto(secondHref);
+    check(
+      'the skipped occurrence says it is skipped and nothing was deleted',
+      (await page.locator('section[aria-label="This occurrence"]').innerText()).includes(
+        'nothing was deleted',
+      ),
+    );
+    await page.getByRole('button', { name: 'Put it back' }).click();
+    await settle(page);
+    check(
+      'and putting it back restores exactly that one',
+      (await occurrencesDrawn()) === drawn,
+    );
+
+    // An instant the series does not generate is refused rather than stored as a
+    // junk exclusion — the URL is a claim from the client.
+    await page.goto(`${repeatUrl}?on=2026-08-04T09:00:00.000Z`);
+    check(
+      'an instant the series never generates is not an occurrence to skip',
+      (await page.locator('section[aria-label="This occurrence"]').innerText()).includes(
+        'no occurrence starting then',
+      ),
+    );
+
+    const eventUnnamed = await labelAuditOn(page);
+    check('every control on the event page has a label', eventUnnamed.length === 0, eventUnnamed.join(', '));
+
+    // ---- and a repeat can be removed without deleting the event ----
+    // Choosing "Does not repeat" is what removes it, and the button says so
+    // rather than a separate destructive-looking control sitting there always.
+    await page.goto(repeatUrl);
+    await page.locator('select[name="repeatFreq"]').selectOption('');
+    await page.getByRole('button', { name: 'Stop repeating' }).click();
+    await settle(page);
+    check(
+      'a repeat can be removed, leaving one event where the series was',
+      (await occurrencesDrawn()) === 1,
+    );
+    await page.goto(repeatUrl);
+    check(
+      'and the event itself survived losing its repeat',
+      (await page.locator('h1').innerText()) === repeatTitle,
+    );
+    check(
+      'and it is offered a repeat again rather than left unable to have one',
+      (await page.locator('select[name="repeatFreq"]').inputValue()) === '',
     );
 
     // A repeat that cannot be built is refused with a sentence, not silently

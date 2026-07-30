@@ -1,18 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACTION_KINDS,
+  ACTION_LABEL,
+  ACTION_PARAMS,
   RuleShapeError,
+  actionParamValue,
   describeAction,
   describeCondition,
   describeRule,
   effectOf,
   evaluate,
   evaluateAll,
+  isActionKind,
   isSweep,
   matchCondition,
   matchConditions,
   parseActions,
   parseConditions,
   parseTrigger,
+  rawActionFrom,
   readField,
   validateRule,
   type Action,
@@ -645,5 +651,97 @@ describe('describing a rule to somebody who has to trust it', () => {
 
   it('says out loud when a rule has no conditions', () => {
     expect(describeRule(rule({ conditions: [] }))).toContain('every task, with no conditions');
+  });
+});
+
+/**
+ * The action form's half of the contract.
+ *
+ * `ACTION_PARAMS` is what lets one control render per action kind instead of one
+ * free-text box captioned with all six meanings at once, and it is what made an
+ * action editable where it sits. Two things have to hold for it to be safe: every
+ * kind has a spec (otherwise a kind renders with no control at all), and
+ * `rawActionFrom` and `actionParamValue` are inverses (otherwise editing a row
+ * silently changes it, which is the worst possible bug in a form whose whole job
+ * is to leave the other fields alone).
+ */
+describe('one action, into a form and back out', () => {
+  it('has a parameter spec for every action kind, and none for anything else', () => {
+    expect(Object.keys(ACTION_PARAMS).sort()).toEqual([...ACTION_KINDS].sort());
+    for (const kind of ACTION_KINDS) {
+      const spec = ACTION_PARAMS[kind];
+      expect(ACTION_LABEL[kind]).toBeTruthy();
+      expect(spec.label).toBeTruthy();
+      // A choice has options; anything else must not pretend to.
+      if (spec.control === 'choice') expect(Object.keys(spec.options ?? {}).length).toBeGreaterThan(1);
+      else expect(spec.options).toBeUndefined();
+    }
+  });
+
+  it('offers only values the parser accepts, for every choice', () => {
+    for (const kind of ACTION_KINDS) {
+      const spec = ACTION_PARAMS[kind];
+      if (spec.control !== 'choice') continue;
+      for (const value of Object.keys(spec.options ?? {})) {
+        expect(() => parseActions([rawActionFrom(kind, value)])).not.toThrow();
+      }
+    }
+  });
+
+  it('round-trips every action through the form and back unchanged', () => {
+    const every: Action[] = [
+      { kind: 'task.set_priority', priority: 'urgent' },
+      { kind: 'task.set_status', status: 'blocked' },
+      { kind: 'task.assign', to: 'partner' },
+      { kind: 'task.defer_days', days: 3 },
+      { kind: 'task.due_in_days', days: 0 },
+      { kind: 'notify', message: 'Bins go out' },
+    ];
+    for (const action of every) {
+      const [back] = parseActions([rawActionFrom(action.kind, actionParamValue(action))]);
+      expect(back).toEqual(action);
+    }
+  });
+
+  it('puts the submitted string under the key that kind actually uses', () => {
+    expect(rawActionFrom('task.set_priority', 'high')).toEqual({ kind: 'task.set_priority', priority: 'high' });
+    expect(rawActionFrom('task.set_status', 'done')).toEqual({ kind: 'task.set_status', status: 'done' });
+    expect(rawActionFrom('task.assign', 'me')).toEqual({ kind: 'task.assign', to: 'me' });
+    expect(rawActionFrom('task.defer_days', '7')).toEqual({ kind: 'task.defer_days', days: 7 });
+    expect(rawActionFrom('notify', 'Bins')).toEqual({ kind: 'notify', message: 'Bins' });
+  });
+
+  it('reads an empty days box as no answer, not as zero days', () => {
+    // "" becoming 0 would silently mean "due today" — a real change to somebody's
+    // tasks, made by leaving a box alone. It has to be refused by name instead.
+    expect(rawActionFrom('task.due_in_days', '').days).toBeNaN();
+    expect(() => parseActions([rawActionFrom('task.due_in_days', '')])).toThrow(RuleShapeError);
+    expect(() => parseActions([rawActionFrom('task.defer_days', '  ')])).toThrow(/whole number of days/);
+  });
+
+  it('keeps an empty notify message, because a notify with no message is valid', () => {
+    expect(parseActions([rawActionFrom('notify', '')])).toEqual([{ kind: 'notify', message: '' }]);
+  });
+
+  it('refuses a value from the wrong vocabulary rather than coercing it', () => {
+    // Switching a row's kind is exactly how this arrives: "normal" is a priority
+    // and is not a number of days.
+    expect(() => parseActions([rawActionFrom('task.defer_days', 'normal')])).toThrow(RuleShapeError);
+    expect(() => parseActions([rawActionFrom('task.set_priority', 'todo')])).toThrow(/unknown priority/);
+    expect(() => parseActions([rawActionFrom('task.assign', 'priya')])).toThrow(/cannot resolve/);
+  });
+
+  it('hands an unknown kind on to the parser to refuse by name', () => {
+    expect(rawActionFrom('task.delete', 'yes')).toEqual({ kind: 'task.delete' });
+    expect(() => parseActions([rawActionFrom('task.delete', 'yes')])).toThrow(/unknown action: task.delete/);
+    expect(isActionKind('task.delete')).toBe(false);
+    expect(isActionKind('notify')).toBe(true);
+  });
+
+  it('rejects a fractional or negative number of days from a tampered form', () => {
+    expect(() => parseActions([rawActionFrom('task.defer_days', '1.5')])).toThrow(RuleShapeError);
+    expect(() => parseActions([rawActionFrom('task.defer_days', '-1')])).toThrow(RuleShapeError);
+    expect(() => parseActions([rawActionFrom('task.defer_days', '3651')])).toThrow(RuleShapeError);
+    expect(() => parseActions([rawActionFrom('task.defer_days', '3650')])).not.toThrow();
   });
 });
