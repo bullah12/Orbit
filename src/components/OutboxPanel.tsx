@@ -110,7 +110,7 @@ export function OutboxPanel({
 
   if (!outbox) {
     return (
-      <p className="faint px-5 py-3 text-[12px]" aria-live="polite">
+      <p className="faint px-5 py-3 text-xs" aria-live="polite">
         Reading this device’s queue…
       </p>
     );
@@ -180,10 +180,10 @@ export function OutboxPanel({
     <>
       <section className="hairline border-b px-5 py-4" aria-labelledby="outbox-heading">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="outbox-heading" className="text-[13px] font-semibold">
+          <h2 id="outbox-heading" className="text-sm font-semibold">
             {deviceLabel === null ? 'This browser’s queue' : `${deviceLabel} — its queue`}
           </h2>
-          <label className="flex items-center gap-2 text-[12px]">
+          <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"
               checked={offline}
@@ -202,12 +202,12 @@ export function OutboxPanel({
           </label>
         </div>
 
-        <p className="muted mt-1 text-[12px]" role="status" aria-live="polite" id="outbox-summary">
+        <p className="muted mt-1 text-xs" role="status" aria-live="polite" id="outbox-summary">
           {summary.sentence}
         </p>
 
         {skew?.isSuspicious && (
-          <p className="mt-1 text-[12px]" style={{ color: 'var(--c-amber)' }}>
+          <p className="mt-1 text-xs" style={{ color: 'var(--c-amber)' }}>
             <Icon name="alert" size={12} /> {skew.sentence}
           </p>
         )}
@@ -215,13 +215,13 @@ export function OutboxPanel({
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            className="hairline rounded border px-2.5 py-1 text-[12px]"
+            className="hairline rounded border px-2.5 py-1 text-xs"
             onClick={() => void send()}
             disabled={busy || summary.queued === 0}
           >
             {busy ? 'Sending…' : `Send ${summary.queued} queued edit${summary.queued === 1 ? '' : 's'}`}
           </button>
-          <span className="faint text-[11px]">
+          <span className="faint text-2xs">
             A queued write is an ordinary write: it goes through the same policies as
             every other one, and one made into a space you have since left is refused.
             Coming back online sends what is queued, once — there is no retry, because
@@ -233,18 +233,18 @@ export function OutboxPanel({
         </div>
 
         {said && (
-          <p className="mt-2 text-[12px]" role="status" aria-live="polite">
+          <p className="mt-2 text-xs" role="status" aria-live="polite">
             {said}
           </p>
         )}
       </section>
 
       <section className="hairline border-b px-5 py-4" aria-labelledby="queued-heading">
-        <h2 id="queued-heading" className="text-[13px] font-semibold">
+        <h2 id="queued-heading" className="text-sm font-semibold">
           Waiting to be sent
         </h2>
         {outbox.writes.length === 0 ? (
-          <p className="muted mt-1 text-[12px]">
+          <p className="muted mt-1 text-xs">
             Nothing is waiting. Edits made while <em>Work offline</em> is on appear here.
           </p>
         ) : (
@@ -254,14 +254,14 @@ export function OutboxPanel({
               return (
                 <li
                   key={w.opId}
-                  className="hairline flex flex-wrap items-center gap-2 rounded border px-2.5 py-1.5 text-[12px]"
+                  className="hairline flex flex-wrap items-center gap-2 rounded border px-2.5 py-1.5 text-xs"
                 >
                   {space ? (
                     <SpaceIndicator space={space} />
                   ) : (
-                    <span className="faint text-[11px]">a space this account can no longer see</span>
+                    <span className="faint text-2xs">a space this account can no longer see</span>
                   )}
-                  <span className="hairline rounded border px-1.5 py-0.5 text-[11px]">{w.entityKind}</span>
+                  <span className="hairline rounded border px-1.5 py-0.5 text-2xs">{w.entityKind}</span>
                   <Link href={(PATH[w.entityKind]?.(w.entityId) ?? '/sync') as never} className="font-medium">
                     {w.label}
                   </Link>
@@ -270,10 +270,10 @@ export function OutboxPanel({
                       .map((f) => `${fieldLabel(f)} → ${displayValue(w.changes[f] ?? null)}`)
                       .join(', ')}
                   </span>
-                  <span className="faint ml-auto text-[11px]">#{w.seq}</span>
+                  <span className="faint ml-auto text-2xs">#{w.seq}</span>
                   <button
                     type="button"
-                    className="hairline rounded border px-1.5 py-0.5 text-[11px]"
+                    className="hairline rounded border px-1.5 py-0.5 text-2xs"
                     disabled={busy}
                     onClick={() => {
                       update(discard(outbox, w.opId));
@@ -290,11 +290,11 @@ export function OutboxPanel({
       </section>
 
       <section className="hairline border-b px-5 py-4" aria-labelledby="conflicts-heading">
-        <h2 id="conflicts-heading" className="text-[13px] font-semibold">
+        <h2 id="conflicts-heading" className="text-sm font-semibold">
           Conflicts to answer
         </h2>
         {outbox.conflicts.length === 0 ? (
-          <p className="muted mt-1 text-[12px]">
+          <p className="muted mt-1 text-xs">
             None. A conflict appears here when the same thing was changed in two
             places — nothing is ever overwritten to avoid one.
           </p>
@@ -304,14 +304,14 @@ export function OutboxPanel({
               const space = spaceOf(c.spaceId);
               return (
                 <li key={c.opId} className="hairline rounded border px-3 py-2">
-                  <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
                     {space ? (
                       <SpaceIndicator space={space} />
                     ) : (
-                      <span className="faint text-[11px]">a space this account can no longer see</span>
+                      <span className="faint text-2xs">a space this account can no longer see</span>
                     )}
                     <span
-                      className="hairline inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px]"
+                      className="hairline inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-2xs"
                       style={{ color: 'var(--c-amber)', borderColor: 'var(--c-amber)' }}
                     >
                       <Icon name="alert" size={11} /> {CONFLICT_LABEL[c.kind]}
@@ -320,13 +320,13 @@ export function OutboxPanel({
                       {c.entityKind}
                     </Link>
                   </div>
-                  <p className="muted mt-1 text-[12px]">{c.reason}</p>
+                  <p className="muted mt-1 text-xs">{c.reason}</p>
 
                   {c.clashes.length > 0 && (
-                    <table className="mt-2 w-full text-[12px]">
+                    <table className="mt-2 w-full text-xs">
                       <caption className="sr-only">What each side says</caption>
                       <thead>
-                        <tr className="faint text-left text-[11px]">
+                        <tr className="faint text-left text-2xs">
                           <th scope="col" className="py-0.5 pr-3 font-medium">Field</th>
                           <th scope="col" className="py-0.5 pr-3 font-medium">Yours, not sent</th>
                           <th scope="col" className="py-0.5 pr-3 font-medium">Theirs, on the server</th>
@@ -349,7 +349,7 @@ export function OutboxPanel({
                   )}
 
                   {Object.keys(c.mergeable).length > 0 && (
-                    <p className="faint mt-1 text-[11px]">
+                    <p className="faint mt-1 text-2xs">
                       {Object.keys(c.mergeable).map(fieldLabel).join(', ')} merged cleanly and
                       will be written either way — nobody disagreed about {Object.keys(c.mergeable).length === 1 ? 'it' : 'them'}.
                     </p>
@@ -360,7 +360,7 @@ export function OutboxPanel({
                       <>
                         <button
                           type="button"
-                          className="hairline rounded border px-2 py-1 text-[12px]"
+                          className="hairline rounded border px-2 py-1 text-xs"
                           disabled={busy}
                           onClick={() => void answer(c, 'mine')}
                         >
@@ -368,7 +368,7 @@ export function OutboxPanel({
                         </button>
                         <button
                           type="button"
-                          className="hairline rounded border px-2 py-1 text-[12px]"
+                          className="hairline rounded border px-2 py-1 text-xs"
                           disabled={busy}
                           onClick={() => void answer(c, 'theirs')}
                         >
@@ -376,14 +376,14 @@ export function OutboxPanel({
                         </button>
                       </>
                     ) : (
-                      <span className="faint text-[11px]">
+                      <span className="faint text-2xs">
                         There is no answer this queue can carry out. Making it again is a
                         new edit, against what is there now.
                       </span>
                     )}
                     <button
                       type="button"
-                      className="hairline rounded border px-2 py-1 text-[12px]"
+                      className="hairline rounded border px-2 py-1 text-xs"
                       disabled={busy}
                       onClick={() => {
                         update(clearConflict(outbox, c.opId));
@@ -402,13 +402,13 @@ export function OutboxPanel({
 
       {results.length > 0 && (
         <section className="hairline border-b px-5 py-4" aria-labelledby="results-heading">
-          <h2 id="results-heading" className="text-[13px] font-semibold">
+          <h2 id="results-heading" className="text-sm font-semibold">
             What happened to the last send
           </h2>
           <ul className="mt-2 space-y-1" id="outbox-results">
             {results.map((r) => (
-              <li key={r.opId} className="flex flex-wrap items-baseline gap-2 text-[12px]">
-                <span className="hairline rounded border px-1.5 py-0.5 text-[11px]">
+              <li key={r.opId} className="flex flex-wrap items-baseline gap-2 text-xs">
+                <span className="hairline rounded border px-1.5 py-0.5 text-2xs">
                   {OUTCOME_LABEL[r.outcome as keyof typeof OUTCOME_LABEL] ?? r.outcome}
                 </span>
                 <span className="muted">{r.note ?? '—'}</span>

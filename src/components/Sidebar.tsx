@@ -28,7 +28,7 @@ export function Sidebar({
       aria-label="Primary"
     >
       <div className="px-2">
-        <Link href="/" className="text-[15px] font-semibold tracking-tight">
+        <Link href="/" className="text-lg font-semibold tracking-tight">
           Orbit
         </Link>
       </div>
@@ -68,7 +68,7 @@ export function Sidebar({
           >
             <SpaceIndicator space={s} />
             {!s.canRead && (
-              <span className="faint inline-flex items-center gap-1 text-[10px]">
+              <span className="faint inline-flex items-center gap-1 text-2xs">
                 <Icon name="eye_off" size={10} />
                 free/busy
               </span>
@@ -87,7 +87,7 @@ export function Sidebar({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <h2 className="faint px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider">
+      <h2 className="faint px-2 pb-1 text-2xs font-semibold uppercase tracking-wider">
         {title}
       </h2>
       {children}
@@ -109,11 +109,11 @@ function NavLink({
   return (
     <Link
       href={href as never}
-      className="row-hover flex items-center gap-2 rounded px-2 py-1 text-[13px]"
+      className="row-hover flex items-center gap-2 rounded px-2 py-1 text-sm"
     >
       <Icon name={icon} size={13} className="muted" />
       <span className="flex-1">{label}</span>
-      {count != null && count > 0 && <span className="faint text-[11px]">{count}</span>}
+      {count != null && count > 0 && <span className="faint text-2xs">{count}</span>}
     </Link>
   );
 }

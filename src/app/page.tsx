@@ -44,8 +44,8 @@ export default async function TodayPage({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
-        <h1 className="text-[15px] font-semibold">Today</h1>
-        <p className="muted mt-0.5 text-[12px]">
+        <h1 className="text-lg font-semibold">Today</h1>
+        <p className="muted mt-0.5 text-xs">
           Good morning, {firstName}. {plural(today.length, 'task')} due.
         </p>
       </header>
@@ -58,7 +58,7 @@ export default async function TodayPage({
         say, it does not appear at all.
       */}
       {yesterday.eventCount > 0 && yesterday.noteCount === 0 && (
-        <div className="hairline muted flex items-center gap-2 border-b px-5 py-2 text-[12px]">
+        <div className="hairline muted flex items-center gap-2 border-b px-5 py-2 text-xs">
           <Icon name="calendar" size={12} className="faint" />
           {plural(yesterday.eventCount, 'event')} yesterday, no notes.
         </div>
@@ -68,7 +68,7 @@ export default async function TodayPage({
         <section className="hairline border-b px-5 py-3" aria-labelledby="week-review-heading">
           <h2
             id="week-review-heading"
-            className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider"
+            className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider"
           >
             <Icon name="sparkle" size={11} />
             Review the week ahead
@@ -83,7 +83,7 @@ export default async function TodayPage({
                   <SpaceIndicator space={c.space} />
                   <button
                     type="submit"
-                    className="hairline rounded border px-2 py-0.5 text-[11px]"
+                    className="hairline rounded border px-2 py-0.5 text-2xs"
                     aria-label={`Review the week ahead in ${c.space.name}`}
                   >
                     {c.isEnabled ? 'Review it' : 'Review it (switched off)'}
@@ -92,7 +92,7 @@ export default async function TodayPage({
               </li>
             ))}
           </ul>
-          <p className="faint mt-1.5 text-[11px]">
+          <p className="faint mt-1.5 text-2xs">
             Titles and dates for the next seven days. No note bodies, nothing
             locked, and one space at a time.
           </p>
@@ -109,17 +109,17 @@ export default async function TodayPage({
             {dates.map((d) => (
               <li
                 key={`${d.personId}-${d.kind}-${d.onDate}`}
-                className="hairline row-hover flex flex-wrap items-baseline gap-2 border-b px-5 py-1.5 text-[13px]"
+                className="hairline row-hover flex flex-wrap items-baseline gap-2 border-b px-5 py-1.5 text-sm"
               >
                 <Icon name="cake" size={12} className="faint shrink-0" />
                 <Link href={`/people/${d.personId}`} className="min-w-0 truncate">
                   {d.displayName}
                 </Link>
-                <span className="muted text-[12px]">
+                <span className="muted text-xs">
                   {d.label ?? d.kind}
                   {d.turning != null && d.kind === 'birthday' ? ` — turning ${d.turning}` : ''}
                 </span>
-                <span className="faint ml-auto shrink-0 text-[11px]">
+                <span className="faint ml-auto shrink-0 text-2xs">
                   {d.daysAway === 0
                     ? 'today'
                     : d.daysAway === 1
@@ -161,9 +161,9 @@ export default async function TodayPage({
       )}
 
       {spaces.length === 0 ? (
-        <div className="muted px-5 py-10 text-[13px]">
+        <div className="muted px-5 py-10 text-sm">
           <p className="mb-1">You are not a member of any space.</p>
-          <p className="faint text-[12px]">
+          <p className="faint text-xs">
             Nothing is hidden from you here — there is genuinely nothing to show. Spaces
             are the unit of sharing in Orbit, and membership is the only way in.
           </p>
@@ -171,7 +171,7 @@ export default async function TodayPage({
       ) : (
         today.length === 0 &&
         overdueOnly.length === 0 && (
-          <p className="faint px-5 py-10 text-[13px]">Nothing due. That is allowed.</p>
+          <p className="faint px-5 py-10 text-sm">Nothing due. That is allowed.</p>
         )
       )}
     </div>
@@ -181,7 +181,7 @@ export default async function TodayPage({
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h2
-      className="hairline faint border-b px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wider"
+      className="hairline faint border-b px-5 py-1.5 text-2xs font-semibold uppercase tracking-wider"
       style={{ background: 'var(--bg-sunken)' }}
     >
       {children}

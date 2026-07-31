@@ -51,7 +51,7 @@ export function RuleActionForm(
 
   const ordinal = isEdit ? `Action ${props.index + 1}` : 'New action';
   const control = `${ordinal}: ${spec.label.toLowerCase()}`;
-  const box = isEdit ? 'text-[11px]' : 'text-[12px]';
+  const box = isEdit ? 'text-2xs' : 'text-xs';
 
   return (
     <form
@@ -120,7 +120,7 @@ export function RuleActionForm(
 
       <button
         type="submit"
-        className={`hairline rounded border px-2 ${isEdit ? 'py-0.5 text-[11px]' : 'py-1 text-[12px]'}`}
+        className={`hairline rounded border px-2 ${isEdit ? 'py-0.5 text-2xs' : 'py-1 text-xs'}`}
       >
         {isEdit ? 'Save this action' : 'Add action'}
       </button>
@@ -146,7 +146,7 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className={visible ? 'faint text-[11px]' : 'sr-only'}>{visible ? label : name}</span>
+      <span className={visible ? 'faint text-2xs' : 'sr-only'}>{visible ? label : name}</span>
       {children}
     </label>
   );

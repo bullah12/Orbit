@@ -57,26 +57,26 @@ export default async function PlacePage({
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Link href="/places" className="faint text-[12px]">
+          <Link href="/places" className="faint text-xs">
             Places
           </Link>
-          <span className="faint text-[12px]" aria-hidden="true">
+          <span className="faint text-xs" aria-hidden="true">
             /
           </span>
           <SpaceIndicator space={place.space} />
           <CategoryChip category={place.category} />
           {place.visibility === 'private' && (
-            <span className="faint flex items-center gap-1 text-[11px]">
+            <span className="faint flex items-center gap-1 text-2xs">
               <Icon name="eye_off" size={11} />
               Private to you
             </span>
           )}
-          <span className="faint ml-auto text-[11px]">
+          <span className="faint ml-auto text-2xs">
             Edited {formatRelative(place.updatedAt)}
           </span>
         </div>
         {place.archivedAt && (
-          <p className="muted mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+          <p className="muted mt-2 flex flex-wrap items-center gap-2 text-xs">
             <Icon name="archive" size={12} />
             Archived {formatRelative(place.archivedAt)}.
             <form action={restorePlace} className="inline">
@@ -90,7 +90,7 @@ export default async function PlacePage({
       </header>
 
       {place.isLocked ? (
-        <div className="muted flex items-center gap-2 px-5 py-10 text-[13px]">
+        <div className="muted flex items-center gap-2 px-5 py-10 text-sm">
           <Icon name="lock" size={14} />
           This place is locked. It is end-to-end encrypted and can only be opened on a
           device holding the key — the server has never seen its name or address.
@@ -107,7 +107,7 @@ export default async function PlacePage({
               name="name"
               defaultValue={place.name}
               required
-              className="bg-transparent text-[17px] font-semibold outline-none"
+              className="bg-transparent text-xl font-semibold outline-none"
             />
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -178,14 +178,14 @@ export default async function PlacePage({
                 name="notesMd"
                 defaultValue={place.notesMd}
                 rows={6}
-                className="input resize-y font-mono text-[12.5px] leading-relaxed"
+                className="input resize-y font-mono text-xs leading-relaxed"
               />
             </Field>
 
             <div>
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-[12px] font-medium"
+                className="rounded px-3 py-1.5 text-xs font-medium"
                 style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
               >
                 Save changes
@@ -195,7 +195,7 @@ export default async function PlacePage({
 
           {place.notesMd.trim() !== '' && (
             <section className="hairline border-t px-5 py-4">
-              <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+              <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
                 Rendered
               </h2>
               <Markdown source={place.notesMd} />
@@ -207,38 +207,38 @@ export default async function PlacePage({
       )}
 
       <section className="hairline border-t px-5 py-4">
-        <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
           <Icon name="check" size={11} />
           Visits
         </h2>
-        <p className="muted mb-3 text-[12px]">
+        <p className="muted mb-3 text-xs">
           Recorded by hand or derived from the calendar. Nothing here comes from a
           device’s location — Orbit never asks for that permission.
         </p>
 
         {visits.length >= 50 && (
-          <p className="faint mb-2 text-[11px]">
+          <p className="faint mb-2 text-2xs">
             Showing the 50 most recent visits. There is no paging yet.
           </p>
         )}
 
         {visits.length === 0 ? (
-          <p className="faint mb-3 text-[12px]">No visits recorded.</p>
+          <p className="faint mb-3 text-xs">No visits recorded.</p>
         ) : (
           <ul className="mb-3 flex flex-col gap-1" aria-label="Recorded visits">
             {visits.map((v) => (
-              <li key={v.id} className="flex flex-wrap items-baseline gap-2 text-[12px]">
+              <li key={v.id} className="flex flex-wrap items-baseline gap-2 text-xs">
                 <span>{formatDateTime(v.arrivedAt)}</span>
                 {v.departedAt && (
                   <span className="faint">
                     → {formatDateTime(v.departedAt).split(', ').pop()}
                   </span>
                 )}
-                <span className="faint inline-flex items-center gap-1 text-[11px]">
+                <span className="faint inline-flex items-center gap-1 text-2xs">
                   <Icon name={v.source === 'calendar' ? 'calendar' : 'pin'} size={10} />
                   {v.source === 'calendar' ? 'from the calendar' : 'logged by hand'}
                 </span>
-                {v.eventTitle && <span className="faint text-[11px]">{v.eventTitle}</span>}
+                {v.eventTitle && <span className="faint text-2xs">{v.eventTitle}</span>}
                 {v.notesMd && <span className="muted">{v.notesMd}</span>}
                 <form action={removePlaceVisit} className="inline-flex">
                   <input type="hidden" name="visitId" value={v.id} />
@@ -279,7 +279,7 @@ export default async function PlacePage({
             </Field>
             <button
               type="submit"
-              className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+              className="hairline rounded border px-3 py-1.5 text-xs font-medium"
             >
               Log a visit
             </button>
@@ -288,29 +288,29 @@ export default async function PlacePage({
       </section>
 
       <section className="hairline border-t px-5 py-4">
-        <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
           <Icon name="link" size={11} />
           Linked
         </h2>
 
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
-            <h3 className="muted mb-1 text-[11px] font-medium">
+            <h3 className="muted mb-1 text-2xs font-medium">
               Events here{events.length >= 25 ? ' — 25 most recent' : ''}
             </h3>
             {events.length === 0 ? (
-              <p className="faint text-[12px]">None.</p>
+              <p className="faint text-xs">None.</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {events.map((e) => (
-                  <li key={e.id} className="flex flex-wrap items-baseline gap-1.5 text-[12px]">
+                  <li key={e.id} className="flex flex-wrap items-baseline gap-1.5 text-xs">
                     <Link
                       href={`/calendar/event/${e.id}` as never}
                       className="underline underline-offset-2"
                     >
                       {e.title}
                     </Link>
-                    <span className="faint text-[11px]">
+                    <span className="faint text-2xs">
                       {e.allDay ? londonDayISO(e.startsAt) : formatDateTime(e.startsAt)}
                     </span>
                     <SpaceIndicator space={e.space} />
@@ -321,13 +321,13 @@ export default async function PlacePage({
           </div>
 
           <div>
-            <h3 className="muted mb-1 text-[11px] font-medium">Notes</h3>
+            <h3 className="muted mb-1 text-2xs font-medium">Notes</h3>
             {notes.length === 0 ? (
-              <p className="faint text-[12px]">None.</p>
+              <p className="faint text-xs">None.</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {notes.map((n) => (
-                  <li key={n.id} className="text-[12px]">
+                  <li key={n.id} className="text-xs">
                     <Link href={`/notes/${n.id}` as never} className="underline underline-offset-2">
                       {n.title}
                     </Link>
@@ -338,17 +338,17 @@ export default async function PlacePage({
           </div>
 
           <div>
-            <h3 className="muted mb-1 text-[11px] font-medium">People seen here</h3>
+            <h3 className="muted mb-1 text-2xs font-medium">People seen here</h3>
             {people.length === 0 ? (
-              <p className="faint text-[12px]">Nobody yet.</p>
+              <p className="faint text-xs">Nobody yet.</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {people.map((p) => (
-                  <li key={p.id} className="flex flex-wrap items-baseline gap-1.5 text-[12px]">
+                  <li key={p.id} className="flex flex-wrap items-baseline gap-1.5 text-xs">
                     <Link href={`/people/${p.id}` as never} className="underline underline-offset-2">
                       {p.displayName}
                     </Link>
-                    <span className="faint text-[11px]">
+                    <span className="faint text-2xs">
                       {p.times === 1 ? 'once' : `${p.times}×`}
                     </span>
                     <SpaceIndicator space={p.space} />
@@ -356,7 +356,7 @@ export default async function PlacePage({
                 ))}
               </ul>
             )}
-            <p className="faint mt-1 text-[11px]">
+            <p className="faint mt-1 text-2xs">
               Derived from event attendees. Nobody recorded this.
             </p>
           </div>
@@ -377,14 +377,14 @@ export default async function PlacePage({
             <input type="hidden" name="placeId" value={place.id} />
             <button
               type="submit"
-              className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+              className="hairline rounded border px-3 py-1.5 text-xs font-medium"
             >
               <span className="inline-flex items-center gap-1.5">
                 <Icon name="archive" size={12} />
                 Archive
               </span>
             </button>
-            <span className="faint text-[12px]">
+            <span className="faint text-xs">
               Archiving is reversible and keeps the visits. A place is never deleted:
               events and travel legs point at it.
             </span>
@@ -406,7 +406,7 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={htmlFor} className="faint text-[11px] font-medium">
+      <label htmlFor={htmlFor} className="faint text-2xs font-medium">
         {label}
       </label>
       {children}
@@ -435,12 +435,12 @@ function GeocodeSection({
 
   return (
     <section className="hairline border-t px-5 py-4">
-      <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+      <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
         <Icon name="map_pin" size={11} />
         Coordinates
       </h2>
 
-      <p className="muted mb-2 text-[12px]" id="geocode-status" aria-live="polite">
+      <p className="muted mb-2 text-xs" id="geocode-status" aria-live="polite">
         {place.lat === null ? (
           'No coordinates yet. Travel estimates need them.'
         ) : (
@@ -462,7 +462,7 @@ function GeocodeSection({
         <form action={geocodePlace} className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="placeId" value={place.id} />
           <div className="flex min-w-64 flex-1 flex-col gap-1">
-            <label htmlFor="geocode-query" className="faint text-[11px] font-medium">
+            <label htmlFor="geocode-query" className="faint text-2xs font-medium">
               Look up
             </label>
             <input
@@ -475,14 +475,14 @@ function GeocodeSection({
           </div>
           <button
             type="submit"
-            className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+            className="hairline rounded border px-3 py-1.5 text-xs font-medium"
           >
             Find coordinates
           </button>
         </form>
       )}
 
-      <p className="faint mt-2 text-[11px]" id="geocode-provider">
+      <p className="faint mt-2 text-2xs" id="geocode-provider">
         {geocoder.isFake
           ? `Running ${geocoder.name}: a fixed table of Birmingham locations, matched by substring. Nothing leaves this machine.`
           : `Running ${geocoder.name}: this sends the address above to an external service.`}
@@ -518,16 +518,16 @@ function PlaceMoveSection({
 
   return (
     <section className="hairline border-t px-5 py-4">
-      <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+      <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
         <Icon name="move" size={11} />
         Move to another space
       </h2>
 
       {targets.length === 0 ? (
-        <p className="faint text-[12px]">There is nowhere else to move this.</p>
+        <p className="faint text-xs">There is nowhere else to move this.</p>
       ) : !target ? (
         <>
-          <p className="muted mb-2 text-[12px]">
+          <p className="muted mb-2 text-xs">
             Pick a destination. You will see exactly who gains and loses access before
             anything changes.
           </p>
@@ -548,13 +548,13 @@ function PlaceMoveSection({
         </>
       ) : (
         <div className="surface rounded-md p-4">
-          <div className="mb-3 flex items-center gap-2 text-[13px]">
+          <div className="mb-3 flex items-center gap-2 text-sm">
             <SpaceIndicator space={place.space} size="md" />
             <Icon name="arrow_right" size={13} className="faint" />
             <SpaceIndicator space={target} size="md" />
           </div>
 
-          <div className="flex flex-col gap-2 text-[12px]">
+          <div className="flex flex-col gap-2 text-xs">
             {loses.length > 0 && (
               <MoveGroup tone="var(--danger)" heading="These people lose access" people={loses} />
             )}
@@ -567,7 +567,7 @@ function PlaceMoveSection({
             {preview.length === 0 && <p className="faint">Nobody’s access changes.</p>}
           </div>
 
-          <p className="muted mt-3 flex items-start gap-1.5 text-[12px]">
+          <p className="muted mt-3 flex items-start gap-1.5 text-xs">
             <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
             <span>
               The address, the coordinates and the visits move with the place. Its
@@ -589,13 +589,13 @@ function PlaceMoveSection({
               <input type="hidden" name="targetSpaceId" value={target.id} />
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-[12px] font-medium"
+                className="rounded px-3 py-1.5 text-xs font-medium"
                 style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
               >
                 Move to {target.name}
               </button>
             </form>
-            <Link href={`/places/${place.id}`} className="muted text-[12px]">
+            <Link href={`/places/${place.id}`} className="muted text-xs">
               Cancel
             </Link>
           </div>

@@ -55,7 +55,7 @@ export function ComposeEvent({
         aria-label="Event title"
         autoComplete="off"
         required
-        className="min-w-40 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[color:var(--text-faint)]"
+        className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
       />
 
       <label className="flex items-center gap-1.5">
@@ -65,11 +65,11 @@ export function ComposeEvent({
           name="onDate"
           defaultValue={defaultDate}
           required
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
         />
       </label>
 
-      <label className="faint flex items-center gap-1 text-[11px]">
+      <label className="faint flex items-center gap-1 text-2xs">
         <input
           type="checkbox"
           name="allDay"
@@ -89,7 +89,7 @@ export function ComposeEvent({
               name="startTime"
               defaultValue="09:00"
               required
-              className="faint rounded bg-transparent text-[11px] outline-none"
+              className="faint rounded bg-transparent text-2xs outline-none"
             />
           </label>
           <label className="flex items-center gap-1.5">
@@ -99,7 +99,7 @@ export function ComposeEvent({
               name="endTime"
               defaultValue="10:00"
               required
-              className="faint rounded bg-transparent text-[11px] outline-none"
+              className="faint rounded bg-transparent text-2xs outline-none"
             />
           </label>
         </>
@@ -111,7 +111,7 @@ export function ComposeEvent({
           name="categoryId"
           key={`cat-${spaceId}`}
           defaultValue=""
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
         >
           <option value="">No category</option>
           {categoryOptions.map((c) => (
@@ -127,7 +127,7 @@ export function ComposeEvent({
             name="calendarId"
             key={`cal-${spaceId}`}
             defaultValue=""
-            className="faint rounded bg-transparent text-[11px] outline-none"
+            className="faint rounded bg-transparent text-2xs outline-none"
           >
             <option value="">Default calendar</option>
             {calendarOptions.map((c) => (
@@ -147,7 +147,7 @@ export function ComposeEvent({
           name="repeatFreq"
           value={repeat}
           onChange={(e) => setRepeat(e.target.value)}
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
         >
           <option value="">Does not repeat</option>
           <option value="DAILY">Every day</option>
@@ -159,7 +159,7 @@ export function ComposeEvent({
 
       {repeat !== '' && (
         <>
-          <label className="faint flex items-center gap-1 text-[11px]">
+          <label className="faint flex items-center gap-1 text-2xs">
             every
             <input
               type="number"
@@ -168,7 +168,7 @@ export function ComposeEvent({
               min={1}
               max={99}
               aria-label="How many days, weeks, months or years between repeats"
-              className="hairline w-12 rounded border bg-transparent px-1 text-[11px]"
+              className="hairline w-12 rounded border bg-transparent px-1 text-2xs"
             />
             {repeat === 'DAILY' ? 'days' : repeat === 'WEEKLY' ? 'weeks' : repeat === 'MONTHLY' ? 'months' : 'years'}
           </label>
@@ -182,7 +182,7 @@ export function ComposeEvent({
                   ['FR', 'Friday'], ['SA', 'Saturday'], ['SU', 'Sunday'],
                 ] as const
               ).map(([code, name]) => (
-                <label key={code} className="faint cursor-pointer text-[11px]">
+                <label key={code} className="faint cursor-pointer text-2xs">
                   <input type="checkbox" name="repeatByDay" value={code} className="peer sr-only" />
                   <span className="sr-only">{name}</span>
                   <span
@@ -196,13 +196,13 @@ export function ComposeEvent({
             </fieldset>
           )}
 
-          <label className="faint flex items-center gap-1 text-[11px]">
+          <label className="faint flex items-center gap-1 text-2xs">
             until
             <input
               type="date"
               name="repeatUntil"
               aria-label="The date it stops repeating; leave empty for forever"
-              className="faint rounded bg-transparent text-[11px] outline-none"
+              className="faint rounded bg-transparent text-2xs outline-none"
             />
           </label>
         </>
@@ -229,7 +229,7 @@ export function ComposeEvent({
 
       <button
         type="submit"
-        className="rounded px-2 py-1 text-[12px] font-medium"
+        className="rounded px-2 py-1 text-xs font-medium"
         style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
       >
         Add

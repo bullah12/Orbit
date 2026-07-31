@@ -52,12 +52,12 @@ export function TaskRow({ task }: { task: Task }) {
           )}
 
           {task.priority === 'urgent' && (
-            <span className="shrink-0 text-[10px] font-semibold uppercase" style={{ color: 'var(--danger)' }}>
+            <span className="shrink-0 text-2xs font-semibold uppercase" style={{ color: 'var(--danger)' }}>
               Urgent
             </span>
           )}
           {task.visibility === 'private' && (
-            <span className="faint flex shrink-0 items-center gap-0.5 text-[10px]" title="Private to you">
+            <span className="faint flex shrink-0 items-center gap-0.5 text-2xs" title="Private to you">
               <Icon name="eye_off" size={10} />
               Private
             </span>
@@ -65,7 +65,7 @@ export function TaskRow({ task }: { task: Task }) {
         </div>
 
         {(task.waitingOn || task.checklistTotal > 0 || task.noteCount > 0) && (
-          <div className="faint mt-0.5 flex items-center gap-3 text-[11px]">
+          <div className="faint mt-0.5 flex items-center gap-3 text-2xs">
             {task.waitingOn && <span>Waiting on {task.waitingOn}</span>}
             {task.checklistTotal > 0 && (
               <span>
@@ -84,14 +84,14 @@ export function TaskRow({ task }: { task: Task }) {
 
       <div className="flex shrink-0 items-center gap-2.5">
         {task.estimateMinutes != null && (
-          <span className="faint hidden text-[11px] sm:inline">
+          <span className="faint hidden text-2xs sm:inline">
             {formatDuration(task.estimateMinutes)}
           </span>
         )}
         <CategoryChip category={task.category} />
         {task.dueOn && (
           <span
-            className="text-[11px] tabular-nums"
+            className="text-2xs tabular-nums"
             style={{ color: overdue ? 'var(--danger)' : 'var(--text-muted)' }}
           >
             {formatDueDate(task.dueOn)}

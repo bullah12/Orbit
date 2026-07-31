@@ -85,7 +85,7 @@ export default async function EventPage({
           <SpaceIndicator space={event.space} size="md" />
           {event.category && (
             <span
-              className="inline-flex items-center gap-1 text-[12px]"
+              className="inline-flex items-center gap-1 text-xs"
               style={{ color: `var(--c-${event.category.colour}, var(--c-slate))` }}
             >
               <Icon name={event.category.icon} size={12} strokeWidth={2} />
@@ -93,14 +93,14 @@ export default async function EventPage({
             </span>
           )}
           {event.status !== 'confirmed' && (
-            <span className="faint text-[12px] capitalize">{event.status}</span>
+            <span className="faint text-xs capitalize">{event.status}</span>
           )}
           {event.calendarName && (
-            <span className="faint text-[11px]">{event.calendarName}</span>
+            <span className="faint text-2xs">{event.calendarName}</span>
           )}
         </div>
-        <h1 className="text-[15px] font-semibold">{event.title || 'Untitled event'}</h1>
-        <p className="muted mt-0.5 text-[12px]">
+        <h1 className="text-lg font-semibold">{event.title || 'Untitled event'}</h1>
+        <p className="muted mt-0.5 text-xs">
           {event.allDay
             ? `${formatDate(day)} — all day`
             : `${formatDate(day)}, ${formatTime(event.startsAt)}–${formatTime(event.endsAt)}`}
@@ -108,14 +108,14 @@ export default async function EventPage({
           {event.placeName && ` · ${event.placeName}`}
         </p>
         {event.isRecurring && event.rrule && (
-          <p className="faint mt-1 flex items-center gap-1 text-[12px]">
+          <p className="faint mt-1 flex items-center gap-1 text-xs">
             <Icon name="undo" size={11} />
             {safeDescribe(event.rrule)} — the fields below are the whole series.
             {event.exdates.length > 0 &&
               ` ${event.exdates.length} ${event.exdates.length === 1 ? 'occurrence is' : 'occurrences are'} skipped.`}
           </p>
         )}
-        <Link href="/calendar/week" className="faint mt-2 inline-block text-[12px]">
+        <Link href="/calendar/week" className="faint mt-2 inline-block text-xs">
           ← Back to the calendar
         </Link>
       </header>
@@ -125,14 +125,14 @@ export default async function EventPage({
         {error && (
           <p
             role="alert"
-            className="hairline border-b px-5 py-2 text-[12px]"
+            className="hairline border-b px-5 py-2 text-xs"
             style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
           >
             {error}
           </p>
         )}
         {!error && done && (
-          <p className="hairline muted border-b px-5 py-2 text-[12px]">
+          <p className="hairline muted border-b px-5 py-2 text-xs">
             {done === 'repeat' && 'Repeat saved. It is still one row plus a rule — nothing was copied.'}
             {done === 'norepeat' && 'It no longer repeats. The event itself is untouched.'}
             {done === 'skipped' && 'That occurrence is skipped. The rest of the series is unchanged, and you can put it back.'}
@@ -150,7 +150,7 @@ export default async function EventPage({
         >
           {occurrence ? (
             <>
-              <p className="text-[13px]">
+              <p className="text-sm">
                 <Icon name="calendar" size={12} className="faint mr-1 inline" />
                 You came here from{' '}
                 <strong>
@@ -159,7 +159,7 @@ export default async function EventPage({
                 </strong>{' '}
                 — one occurrence of this series.
               </p>
-              <p className="muted mt-0.5 text-[12px]">
+              <p className="muted mt-0.5 text-xs">
                 Skipping it leaves the series alone: it is RFC 5545’s “not that
                 week”, stored as an exclusion rather than by deleting anything. To
                 change just this one, skip it and add an ordinary event on the day.
@@ -168,14 +168,14 @@ export default async function EventPage({
                 <input type="hidden" name="eventId" value={event.id} />
                 <input type="hidden" name="on" value={occurrence.startsAt} />
                 <input type="hidden" name="put" value="skip" />
-                <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
+                <button type="submit" className="hairline rounded border px-2 py-1 text-xs">
                   Skip {formatDate(londonDayISO(occurrence.startsAt))}
                 </button>
               </form>
             </>
           ) : skippedInstant ? (
             <>
-              <p className="text-[13px]">
+              <p className="text-sm">
                 <Icon name="pause" size={12} className="faint mr-1 inline" />
                 <strong>
                   {formatDate(londonDayISO(skippedInstant))}
@@ -187,13 +187,13 @@ export default async function EventPage({
                 <input type="hidden" name="eventId" value={event.id} />
                 <input type="hidden" name="on" value={skippedInstant} />
                 <input type="hidden" name="put" value="back" />
-                <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
+                <button type="submit" className="hairline rounded border px-2 py-1 text-xs">
                   Put it back
                 </button>
               </form>
             </>
           ) : (
-            <p className="muted text-[13px]">
+            <p className="muted text-sm">
               This series has no occurrence starting then, so there is nothing here
               to skip. The rule may have changed since that link was made.
             </p>
@@ -202,7 +202,7 @@ export default async function EventPage({
       )}
 
       {event.isLocked ? (
-        <div className="muted flex items-start gap-2 px-5 py-6 text-[13px]">
+        <div className="muted flex items-start gap-2 px-5 py-6 text-sm">
           <Icon name="lock" size={14} className="mt-0.5 shrink-0" />
           <span>
             This event is locked. Its contents are end-to-end encrypted and the server
@@ -215,13 +215,13 @@ export default async function EventPage({
 
       {!event.isLocked && (
         <section className="hairline border-b px-5 py-4">
-          <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+          <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
             <Icon name="undo" size={11} />
             Repeat
           </h2>
           {event.rrule && !repeatForm ? (
             <>
-              <p className="muted mb-2 text-[12px]">
+              <p className="muted mb-2 text-xs">
                 This repeat is more specific than the builder can express —{' '}
                 <span className="font-medium">{safeDescribe(event.rrule)}</span>. It is
                 stored, it expands correctly and the calendar draws every occurrence;
@@ -231,14 +231,14 @@ export default async function EventPage({
               <form action={setEventRepeat}>
                 <input type="hidden" name="eventId" value={event.id} />
                 <input type="hidden" name="repeatFreq" value="" />
-                <button type="submit" className="hairline rounded border px-3 py-1.5 text-[12px]">
+                <button type="submit" className="hairline rounded border px-3 py-1.5 text-xs">
                   Stop repeating
                 </button>
               </form>
             </>
           ) : (
             <>
-              <p className="muted mb-2 text-[12px]">
+              <p className="muted mb-2 text-xs">
                 One row and one rule, never copies. Changing it changes every
                 occurrence; the date above is the series’ own start, so moving that
                 moves all of them.
@@ -251,11 +251,11 @@ export default async function EventPage({
 
       {!event.isLocked && (
         <section className="hairline border-b px-5 py-4">
-          <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+          <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
             <Icon name="map_pin" size={11} />
             Place
           </h2>
-          <p className="muted mb-2 text-[12px]">
+          <p className="muted mb-2 text-xs">
             A location typed into the field above is text. Naming a place links this
             event to a record with coordinates, which is what travel estimates need.
           </p>
@@ -263,7 +263,7 @@ export default async function EventPage({
           <form action={setEventPlace} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="eventId" value={event.id} />
             <div className="flex min-w-56 flex-col gap-1">
-              <label htmlFor="event-place" className="faint text-[11px] font-medium">
+              <label htmlFor="event-place" className="faint text-2xs font-medium">
                 Place in {event.space.name}
               </label>
               <select
@@ -283,14 +283,14 @@ export default async function EventPage({
             </div>
             <button
               type="submit"
-              className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+              className="hairline rounded border px-3 py-1.5 text-xs font-medium"
             >
               Save place
             </button>
             {event.placeId && (
               <Link
                 href={`/places/${event.placeId}` as never}
-                className="muted text-[12px] underline underline-offset-2"
+                className="muted text-xs underline underline-offset-2"
               >
                 Open {event.placeName}
               </Link>
@@ -301,12 +301,12 @@ export default async function EventPage({
 
       {event.attendees.length > 0 && (
         <section className="hairline border-b px-5 py-4">
-          <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+          <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
             Attendees
           </h2>
           <ul className="flex flex-col gap-1">
             {event.attendees.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-baseline gap-2 text-[13px]">
+              <li key={a.id} className="flex flex-wrap items-baseline gap-2 text-sm">
                 <Icon name="user" size={11} className="faint shrink-0" />
                 {a.personId ? (
                   <Link href={`/people/${a.personId}`} className="truncate">
@@ -315,8 +315,8 @@ export default async function EventPage({
                 ) : (
                   <span className="truncate">{a.displayName ?? a.email}</span>
                 )}
-                {a.isOrganiser && <span className="faint text-[11px]">organiser</span>}
-                <span className="muted ml-auto text-[11px]">{responseLabel(a.response)}</span>
+                {a.isOrganiser && <span className="faint text-2xs">organiser</span>}
+                <span className="muted ml-auto text-2xs">{responseLabel(a.response)}</span>
               </li>
             ))}
           </ul>
@@ -325,7 +325,7 @@ export default async function EventPage({
 
       {event.bodyMd.trim() !== '' && (
         <section className="hairline border-b px-5 py-4">
-          <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">Notes</h2>
+          <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">Notes</h2>
           <Markdown source={event.bodyMd} />
         </section>
       )}
@@ -337,7 +337,7 @@ export default async function EventPage({
           <input type="hidden" name="eventId" value={event.id} />
           <button
             type="submit"
-            className="hairline row-hover rounded border px-2 py-1 text-[12px]"
+            className="hairline row-hover rounded border px-2 py-1 text-xs"
             style={{ color: 'var(--danger)' }}
           >
             Delete this event
@@ -366,31 +366,31 @@ function EditForm({
 
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1">
-          <span className="faint text-[11px] font-medium">Title</span>
+          <span className="faint text-2xs font-medium">Title</span>
           <input name="title" defaultValue={event.title} className="input" required />
         </label>
 
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px] font-medium">Date</span>
+            <span className="faint text-2xs font-medium">Date</span>
             <input type="date" name="onDate" defaultValue={day} className="input" required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px] font-medium">From</span>
+            <span className="faint text-2xs font-medium">From</span>
             <input type="time" name="startTime" defaultValue={startTime} className="input" />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px] font-medium">To</span>
+            <span className="faint text-2xs font-medium">To</span>
             <input type="time" name="endTime" defaultValue={endTime} className="input" />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px] font-medium">All day</span>
+            <span className="faint text-2xs font-medium">All day</span>
             <span className="flex h-[30px] items-center">
               <input type="checkbox" name="allDay" value="true" defaultChecked={event.allDay} />
             </span>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px] font-medium">Status</span>
+            <span className="faint text-2xs font-medium">Status</span>
             <select name="status" defaultValue={event.status} className="input">
               <option value="confirmed">Confirmed</option>
               <option value="tentative">Tentative</option>
@@ -398,7 +398,7 @@ function EditForm({
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px] font-medium">Category</span>
+            <span className="faint text-2xs font-medium">Category</span>
             <select name="categoryId" defaultValue={event.categoryId ?? ''} className="input">
               <option value="">No category</option>
               {categories.map((c) => (
@@ -409,19 +409,19 @@ function EditForm({
         </div>
 
         <label className="flex flex-col gap-1">
-          <span className="faint text-[11px] font-medium">Location</span>
+          <span className="faint text-2xs font-medium">Location</span>
           <input name="locationText" defaultValue={event.locationText ?? ''} className="input" />
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="faint text-[11px] font-medium">Notes (Markdown)</span>
+          <span className="faint text-2xs font-medium">Notes (Markdown)</span>
           <textarea name="bodyMd" defaultValue={event.bodyMd} rows={4} className="input" />
         </label>
 
         <div>
           <button
             type="submit"
-            className="rounded px-3 py-1.5 text-[12px] font-medium"
+            className="rounded px-3 py-1.5 text-xs font-medium"
             style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
           >
             Save changes
@@ -449,16 +449,16 @@ function MoveSection({
 
   return (
     <section className="hairline border-b px-5 py-4">
-      <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+      <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
         <Icon name="move" size={11} />
         Move to another space
       </h2>
 
       {targets.length === 0 ? (
-        <p className="faint text-[12px]">There is nowhere else to move this.</p>
+        <p className="faint text-xs">There is nowhere else to move this.</p>
       ) : !target ? (
         <>
-          <p className="muted mb-2 text-[12px]">
+          <p className="muted mb-2 text-xs">
             Pick a destination. You will see exactly who gains and loses access before
             anything changes.
           </p>
@@ -479,13 +479,13 @@ function MoveSection({
         </>
       ) : (
         <div className="surface rounded-md p-4">
-          <div className="mb-3 flex items-center gap-2 text-[13px]">
+          <div className="mb-3 flex items-center gap-2 text-sm">
             <SpaceIndicator space={event.space} size="md" />
             <Icon name="arrow_right" size={13} className="faint" />
             <SpaceIndicator space={target} size="md" />
           </div>
 
-          <div className="flex flex-col gap-2 text-[12px]">
+          <div className="flex flex-col gap-2 text-xs">
             {loses.length > 0 && (
               <Group tone="var(--danger)" heading="These people lose access" people={loses} />
             )}
@@ -498,7 +498,7 @@ function MoveSection({
             {preview.length === 0 && <p className="faint">Nobody’s access changes.</p>}
           </div>
 
-          <p className="muted mt-3 flex items-start gap-1.5 text-[12px]">
+          <p className="muted mt-3 flex items-start gap-1.5 text-xs">
             <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
             <span>
               Attendees move with the event.
@@ -521,13 +521,13 @@ function MoveSection({
               <input type="hidden" name="targetSpaceId" value={target.id} />
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-[12px] font-medium"
+                className="rounded px-3 py-1.5 text-xs font-medium"
                 style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
               >
                 Move to {target.name}
               </button>
             </form>
-            <Link href={`/calendar/event/${event.id}`} className="muted text-[12px]">
+            <Link href={`/calendar/event/${event.id}`} className="muted text-xs">
               Cancel
             </Link>
           </div>

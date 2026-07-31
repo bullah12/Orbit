@@ -34,17 +34,17 @@ export default async function TaskListPage({
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">{meta.label}</h1>
+          <h1 className="text-lg font-semibold">{meta.label}</h1>
           {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
-          <span className="faint text-[12px]">{plural(tasks.length, 'task')}</span>
+          <span className="faint text-xs">{plural(tasks.length, 'task')}</span>
         </div>
-        <p className="muted mt-0.5 text-[12px]">{meta.blurb}</p>
+        <p className="muted mt-0.5 text-xs">{meta.blurb}</p>
       </header>
 
       <ComposeTask spaces={spaces} categories={categories} defaultSpaceId={spaceId} />
 
       {tasks.length === 0 ? (
-        <p className="faint px-5 py-10 text-[13px]">Nothing here.</p>
+        <p className="faint px-5 py-10 text-sm">Nothing here.</p>
       ) : (
         <ul>
           {tasks.map((t) => (

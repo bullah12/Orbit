@@ -103,10 +103,10 @@ export default async function TravelPage({
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">Travel</h1>
+          <h1 className="text-lg font-semibold">Travel</h1>
           {active.length > 0 && (
             <span
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-medium"
               style={{ color: 'var(--accent)', background: 'var(--bg-raised)' }}
             >
               <Icon name="suitcase" size={11} />
@@ -114,7 +114,7 @@ export default async function TravelPage({
             </span>
           )}
         </div>
-        <p className="muted mt-0.5 text-[12px]">
+        <p className="muted mt-0.5 text-xs">
           Journeys and trips, recorded by hand or taken from the calendar. Orbit does
           not track where you are: there is no background location and the permission
           is never requested.
@@ -123,44 +123,44 @@ export default async function TravelPage({
 
       {/* ------------------------------------------------------------ trips */}
       <section className="hairline border-b px-5 py-4">
-        <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
           <Icon name="suitcase" size={11} />
           Trips
         </h2>
 
         {sessions.length === 0 ? (
-          <p className="faint mb-3 text-[12px]">No trips recorded.</p>
+          <p className="faint mb-3 text-xs">No trips recorded.</p>
         ) : (
           <ul className="mb-3 flex flex-col gap-1" aria-label="Trips" id="trip-list">
             {sessions.map((s) => (
               <li key={s.id} className="hairline row-hover flex flex-wrap items-baseline gap-2 border-b py-1.5">
                 <Link
                   href={`/travel/trip/${s.id}`}
-                  className="min-w-0 flex-1 truncate text-[13px] underline-offset-2 hover:underline"
+                  className="min-w-0 flex-1 truncate text-sm underline-offset-2 hover:underline"
                 >
                   {s.title}
                 </Link>
                 {sessionIsActive(s) && (
-                  <span className="text-[11px] font-medium" style={{ color: 'var(--accent)' }}>
+                  <span className="text-2xs font-medium" style={{ color: 'var(--accent)' }}>
                     now
                   </span>
                 )}
-                <span className="faint text-[11px]">
+                <span className="faint text-2xs">
                   {formatDate(s.startsAt)} – {formatDate(s.endsAt)} ·{' '}
                   {plural(sessionDayCount(s), 'day')}
                 </span>
                 {s.destinationPlaceName && (
-                  <span className="faint inline-flex items-center gap-1 text-[11px]">
+                  <span className="faint inline-flex items-center gap-1 text-2xs">
                     <Icon name="map_pin" size={10} />
                     {s.destinationPlaceName}
                   </span>
                 )}
-                <span className="faint inline-flex items-center gap-1 text-[11px]">
+                <span className="faint inline-flex items-center gap-1 text-2xs">
                   <Icon name={s.source === 'calendar' ? 'calendar' : 'pin'} size={10} />
                   {s.source === 'calendar' ? 'from the calendar' : 'by hand'}
                 </span>
                 {s.legCount > 0 && (
-                  <span className="faint text-[11px]">{plural(s.legCount, 'journey')}</span>
+                  <span className="faint text-2xs">{plural(s.legCount, 'journey')}</span>
                 )}
                 <SpaceIndicator space={s.space} />
                 <form action={deleteTravelSession} className="inline-flex">
@@ -176,7 +176,7 @@ export default async function TravelPage({
 
         {tripCandidates.length > 0 && (
           <div className="mb-3">
-            <h3 className="muted mb-1 text-[11px] font-medium">
+            <h3 className="muted mb-1 text-2xs font-medium">
               These calendar events span more than a day
             </h3>
             <ul className="flex flex-wrap gap-2">
@@ -184,11 +184,11 @@ export default async function TravelPage({
                 <li key={event.id}>
                   <form action={createSessionFromEvent} className="surface flex items-center gap-2 rounded px-2 py-1.5">
                     <input type="hidden" name="eventId" value={event.id} />
-                    <span className="text-[12px]">{event.title}</span>
-                    <span className="faint text-[11px]">
+                    <span className="text-xs">{event.title}</span>
+                    <span className="faint text-2xs">
                       {plural(sessionDayCount(draft!), 'day')}
                     </span>
-                    <button type="submit" className="text-[11px] underline underline-offset-2">
+                    <button type="submit" className="text-2xs underline underline-offset-2">
                       Make it a trip
                     </button>
                   </form>
@@ -204,20 +204,20 @@ export default async function TravelPage({
       {/* --------------------------------------------------------- journeys */}
       <section className="hairline border-b px-5 py-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <h2 className="faint flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+          <h2 className="faint flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
             <Icon name="route" size={11} />
             Journeys
           </h2>
           <nav className="flex items-center gap-2" aria-label="Change day">
-            <Link href={`/travel?day=${addDaysISO(day, -1)}`} className="faint text-[12px]">
+            <Link href={`/travel?day=${addDaysISO(day, -1)}`} className="faint text-xs">
               ← Previous day
             </Link>
-            <span className="text-[12px] font-medium">{formatDate(day)}</span>
-            <Link href={`/travel?day=${addDaysISO(day, 1)}`} className="faint text-[12px]">
+            <span className="text-xs font-medium">{formatDate(day)}</span>
+            <Link href={`/travel?day=${addDaysISO(day, 1)}`} className="faint text-xs">
               Next day →
             </Link>
             {day !== todayISO() && (
-              <Link href="/travel" className="faint text-[12px]">
+              <Link href="/travel" className="faint text-xs">
                 Today
               </Link>
             )}
@@ -225,7 +225,7 @@ export default async function TravelPage({
         </div>
 
         {legs.length === 0 ? (
-          <p className="faint mb-3 text-[12px]">Nothing recorded for this day.</p>
+          <p className="faint mb-3 text-xs">Nothing recorded for this day.</p>
         ) : (
           <ul className="mb-3 flex flex-col" aria-label="Journeys on this day">
             {legs.map((l) => (
@@ -239,11 +239,11 @@ export default async function TravelPage({
 
       {/* ------------------------------------------- derived from the calendar */}
       <section className="px-5 py-4">
-        <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
           <Icon name="calendar" size={11} />
           From the calendar
         </h2>
-        <p className="muted mb-3 text-[12px]">
+        <p className="muted mb-3 text-xs">
           Two events at different places imply a journey between them. Nothing here is
           saved until you say so, and the estimate comes from{' '}
           <strong>{provider.name}</strong>
@@ -253,9 +253,9 @@ export default async function TravelPage({
         </p>
 
         {events.length === 0 ? (
-          <p className="faint text-[12px]">No events on this day.</p>
+          <p className="faint text-xs">No events on this day.</p>
         ) : unsaved.length === 0 ? (
-          <p className="faint text-[12px]">
+          <p className="faint text-xs">
             {derived.length === 0
               ? 'Nothing to imply a journey: the day’s events have no places, or they are all at the same one.'
               : 'Every journey this day implies is already saved.'}
@@ -270,13 +270,13 @@ export default async function TravelPage({
 
         {derived.length === 0 && events.some((e) => e.placeId) && (
           <div className="mt-3">
-            <h3 className="muted mb-1 text-[11px] font-medium">Start the day somewhere</h3>
+            <h3 className="muted mb-1 text-2xs font-medium">Start the day somewhere</h3>
             <ul className="flex flex-wrap gap-2">
               {places.slice(0, 6).map((p) => (
                 <li key={p.id}>
                   <Link
                     href={`/travel?day=${day}&from=${p.id}`}
-                    className="surface row-hover flex items-center gap-1.5 rounded px-2 py-1 text-[12px]"
+                    className="surface row-hover flex items-center gap-1.5 rounded px-2 py-1 text-xs"
                   >
                     <Icon name="map_pin" size={11} className="faint" />
                     {p.name}
@@ -303,7 +303,7 @@ function LegRow({ leg }: { leg: TravelLegRow }) {
   return (
     <li className="hairline row-hover flex flex-wrap items-baseline gap-2 border-b py-1.5">
       <Icon name={LEG_MODE_ICON[mode]} size={12} className="faint shrink-0" />
-      <span className="min-w-0 flex-1 truncate text-[13px]">
+      <span className="min-w-0 flex-1 truncate text-sm">
         {leg.fromPlaceName ?? 'Somewhere else'}
         <span className="faint mx-1.5" aria-hidden="true">
           →
@@ -311,27 +311,27 @@ function LegRow({ leg }: { leg: TravelLegRow }) {
         {leg.toPlaceName ?? 'Somewhere else'}
       </span>
       {leg.departAt && (
-        <span className="text-[12px] tabular-nums">
+        <span className="text-xs tabular-nums">
           {formatTime(leg.departAt)}
           {leg.arriveAt && <span className="faint">–{formatTime(leg.arriveAt)}</span>}
         </span>
       )}
       {leg.durationMinutes != null && (
-        <span className="faint text-[11px]">{formatDuration(leg.durationMinutes)}</span>
+        <span className="faint text-2xs">{formatDuration(leg.durationMinutes)}</span>
       )}
       {leg.distanceMetres != null && (
-        <span className="faint text-[11px]">{(leg.distanceMetres / 1000).toFixed(1)} km</span>
+        <span className="faint text-2xs">{(leg.distanceMetres / 1000).toFixed(1)} km</span>
       )}
-      <span className="faint text-[11px]">
+      <span className="faint text-2xs">
         {leg.estimateSource === 'provider'
           ? 'estimated'
           : leg.estimateSource === 'manual'
             ? 'timed'
             : 'no estimate'}
       </span>
-      {leg.eventTitle && <span className="faint truncate text-[11px]">{leg.eventTitle}</span>}
+      {leg.eventTitle && <span className="faint truncate text-2xs">{leg.eventTitle}</span>}
       {leg.sessionTitle && (
-        <span className="faint inline-flex items-center gap-1 text-[11px]">
+        <span className="faint inline-flex items-center gap-1 text-2xs">
           <Icon name="suitcase" size={10} />
           {leg.sessionTitle}
         </span>
@@ -351,7 +351,7 @@ function LegRow({ leg }: { leg: TravelLegRow }) {
           id={`mode-${leg.id}`}
           name="mode"
           defaultValue={mode}
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
         >
           {LEG_MODES.map((m) => (
             <option key={m} value={m}>
@@ -359,7 +359,7 @@ function LegRow({ leg }: { leg: TravelLegRow }) {
             </option>
           ))}
         </select>
-        <button type="submit" className="faint text-[11px] underline underline-offset-2">
+        <button type="submit" className="faint text-2xs underline underline-offset-2">
           Re-estimate
         </button>
       </form>
@@ -402,30 +402,30 @@ function DerivedRow({ leg, day }: { leg: DerivedLeg; day: string }) {
   return (
     <li className="surface flex flex-wrap items-baseline gap-2 rounded p-2">
       <Icon name={LEG_MODE_ICON[mode]} size={12} className="faint shrink-0" />
-      <span className="min-w-0 flex-1 truncate text-[13px]">
+      <span className="min-w-0 flex-1 truncate text-sm">
         {leg.fromPlaceName}
         <span className="faint mx-1.5" aria-hidden="true">
           →
         </span>
         {leg.toPlaceName}
       </span>
-      <span className="text-[12px] tabular-nums">
+      <span className="text-xs tabular-nums">
         by {formatTime(leg.arriveBy)}
       </span>
 
       {leg.needsCoordinates ? (
-        <span className="faint inline-flex items-center gap-1 text-[11px]">
+        <span className="faint inline-flex items-center gap-1 text-2xs">
           <Icon name="alert" size={10} />
           one end has no coordinates — no estimate
         </span>
       ) : (
         <>
-          <span className="faint text-[11px]">
+          <span className="faint text-2xs">
             about {formatDuration(plan.doorToDoorMinutes)}
             {plan.bufferBefore + plan.bufferAfter > 0 &&
               ` (${plan.travelMinutes} moving, ${plan.bufferBefore + plan.bufferAfter} either end)`}
           </span>
-          <span className="text-[11px] font-medium" style={{ color: tone }}>
+          <span className="text-2xs font-medium" style={{ color: tone }}>
             {verdict.feasibility === 'impossible'
               ? `${-verdict.slackMinutes} min short`
               : verdict.feasibility === 'tight'
@@ -449,7 +449,7 @@ function DerivedRow({ leg, day }: { leg: DerivedLeg; day: string }) {
           id={`derived-mode-${leg.toEventId}`}
           name="mode"
           defaultValue={mode}
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
         >
           {LEG_MODES.map((m) => (
             <option key={m} value={m}>
@@ -457,7 +457,7 @@ function DerivedRow({ leg, day }: { leg: DerivedLeg; day: string }) {
             </option>
           ))}
         </select>
-        <button type="submit" className="hairline rounded border px-2 py-1 text-[11px] font-medium">
+        <button type="submit" className="hairline rounded border px-2 py-1 text-2xs font-medium">
           Save this journey
         </button>
       </form>

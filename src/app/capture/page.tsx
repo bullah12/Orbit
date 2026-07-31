@@ -56,14 +56,14 @@ export default async function CapturePage({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
-        <h1 className="text-[15px] font-semibold">Capture</h1>
-        <p className="muted mt-0.5 text-[12px]">
+        <h1 className="text-lg font-semibold">Capture</h1>
+        <p className="muted mt-0.5 text-xs">
           Type it the way you would say it. “Put the bins out tomorrow”, “a week
           on Tuesday call the dentist”, “dinner with Sadia on Saturday at 7pm”.
           Use <code>#space</code>, <code>@person</code> and <code>!priority</code>{' '}
           if you want to be exact.
         </p>
-        <p className="faint mt-1 inline-flex items-center gap-1 text-[11px]">
+        <p className="faint mt-1 inline-flex items-center gap-1 text-2xs">
           <Icon name="lock" size={11} />
           Parsed on this machine. Nothing you type here is sent anywhere, and no
           AI reads it.
@@ -73,7 +73,7 @@ export default async function CapturePage({
       {error && (
         <p
           role="alert"
-          className="hairline border-b px-5 py-2 text-[12px]"
+          className="hairline border-b px-5 py-2 text-xs"
           style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
         >
           {error}
@@ -101,7 +101,7 @@ export default async function CapturePage({
         />
         <button
           type="submit"
-          className="hairline inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-[13px]"
+          className="hairline inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-sm"
         >
           <Icon name="arrow_right" size={13} />
           Read it back
@@ -109,17 +109,17 @@ export default async function CapturePage({
       </form>
 
       <section className="px-5 py-4" aria-labelledby="capture-preview-heading">
-        <h2 id="capture-preview-heading" className="text-[13px] font-semibold">
+        <h2 id="capture-preview-heading" className="text-sm font-semibold">
           What this would create
         </h2>
 
         {!text.trim() ? (
-          <p className="muted mt-1 text-[12px]">
+          <p className="muted mt-1 text-xs">
             Nothing yet. Type a line above and press <strong>Read it back</strong>.
           </p>
         ) : (
           <>
-            <p aria-live="polite" className="mt-1 text-[13px]">
+            <p aria-live="polite" className="mt-1 text-sm">
               <Icon name={KIND_ICON[chosenKind]} size={13} className="muted inline" />{' '}
               {describeCapture({ ...capture, kind: chosenKind })}
             </p>
@@ -129,7 +129,7 @@ export default async function CapturePage({
                 {capture.matches.map((m, i) => (
                   <li
                     key={i}
-                    className="hairline inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[11px]"
+                    className="hairline inline-flex items-center gap-1.5 rounded border px-2 py-1 text-2xs"
                   >
                     <Icon name={FIELD_ICON[m.field]} size={11} className="muted" />
                     <span className="faint">{m.text}</span>
@@ -139,7 +139,7 @@ export default async function CapturePage({
                 ))}
               </ul>
             ) : (
-              <p className="faint mt-2 text-[11px]">
+              <p className="faint mt-2 text-2xs">
                 Nothing in that line was read as a date, a time or a marker — it
                 is all title.
               </p>
@@ -148,7 +148,7 @@ export default async function CapturePage({
             {capture.spaceHint && !hinted && (
               <p
                 role="alert"
-                className="mt-2 text-[11px]"
+                className="mt-2 text-2xs"
                 style={{ color: 'var(--c-amber)' }}
               >
                 There is no space called “{capture.spaceHint}” that you can write
@@ -164,11 +164,11 @@ export default async function CapturePage({
               <input type="hidden" name="text" value={text} />
 
               <fieldset className="flex flex-wrap items-center gap-3">
-                <legend className="faint text-[11px] font-semibold uppercase tracking-wider">
+                <legend className="faint text-2xs font-semibold uppercase tracking-wider">
                   Create it as
                 </legend>
                 {(['task', 'note', 'event'] as const).map((k) => (
-                  <label key={k} className="flex items-center gap-1.5 text-[12px]">
+                  <label key={k} className="flex items-center gap-1.5 text-xs">
                     <input type="radio" name="kind" value={k} defaultChecked={k === chosenKind} />
                     <Icon name={KIND_ICON[k]} size={12} className="muted" />
                     {k[0].toUpperCase() + k.slice(1)}
@@ -181,7 +181,7 @@ export default async function CapturePage({
                   you put it in, so the choice has to be legible while you make
                   it. */}
               <fieldset className="flex flex-wrap items-center gap-3">
-                <legend className="faint text-[11px] font-semibold uppercase tracking-wider">
+                <legend className="faint text-2xs font-semibold uppercase tracking-wider">
                   Into
                 </legend>
                 {spaces.map((s) => (
@@ -201,14 +201,14 @@ export default async function CapturePage({
                 <button
                   type="submit"
                   disabled={!ready}
-                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm disabled:opacity-50"
                   style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
                 >
                   <Icon name="plus" size={13} />
                   Create it
                 </button>
                 {!ready && (
-                  <p className="faint mt-1 text-[11px]">
+                  <p className="faint mt-1 text-2xs">
                     There is nothing here but a date. Type what it is as well.
                   </p>
                 )}

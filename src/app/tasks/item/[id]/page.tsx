@@ -78,20 +78,20 @@ export default async function TaskPage({
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Link href="/tasks/all" className="faint text-[12px]">
+          <Link href="/tasks/all" className="faint text-xs">
             Tasks
           </Link>
-          <span className="faint text-[12px]" aria-hidden="true">
+          <span className="faint text-xs" aria-hidden="true">
             /
           </span>
           <SpaceIndicator space={task.space} />
           <CategoryChip category={task.category} />
         </div>
-        <h1 className="text-[17px] font-semibold">
+        <h1 className="text-xl font-semibold">
           {task.isLocked ? <em className="muted">Locked task</em> : task.title}
         </h1>
         {lists.length > 0 && (
-          <p className="faint mt-1.5 text-[11px]">
+          <p className="faint mt-1.5 text-2xs">
             Appears in{' '}
             {lists
               .filter(isSmartListKey)
@@ -102,7 +102,7 @@ export default async function TaskPage({
       </header>
 
       {task.isLocked ? (
-        <div className="muted flex items-center gap-2 px-5 py-10 text-[13px]">
+        <div className="muted flex items-center gap-2 px-5 py-10 text-sm">
           <Icon name="lock" size={14} />
           This task is locked. It is end-to-end encrypted and can only be opened on a
           device holding the key — the server has never seen its contents, so there is
@@ -113,16 +113,16 @@ export default async function TaskPage({
       )}
 
       <section className="hairline border-t px-5 py-4">
-        <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
           <Icon name="move" size={11} />
           Move to another space
         </h2>
 
         {targets.length === 0 ? (
-          <p className="faint text-[12px]">There is nowhere else to move this.</p>
+          <p className="faint text-xs">There is nowhere else to move this.</p>
         ) : !target ? (
           <>
-            <p className="muted mb-2 text-[12px]">
+            <p className="muted mb-2 text-xs">
               Pick a destination. You will see exactly who gains and loses access before
               anything changes.
             </p>
@@ -150,12 +150,12 @@ export default async function TaskPage({
         <section className="hairline border-t px-5 py-4" aria-labelledby="task-ai-heading">
           <h2
             id="task-ai-heading"
-            className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider"
+            className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider"
           >
             <Icon name="sparkle" size={11} />
             Break it into steps
           </h2>
-          <p className="muted mb-2 text-[12px]">
+          <p className="muted mb-2 text-xs">
             {breakdown
               ? breakdown.dataLeavesDevice
               : 'This space has no consent row for that feature, so there is nothing switched on and nothing to send.'}
@@ -165,16 +165,16 @@ export default async function TaskPage({
               <input type="hidden" name="feature" value="task_breakdown" />
               <input type="hidden" name="subjectId" value={task.id} />
               <input type="hidden" name="back" value="task" />
-              <button type="submit" className="hairline rounded border px-2.5 py-1 text-[12px]">
+              <button type="submit" className="hairline rounded border px-2.5 py-1 text-xs">
                 Break it into steps
               </button>
             </form>
-            <span className="faint text-[12px]">
+            <span className="faint text-xs">
               {breakdown?.isEnabled
                 ? 'Switched on for this space.'
                 : 'Switched off. Pressing it is refused, and the refusal is recorded.'}
             </span>
-            <Link href="/ai" className="muted text-[12px]">
+            <Link href="/ai" className="muted text-xs">
               AI settings
             </Link>
           </div>
@@ -201,19 +201,19 @@ export default async function TaskPage({
       )}
 
       <section className="hairline border-t px-5 py-4">
-        <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
           Delete
         </h2>
         <form action={deleteTask} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="taskId" value={task.id} />
           <button
             type="submit"
-            className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+            className="hairline rounded border px-3 py-1.5 text-xs font-medium"
             style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
           >
             Delete this task
           </button>
-          <span className="faint text-[12px]">
+          <span className="faint text-xs">
             Permanent, and it takes any sub-tasks and checklist with it.
           </span>
         </form>
@@ -252,7 +252,7 @@ function EditForm({
           name="bodyMd"
           defaultValue={task.bodyMd}
           rows={5}
-          className="input resize-y font-mono text-[12.5px]"
+          className="input resize-y font-mono text-xs"
         />
       </Field>
 
@@ -347,13 +347,13 @@ function EditForm({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          className="rounded px-3 py-1.5 text-[12px] font-medium"
+          className="rounded px-3 py-1.5 text-xs font-medium"
           style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
         >
           Save changes
         </button>
         {task.completedAt && (
-          <span className="faint text-[11px]">
+          <span className="faint text-2xs">
             Completed {formatDate(task.completedAt.slice(0, 10))}
           </span>
         )}
@@ -361,7 +361,7 @@ function EditForm({
 
       {task.bodyMd.trim() !== '' && (
         <details className="hairline rounded border p-3">
-          <summary className="faint cursor-pointer text-[11px] font-medium uppercase tracking-wider">
+          <summary className="faint cursor-pointer text-2xs font-medium uppercase tracking-wider">
             Preview
           </summary>
           <div className="mt-2">
@@ -386,7 +386,7 @@ function Field({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="faint text-[11px] font-medium">
+      <label htmlFor={id} className="faint text-2xs font-medium">
         {label}
         {hint && <span className="ml-1 font-normal opacity-70">({hint})</span>}
       </label>
@@ -410,13 +410,13 @@ function MoveConfirmation({
 
   return (
     <div className="surface rounded-md p-4">
-      <div className="mb-3 flex items-center gap-2 text-[13px]">
+      <div className="mb-3 flex items-center gap-2 text-sm">
         <SpaceIndicator space={task.space} size="md" />
         <Icon name="arrow_right" size={13} className="faint" />
         <SpaceIndicator space={target} size="md" />
       </div>
 
-      <div className="flex flex-col gap-2 text-[12px]">
+      <div className="flex flex-col gap-2 text-xs">
         {loses.length > 0 && (
           <Group
             tone="var(--danger)"
@@ -441,7 +441,7 @@ function MoveConfirmation({
           task across. Saying so here is the difference between a consequence
           and a surprise. */}
       {task.category && (
-        <p className="muted mt-3 flex items-start gap-1.5 text-[12px]">
+        <p className="muted mt-3 flex items-start gap-1.5 text-xs">
           <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
           <span>
             The category <strong className="font-medium">{task.category.name}</strong> belongs
@@ -457,13 +457,13 @@ function MoveConfirmation({
           <input type="hidden" name="targetSpaceId" value={target.id} />
           <button
             type="submit"
-            className="rounded px-3 py-1.5 text-[12px] font-medium"
+            className="rounded px-3 py-1.5 text-xs font-medium"
             style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
           >
             Move to {target.name}
           </button>
         </form>
-        <Link href={`/tasks/item/${task.id}` as never} className="muted text-[12px]">
+        <Link href={`/tasks/item/${task.id}` as never} className="muted text-xs">
           Cancel
         </Link>
       </div>

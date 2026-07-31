@@ -70,7 +70,7 @@ export function OfflineEdit({
   // edit having been lost and then found.
   if (!outbox) {
     return (
-      <p className="faint px-5 py-3 text-[12px]" aria-live="polite">
+      <p className="faint px-5 py-3 text-xs" aria-live="polite">
         Reading this device’s queue…
       </p>
     );
@@ -123,10 +123,10 @@ export function OfflineEdit({
   return (
     <section className="hairline border-t px-5 py-4" aria-labelledby="offline-edit-heading">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="offline-edit-heading" className="text-[13px] font-semibold">
+        <h2 id="offline-edit-heading" className="text-sm font-semibold">
           Edit, offline or not
         </h2>
-        <label className="flex items-center gap-2 text-[12px]">
+        <label className="flex items-center gap-2 text-xs">
           <input
             type="checkbox"
             checked={offline}
@@ -146,7 +146,7 @@ export function OfflineEdit({
         </label>
       </div>
 
-      <p id="offline-explainer" className="muted mt-1 text-[12px]">
+      <p id="offline-explainer" className="muted mt-1 text-xs">
         A switch, not a network: Orbit has no service worker here, so this is a
         control you flick rather than a connection dropping. With it on, edits
         apply on this screen straight away and wait in this device’s queue.
@@ -158,11 +158,11 @@ export function OfflineEdit({
           const value = shown.value === null ? '' : String(shown.value);
           return (
             <label key={f.name} className="flex flex-col gap-1">
-              <span className="flex items-center gap-2 text-[11px] font-medium">
+              <span className="flex items-center gap-2 text-2xs font-medium">
                 {fieldLabel(f.name)}
                 {shown.isPending && (
                   <span
-                    className="hairline inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+                    className="hairline inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-2xs"
                     style={{ color: 'var(--c-amber)', borderColor: 'var(--c-amber)' }}
                   >
                     <Icon name="clock" size={10} /> not sent yet
@@ -171,7 +171,7 @@ export function OfflineEdit({
               </span>
               {f.options ? (
                 <select
-                  className="hairline rounded border bg-transparent px-2 py-1 text-[13px]"
+                  className="hairline rounded border bg-transparent px-2 py-1 text-sm"
                   value={value}
                   disabled={busy}
                   onChange={(e) => void queueEdit(f.name, e.currentTarget.value, f.value)}
@@ -184,7 +184,7 @@ export function OfflineEdit({
                 </select>
               ) : (
                 <input
-                  className="hairline rounded border bg-transparent px-2 py-1 text-[13px]"
+                  className="hairline rounded border bg-transparent px-2 py-1 text-sm"
                   defaultValue={value}
                   disabled={busy}
                   onBlur={(e) => {
@@ -201,7 +201,7 @@ export function OfflineEdit({
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <SpaceIndicator space={space} />
-        <span className="faint text-[11px]">
+        <span className="faint text-2xs">
           {queued.length === 0
             ? 'Nothing queued for this item.'
             : `${queued.length} edit${queued.length === 1 ? '' : 's'} queued for this item.`}
@@ -209,7 +209,7 @@ export function OfflineEdit({
         {queued.length > 0 && (
           <button
             type="button"
-            className="hairline rounded border px-2 py-1 text-[12px]"
+            className="hairline rounded border px-2 py-1 text-xs"
             disabled={busy}
             onClick={() => void send(outbox)}
           >
@@ -218,7 +218,7 @@ export function OfflineEdit({
         )}
       </div>
 
-      <p className="muted mt-2 text-[12px]" role="status" aria-live="polite">
+      <p className="muted mt-2 text-xs" role="status" aria-live="polite">
         {said ?? 'Nothing has been changed on this screen yet.'}
       </p>
     </section>

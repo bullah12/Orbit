@@ -58,8 +58,8 @@ export default async function SearchPage({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
-        <h1 className="text-[15px] font-semibold">Search</h1>
-        <p className="muted mt-0.5 text-[12px]">
+        <h1 className="text-lg font-semibold">Search</h1>
+        <p className="muted mt-0.5 text-xs">
           Tasks, notes, people, events and places. What you can find is decided
           by the spaces you are in, not by this page.
         </p>
@@ -81,7 +81,7 @@ export default async function SearchPage({
             />
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px]"
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm"
               style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
             >
               <Icon name="search" size={13} />
@@ -90,11 +90,11 @@ export default async function SearchPage({
           </div>
 
           <fieldset className="flex flex-wrap items-center gap-3">
-            <legend className="faint text-[11px] font-semibold uppercase tracking-wider">
+            <legend className="faint text-2xs font-semibold uppercase tracking-wider">
               Look in
             </legend>
             {SEARCH_KINDS.map((kind) => (
-              <label key={kind} className="flex items-center gap-1.5 text-[12px]">
+              <label key={kind} className="flex items-center gap-1.5 text-xs">
                 <input
                   type="checkbox"
                   name="kind"
@@ -110,7 +110,7 @@ export default async function SearchPage({
       </header>
 
       <div className="hairline flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-5 py-2">
-        <p aria-live="polite" className="muted text-[12px]">
+        <p aria-live="polite" className="muted text-xs">
           {!q.searchable
             ? 'Type something to search for.'
             : results.hits.length === 0
@@ -118,14 +118,14 @@ export default async function SearchPage({
               : `${plural(results.hits.length, 'result')} — ${summary}`}
         </p>
         {locked > 0 && (
-          <p className="faint inline-flex items-center gap-1 text-[11px]">
+          <p className="faint inline-flex items-center gap-1 text-2xs">
             <Icon name="lock" size={11} />
             {plural(locked, 'locked item')} not searched — locked items have no
             plaintext on the server to search.
           </p>
         )}
         {results.capped.length > 0 && (
-          <p className="faint text-[11px]">
+          <p className="faint text-2xs">
             Showing the first 30 {results.capped.map((k) => KIND_PLURAL[k].toLowerCase()).join(' and ')}.
             Narrow the query to see the rest.
           </p>
@@ -139,7 +139,7 @@ export default async function SearchPage({
       </ul>
 
       {q.searchable && results.hits.length === 0 && (
-        <p className="muted px-5 py-8 text-[13px]">
+        <p className="muted px-5 py-8 text-sm">
           No task, note, person, event or place in your spaces matches that.
           Try fewer words — the search is whole-word, so “bin” does not find
           “bins”.
@@ -157,14 +157,14 @@ function Result({ hit, terms }: { hit: SearchHit; terms: string[] }) {
         <div className="flex flex-wrap items-center gap-2">
           <SpaceIndicator space={hit.space} />
           <KindChip kind={hit.kind} />
-          <span className="text-[13px] font-medium">
+          <span className="text-sm font-medium">
             <Marked segments={snippet(hit.title, terms, 120)} fallback={hit.title} />
           </span>
           <CategoryChip category={hit.category} />
         </div>
-        {hit.detail && <p className="faint text-[11px]">{hit.detail}</p>}
+        {hit.detail && <p className="faint text-2xs">{hit.detail}</p>}
         {segments.length > 0 && (
-          <p className="muted text-[12px]">
+          <p className="muted text-xs">
             <Marked segments={segments} fallback="" />
           </p>
         )}
@@ -181,7 +181,7 @@ function Result({ hit, terms }: { hit: SearchHit; terms: string[] }) {
 function KindChip({ kind }: { kind: SearchKind }) {
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] leading-tight"
+      className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-2xs"
       style={{ background: 'var(--bg-sunken)', color: 'var(--text-muted)' }}
     >
       <Icon name={KIND_ICON[kind]} size={11} />

@@ -46,14 +46,14 @@ export function ComposePlace({
         aria-label="Name"
         autoComplete="off"
         required
-        className="min-w-40 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[color:var(--text-faint)]"
+        className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
       />
       <input
         name="addressText"
         placeholder="Address"
         aria-label="Address"
         autoComplete="off"
-        className="min-w-32 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[color:var(--text-faint)]"
+        className="min-w-32 flex-1 bg-transparent text-xs outline-none placeholder:text-[color:var(--text-faint)]"
       />
       <input
         name="postcode"
@@ -61,7 +61,7 @@ export function ComposePlace({
         aria-label="Postcode"
         autoComplete="off"
         size={9}
-        className="w-24 bg-transparent text-[12px] uppercase outline-none placeholder:text-[color:var(--text-faint)]"
+        className="w-24 bg-transparent text-xs uppercase outline-none placeholder:text-[color:var(--text-faint)]"
       />
 
       <label className="flex items-center gap-1.5">
@@ -70,7 +70,7 @@ export function ComposePlace({
           name="categoryId"
           key={spaceId}
           defaultValue=""
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
         >
           <option value="">No category</option>
           {options.map((c) => (
@@ -102,7 +102,7 @@ export function ComposePlace({
 
       <button
         type="submit"
-        className="rounded px-2 py-1 text-[12px] font-medium"
+        className="rounded px-2 py-1 text-xs font-medium"
         style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
       >
         Add

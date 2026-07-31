@@ -74,15 +74,15 @@ export default async function TripPage({
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Link href="/travel" className="faint text-[12px] underline-offset-2 hover:underline">
+          <Link href="/travel" className="faint text-xs underline-offset-2 hover:underline">
             Travel
           </Link>
-          <span className="faint text-[12px]" aria-hidden="true">
+          <span className="faint text-xs" aria-hidden="true">
             /
           </span>
           <SpaceIndicator space={trip.space} />
           <span
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-medium"
             style={
               standing.phase === 'running'
                 ? { color: 'var(--accent)', background: 'var(--bg-raised)' }
@@ -100,17 +100,17 @@ export default async function TripPage({
                   ? 'Ended today'
                   : `${plural(standing.daysAway, 'day')} ago`}
           </span>
-          <span className="faint inline-flex items-center gap-1 text-[11px]">
+          <span className="faint inline-flex items-center gap-1 text-2xs">
             <Icon name={trip.source === 'calendar' ? 'calendar' : 'pin'} size={11} />
             {trip.source === 'calendar' ? 'lifted from a calendar event' : 'entered by hand'}
           </span>
         </div>
-        <h1 className="mt-1 text-[15px] font-semibold">{trip.title}</h1>
-        <p className="muted mt-0.5 text-[12px]">
+        <h1 className="mt-1 text-lg font-semibold">{trip.title}</h1>
+        <p className="muted mt-0.5 text-xs">
           {formatDate(trip.startsAt)} – {formatDate(trip.endsAt)} ·{' '}
           {plural(standing.days, 'day')} · {plural(trip.legCount, 'journey')}
         </p>
-        <p className="faint mt-0.5 text-[11px]">
+        <p className="faint mt-0.5 text-2xs">
           Whether you are away is worked out from these dates every time this page
           is drawn, not stored. Orbit does not know where you are: there is no
           background location and the permission is never requested.
@@ -122,14 +122,14 @@ export default async function TripPage({
         {error && (
           <p
             role="alert"
-            className="hairline border-b px-5 py-2 text-[12px]"
+            className="hairline border-b px-5 py-2 text-xs"
             style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
           >
             {error}
           </p>
         )}
         {!error && saved && (
-          <p className="hairline muted border-b px-5 py-2 text-[12px]">
+          <p className="hairline muted border-b px-5 py-2 text-xs">
             Saved. Its journeys are unchanged — editing a trip’s dates does not
             move the journeys inside it.
           </p>
@@ -147,7 +147,7 @@ export default async function TripPage({
           name="title"
           defaultValue={trip.title}
           required
-          className="bg-transparent text-[17px] font-semibold outline-none"
+          className="bg-transparent text-xl font-semibold outline-none"
         />
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -209,14 +209,14 @@ export default async function TripPage({
             name="notesMd"
             defaultValue={trip.notesMd}
             rows={6}
-            className="input resize-y font-mono text-[12.5px] leading-relaxed"
+            className="input resize-y font-mono text-xs leading-relaxed"
           />
         </Field>
 
         <div>
           <button
             type="submit"
-            className="rounded px-3 py-1.5 text-[12px] font-medium"
+            className="rounded px-3 py-1.5 text-xs font-medium"
             style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
           >
             Save changes
@@ -226,7 +226,7 @@ export default async function TripPage({
 
       {trip.notesMd.trim() !== '' && (
         <section className="hairline border-t px-5 py-4">
-          <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+          <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
             Rendered
           </h2>
           <Markdown source={trip.notesMd} />
@@ -234,12 +234,12 @@ export default async function TripPage({
       )}
 
       <section className="hairline border-t px-5 py-4">
-        <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
           <Icon name="route" size={11} />
           Journeys on this trip
         </h2>
         {legs.length === 0 ? (
-          <p className="muted text-[12px]">
+          <p className="muted text-xs">
             None attached yet. Journeys are recorded against a day on{' '}
             <Link href="/travel" className="underline underline-offset-2">
               Travel
@@ -256,7 +256,7 @@ export default async function TripPage({
                   className="hairline row-hover flex flex-wrap items-baseline gap-2 border-b py-1.5"
                 >
                   <Icon name={LEG_MODE_ICON[mode]} size={12} className="faint shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-[13px]">
+                  <span className="min-w-0 flex-1 truncate text-sm">
                     {leg.fromPlaceName ?? 'Somewhere else'}
                     <span className="faint mx-1.5" aria-hidden="true">
                       →
@@ -266,15 +266,15 @@ export default async function TripPage({
                   {leg.departAt && (
                     <Link
                       href={`/travel?day=${londonDayISO(leg.departAt)}`}
-                      className="text-[12px] tabular-nums underline-offset-2 hover:underline"
+                      className="text-xs tabular-nums underline-offset-2 hover:underline"
                     >
                       {formatDate(leg.departAt)} {formatTime(leg.departAt)}
                     </Link>
                   )}
                   {leg.durationMinutes != null && (
-                    <span className="faint text-[11px]">{formatDuration(leg.durationMinutes)}</span>
+                    <span className="faint text-2xs">{formatDuration(leg.durationMinutes)}</span>
                   )}
-                  <span className="faint text-[11px]">{LEG_MODE_LABEL[mode]}</span>
+                  <span className="faint text-2xs">{LEG_MODE_LABEL[mode]}</span>
                   <SpaceIndicator space={leg.space} />
                 </li>
               );
@@ -284,8 +284,8 @@ export default async function TripPage({
       </section>
 
       <section className="hairline border-t px-5 py-4">
-        <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">Delete</h2>
-        <p className="muted mb-2 text-[12px]">
+        <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">Delete</h2>
+        <p className="muted mb-2 text-xs">
           Deleting this trip deletes {trip.legCount === 0 ? 'it' : plural(trip.legCount, 'journey')}{' '}
           {trip.legCount === 0 ? 'only' : 'attached to it'} — a journey with no trip is not a
           journey anybody asked for. Dates typed wrong can be corrected above instead.
@@ -295,7 +295,7 @@ export default async function TripPage({
           <input type="hidden" name="then" value="travel" />
           <button
             type="submit"
-            className="hairline rounded border px-3 py-1.5 text-[12px]"
+            className="hairline rounded border px-3 py-1.5 text-xs"
             style={{ color: 'var(--danger)' }}
           >
             Delete this trip
@@ -317,7 +317,7 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={htmlFor} className="faint text-[11px]">
+      <label htmlFor={htmlFor} className="faint text-2xs">
         {label}
       </label>
       {children}
