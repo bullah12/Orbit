@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { asUser } from '@/lib/db';
-import { listSelectableUsers, requireUser, USER_COOKIE } from '@/lib/auth';
+import { listSelectableUsers, requireUser, usesDevAuth, USER_COOKIE } from '@/lib/auth';
 import { addDaysISO, londonDayISO, londonInstant } from '@/lib/format';
 import {
   calendarProvider,
@@ -60,6 +60,14 @@ import {
 import { normaliseDeviceLabel, type FlushOutcome } from '@/lib/sync/outbox';
 import { setThisDeviceLabel } from '@/lib/sync/device';
 import { listSpaces } from '@/lib/queries/spaces';
+import {
+  acceptInvite,
+  createInvite,
+  declineInvite,
+  removeMember,
+  revokeInvite,
+} from '@/lib/queries/invites';
+import { expiryDaysFrom, expiresAtFrom, isInviteRole, newInviteToken } from '@/lib/invites';
 import { runAiFeature, setConsent } from '@/lib/queries/ai';
 import {
   connectProviderCalendar,
@@ -86,6 +94,13 @@ import {
  * must not be exposed to a network you do not control.
  */
 export async function switchUser(formData: FormData) {
+  // Impersonation, and only ever under the dev provider. The sidebar stops
+  // rendering the switcher the moment AUTH_PROVIDER is not `dev`, but a hidden
+  // control is not a boundary — this is. The action returns without writing
+  // anything rather than throwing: a POST to a route that no longer means
+  // anything is not an error worth a stack trace.
+  if (!usesDevAuth()) return;
+
   const id = String(formData.get('userId') ?? '');
   const known = await listSelectableUsers();
   if (!known.some((u) => u.id === id)) return;
@@ -2394,4 +2409,126 @@ export async function rewindDevice(formData: FormData) {
   await resetCursors(user.id, spaceId, deviceId);
   revalidatePath('/', 'layout');
   redirect(`/sync?device=${deviceId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Spaces: invitations and membership
+//
+// Creating, revoking and removing are ordinary policy-bound writes — an admin
+// is an admin because `app.is_space_admin` says so, and nothing here re-decides
+// that in TypeScript. Accepting is the one operation that cannot be, and it
+// goes through `app.space_invite()`; see supabase/migrations/0012 for why.
+// ---------------------------------------------------------------------------
+
+/**
+ * Create an invitation and show its link once.
+ *
+ * The raw token is generated here, hashed on the way into the database, and
+ * handed back on the URL so the page that renders next can show it. That is the
+ * only moment it exists: reload the page and it is gone, because there is
+ * nowhere it could have been read from. It is on the URL for the same reason
+ * the AI result is — an accepted rough edge, recorded rather than hidden: it
+ * lands in this browser's history.
+ */
+export async function createSpaceInvite(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const role = String(formData.get('role') ?? '');
+  const email = String(formData.get('invitedEmail') ?? '').trim();
+
+  if (!spaceId) redirect('/spaces');
+  if (!isInviteRole(role)) {
+    redirect(`/spaces/${spaceId}?error=${encodeURIComponent('Pick a role for the invitation.')}`);
+  }
+
+  const days = expiryDaysFrom(String(formData.get('days') ?? ''));
+  if (typeof days !== 'number') {
+    redirect(`/spaces/${spaceId}?error=${encodeURIComponent(days.error)}`);
+  }
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    redirect(
+      `/spaces/${spaceId}?error=${encodeURIComponent(
+        'That does not look like an email address. Leave it empty for a link anybody may use.',
+      )}`,
+    );
+  }
+
+  const token = newInviteToken();
+  const result = await createInvite(
+    user.id,
+    spaceId,
+    token,
+    role,
+    expiresAtFrom(days),
+    email || null,
+  );
+
+  if ('error' in result) {
+    redirect(`/spaces/${spaceId}?error=${encodeURIComponent(result.error)}`);
+  }
+
+  revalidatePath('/', 'layout');
+  redirect(`/spaces/${spaceId}?token=${encodeURIComponent(token)}`);
+}
+
+/** Revoke an unredeemed invitation by expiring it. Nothing is deleted. */
+export async function revokeSpaceInvite(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const inviteId = String(formData.get('inviteId') ?? '');
+  if (!spaceId || !inviteId) redirect('/spaces');
+
+  const result = await revokeInvite(user.id, inviteId);
+  revalidatePath('/', 'layout');
+  if ('error' in result) {
+    redirect(`/spaces/${spaceId}?error=${encodeURIComponent(result.error)}`);
+  }
+  redirect(`/spaces/${spaceId}?revoked=1`);
+}
+
+/** Remove somebody from a space: `status = 'left'`, never a delete. */
+export async function removeSpaceMember(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const memberId = String(formData.get('memberId') ?? '');
+  if (!spaceId || !memberId) redirect('/spaces');
+
+  const result = await removeMember(user.id, spaceId, memberId);
+  revalidatePath('/', 'layout');
+  if ('error' in result) {
+    redirect(`/spaces/${spaceId}?error=${encodeURIComponent(result.error)}`);
+  }
+  redirect(`/spaces/${spaceId}?removed=1`);
+}
+
+/**
+ * Accept an invitation.
+ *
+ * Every refusal comes back to the invitation screen as a status it can turn
+ * into a sentence. None of them is a 403: being told an invitation is not for
+ * you is an ordinary answer, and a permission error page would be both wrong
+ * and unhelpful.
+ */
+export async function acceptSpaceInvite(formData: FormData) {
+  const user = await requireUser();
+  const token = String(formData.get('token') ?? '');
+  if (!token) redirect('/');
+
+  const result = await acceptInvite(user.id, token);
+  revalidatePath('/', 'layout');
+
+  if (result.status === 'accepted' && result.spaceId) {
+    redirect(`/spaces/${result.spaceId}?joined=1`);
+  }
+  redirect(`/invite/${encodeURIComponent(token)}?outcome=${result.status}`);
+}
+
+/** Decline. Deliberately writes nothing — see migration 0012. */
+export async function declineSpaceInvite(formData: FormData) {
+  const user = await requireUser();
+  const token = String(formData.get('token') ?? '');
+  if (!token) redirect('/');
+
+  const result = await declineInvite(user.id, token);
+  redirect(`/invite/${encodeURIComponent(token)}?outcome=${result.status}`);
 }

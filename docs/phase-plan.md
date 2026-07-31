@@ -169,6 +169,53 @@ spaces, membership, and the space indicator are genuinely working, not mocked.
       to one row in `devices` per space, and the browser's own `online` event
       flushes the queue once — a listener, never a retry
 
+## Phase 7 — Real accounts and space invites
+
+Not a seventh phase of the product: Phases 0–6 built Orbit and are complete.
+This is the step that makes what they built usable by somebody who is not a
+seeded row — it adds one migration, one new provider, and two screens, and
+changes nothing about how anything already here works.
+
+- [x] A second `AuthProvider`, `supabase`, selected by `AUTH_PROVIDER=supabase`.
+      It verifies the session server-side against GoTrue's REST API and hands
+      the JWT's `sub` to the **existing** `asUser()`. No SDK, no service-role
+      client, no local signature checking, and not one line of
+      `src/lib/queries/` changed. **Written, never run** — there is no project
+      and no credential here
+- [x] `AUTH_PROVIDER=dev` remains the default and remains fully working: 692
+      Vitest tests and 382 smoke checks still run with zero credentials
+- [x] Sign-in, sign-up, sign-out and magic-link callback screens, from the
+      tokens already in `globals.css`. Email and password, and a link. **No
+      OAuth providers** — each is console configuration nobody here can verify
+- [x] The dev user switcher is unreachable whenever `AUTH_PROVIDER` is not
+      `dev`: the sidebar renders an account panel instead, `switchUser` refuses
+      on the same condition, and a second server started with the real provider
+      asserts both in smoke
+- [x] Migration 0012 — a trigger on `auth.users` insert creating the matching
+      `public.profiles` row **with the same id**, which is what `auth.uid()`
+      will be. The `profiles_email_key` collision raises naming the address and
+      the existing profile rather than hitting the constraint. Seeded data is
+      development data and a real deployment starts empty
+- [x] `public.space_invites` gets rows at last, with **no schema change**: an
+      admin creates an invitation with a role, an expiry and an optional
+      address; the raw token is shown once and only its SHA-256 hash is stored
+- [x] Redeeming goes through `app.space_invite(token, action)` — one
+      SECURITY DEFINER function doing preview, accept and decline behind one set
+      of checks, because the person redeeming is by definition not a member yet.
+      `revoke execute … from public`, granted to `authenticated` alone. No
+      policy was loosened and no service-role client was added
+- [x] Every refusal is a sentence: expired, already used, addressed to somebody
+      else, never issued, already a member. None of them is a 403 and none is a
+      500
+- [x] Revoking expires the invitation and keeps the row; removing a member sets
+      `space_members.status = 'left'` rather than deleting. `free_busy` is
+      offerable and is exercised end to end
+- [x] `space_invites` out of the pgTAP known-empty ledger. plan(83) → plan(106)
+- [x] `output: 'standalone'`, a Dockerfile that builds it, and `docs/deploy.md`
+      as commands somebody can follow — migration order, the three gotchas and
+      the `prepare: false` pooler note. **Nothing was deployed and no account
+      was created**
+
 ---
 
 ## Standing rules

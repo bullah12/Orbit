@@ -927,3 +927,184 @@ options were weighed.
   device row in Priya's Work space that the seed did not have. Harmless, cleared by
   `pnpm seed`, and it is the same after every subsequent run — which is what
   "passes twice in a row" actually requires.
+
+## Session 9 — 2026-07-31
+
+- **Branch is `claude/orbit-real-auth-lccfs6`**, not `claude/orbit-real-auth`.
+  The brief named the latter and the session designated the former; the
+  designated one wins, as it has in all nine sessions. Same work, different name.
+- **The session-5 `space_invites` decision is closed, not overturned.** It said:
+  *"space_invites needs an auth system that can invite a stranger; auth here is a
+  cookie naming a seeded profile, so an invite would be a row nothing could
+  redeem."* That was true when it was written and it is the reason the table sat
+  empty for four sessions. Phase 1 of this session supplies the missing half, so
+  the condition the decision named has been met — the decision was not wrong and
+  is not being reversed. `attachments` and `person_relationships` stay unused on
+  exactly their original terms.
+
+### Phase 1 — the second auth provider
+
+- **The Supabase provider is written against the GoTrue REST API, not
+  `@supabase/supabase-js`.** Same call as every other real provider here: a
+  dependency Orbit cannot execute is a dependency nobody can check. Six
+  endpoints — `/token`, `/signup`, `/otp`, `/verify`, `/user`, `/logout` — and
+  no new package in `package.json`.
+- **The session is verified by asking Supabase, never by checking a signature
+  locally.** Verifying an HS256 or ES256 JWT needs the project's secret or its
+  JWKS, and a wrong answer there is a silent authentication bypass rather than an
+  error. `GET /auth/v1/user` asks the one party that cannot be wrong about it.
+  The cost is a request per render; the alternative is a class of bug that cannot
+  be tested from a container with no project in it.
+- **`decodeJwtPayloadUnverified` is named that way on purpose.** It exists to
+  answer one cheap question — has this token expired — so an expired token goes
+  straight to the refresh path instead of costing a round trip to be told so.
+  Nothing security-bearing is read from it, and a token it cannot parse counts as
+  expired, so the safe path is the default rather than the exception.
+- **Both session cookies are httpOnly.** An access token readable by script is a
+  token one XSS away from being somebody else's session. `secure` follows
+  `NODE_ENV`, so a local HTTP run still works and the Dockerfile sets production.
+- **A refresh during render is best-effort, and that is written down rather than
+  hidden.** A Server Component may not write cookies in Next 15, so
+  `currentSupabaseUser()` refreshes, renders with the new session, and *tries* to
+  persist inside a try/catch. The next server action or route handler persists
+  it. A page that renders is worth more than a rotated cookie, and the refresh
+  token still works until it does.
+- **`requireUser()` redirects under a real provider and still throws under
+  `dev`.** "Nobody is signed in" is an ordinary state a person can leave by
+  signing in; "no profile exists" means the database was never seeded, and that
+  message names the command that fixes it. One function, two honest answers.
+- **The root layout asks `getCurrentUser()` rather than `requireUser()`.** It
+  renders the sidebar when there is somebody and bare `children` when there is
+  not, which is what makes `/auth/signin` a page like any other rather than a
+  special case in the layout. Pages redirect themselves.
+- **The user switcher is hidden by the sidebar and refused by the action.** The
+  hidden control is a courtesy; `switchUser` returning without writing when
+  `AUTH_PROVIDER` is not `dev` is the boundary. `listSelectableUsers()` returns
+  an empty list for the same reason — a real provider has no "who could I
+  become", and `app.identity_profiles()` is not granted to it.
+- **The magic-link callback is a page with a client component, not a route
+  handler.** Supabase's default email template lands on
+  `…/auth/callback#access_token=…`, and a URL *fragment* is never sent to a
+  server — no route handler can read one. The component reads it, submits it to
+  a server action, and clears the fragment from the address bar in the same tick,
+  because a screenshot of that URL is a shared session. A project whose template
+  uses `{{ .TokenHash }}` lands with a query string instead, which the server
+  reads and finishes with one button and no JavaScript at all. Both are handled;
+  neither has been observed.
+- **No OAuth.** Each provider is console configuration nobody in this repository
+  can perform or verify, and a button that cannot work is worse than no button.
+- **Sign-out is a POST from a page, not a link.** A GET that ends a session can
+  be fired by an image tag on somebody else's site.
+- **`safeNextPath` refuses anything that is not an in-app path.** A sign-in page
+  is exactly where an open redirect lives, and the rule is the same one the push
+  provider applies to a notification link.
+
+### Phase 2 — the auth.users → profiles trigger
+
+- **`auth.users` is shimmed locally, guarded, in the same migration.** Without a
+  table to attach it to, the trigger could not be created here and none of it
+  could be tested — the assertions would have been written against nothing. On
+  Supabase the `create table if not exists` is a no-op. It is the only way this
+  container can test the one step that fails silently in production.
+- **Seeded data is development data, and a real deployment starts empty.** That
+  is the answer to "how does a seeded id get claimed by a real account": it does
+  not. The seeded ids are literals chosen so tests can name them, an auth user
+  will never be issued one, and claiming a profile that owns spaces, tasks and a
+  calendar because somebody signed up with a matching address is the worst
+  possible reading of "the same email means the same person".
+- **So the `profiles_email_key` collision raises, and names both sides.** Hitting
+  the constraint gives GoTrue "Database error saving new user" and nothing else.
+  The exception names the address, the existing profile and what to do instead,
+  which is the difference between a five-minute problem and an afternoon.
+- **The trigger is idempotent on id and only on id.** A profile that already
+  exists with the same id is nothing to do — the state a restored dump leaves
+  behind, and not an error.
+- **The display-name order exists twice**, in `displayNameFrom()` and in the
+  trigger, and there is a Vitest case pinning the order plus pgTAP assertions on
+  both the metadata and the fallback. Two implementations of one rule is one
+  waiting to drift; this is the same treatment the search tsvector expression got
+  in session 6.
+
+### Phase 3 — invites
+
+- **No migration, as instructed, and the argument never came close.**
+  `space_invites` had `token_hash`, `role`, `invited_email`, `expires_at`,
+  `accepted_at`, `accepted_by` and RLS for admins in both directions since
+  session 1. What was missing was never a column.
+- **One SECURITY DEFINER function with three verbs, not two functions.** Preview
+  has to defeat exactly the same admin-only policy the redeem does, so a separate
+  preview function would be a second copy of the same checks — and the day they
+  disagree is the day the screen says one thing and the write does another.
+  `app.space_invite(token, action)` takes `preview`, `accept` or `decline` and
+  shares every check by construction. It is `revoke execute … from public` and
+  granted to `authenticated` alone, like the two in `0008_identity_lookup.sql`.
+- **It lives in migration 0012 rather than a 0013.** The brief authorises exactly
+  one migration; a function is DDL and has to be *somewhere*. One file, two
+  clearly-headed sections, and the count of schema extensions is unchanged at
+  three in nine sessions.
+- **The function only ever writes membership for `auth.uid()`.** A token cannot
+  be redeemed on somebody else's behalf, and only the role the invite already
+  names is granted. Those two sentences are why widening a policy was never on
+  the table: a policy cannot express "somebody who holds a secret", and the
+  version that could would open every roster to every signed-in user.
+- **"No such token" and "a token for a space you were not invited to" give the
+  same answer.** Telling somebody their guess named a real space is telling them
+  a space exists.
+- **An invitation naming an address may only be redeemed by that address; one
+  naming none is a bearer link.** Both are legitimate and the screen says which
+  it is making. The bearer case is why an invitation expires at all.
+- **The invitation is claimed before the membership is written.** `update …
+  where accepted_at is null` and then check the row count, so two people opening
+  the same bearer link at the same moment cannot both join. Rejoining a space you
+  had left is an update of the existing row, named by constraint rather than by
+  columns because `space_id` is also one of the function's OUT parameters.
+- **`decline` deliberately writes nothing, and the screen says so.** There is no
+  "declined" column and inventing one would be the migration this brief says not
+  to write. A declined invitation is one that has not been accepted; the link
+  stays live until it expires or is revoked, which is stated rather than left to
+  be discovered.
+- **Revoking is expiring.** `space_invites` has no `revoked_at`, so revoke sets
+  `expires_at = now()`: the token stops working immediately and the row stays as
+  the record of what was offered and to whom. Deleting it would erase that. An
+  accepted invitation cannot be revoked at all — the person is in the space, and
+  removing them is the other operation on the screen, which is why the row shows
+  no Revoke button rather than a button that fails.
+- **Removing a member is `status = 'left'`, never a delete.** Every policy checks
+  `status = 'active'`, so it takes effect immediately, and the row remains as the
+  record that they were here. Same call as archiving a person in session 2.
+- **A space's owner cannot be removed from it**, in the query's `where` clause
+  and not only in the markup. A space with no owner is a space nobody can manage.
+- **`owner` is not an offerable invite role.** The other four of
+  `app.member_role` are. Ownership is `spaces.owner_id`, a different fact from
+  membership, and handing a household over by emailing somebody a link is not an
+  operation this screen has. `NON_OFFERABLE_ROLES` states it as a value rather
+  than by omission, and a test asserts the two lists together name the whole enum.
+- **The raw token is shown once, on the URL.** It cannot be shown twice because
+  there is nowhere to read it from, and the panel says so in those words. Putting
+  it on the URL means it lands in that browser's history — the same accepted
+  rough edge as the AI result, recorded here rather than discovered later. The
+  alternative, a one-shot cookie, cannot be cleared during a render.
+- **The seed writes one pending invitation whose `token_hash` is random bytes
+  rather than the hash of a token.** There is no raw token for that row and there
+  never was, so nothing can redeem it and `pnpm smoke` cannot consume it — which
+  is what keeps the suite passing twice in a row. It demonstrates the pending
+  state and takes `space_invites` out of the pgTAP known-empty ledger, leaving
+  two tables in it.
+
+### Phase 4, and the shape of the test suite
+
+- **`pnpm smoke` starts a second server on port 3101 with
+  `AUTH_PROVIDER=supabase` and no credentials.** It is the only way to assert
+  from here that the switcher is unreachable, that the dev cookie stops being a
+  session, and that a missing credential is a sentence rather than a 500 — all of
+  which are claims about a configuration the main server is not in. It signs
+  nobody in, because there is nobody to sign in as.
+- **`DATABASE_PREPARE=false` is an environment variable, not a line to edit
+  before deploying.** The transaction pooler on 6543 breaks prepared statements;
+  "remember to change this line" is an instruction somebody eventually does not
+  follow. The default is unchanged.
+- **`output: 'standalone'` does not take `pnpm start` away**, which matters
+  because 382 smoke checks drive it. It adds a directory the Dockerfile copies.
+- **Nothing was deployed, no hosting account was created and nothing was bought.**
+  `docs/deploy.md` is commands somebody can follow and says at the top that none
+  of them has been run here.

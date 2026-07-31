@@ -4,7 +4,9 @@ import { SpaceIndicator } from './SpaceIndicator';
 import { SMART_LISTS, type SmartListKey } from '@/lib/queries/tasks';
 import type { SpaceSummary } from '@/lib/queries/spaces';
 import type { SessionUser } from '@/lib/auth';
+import { usesDevAuth } from '@/lib/auth/session';
 import { UserSwitcher } from './UserSwitcher';
+import { AccountPanel } from './AccountPanel';
 
 const LIST_ORDER: SmartListKey[] = [
   'today', 'overdue', 'upcoming', 'inbox', 'waiting', 'someday', 'all', 'done',
@@ -60,6 +62,7 @@ export function Sidebar({
       </Section>
 
       <Section title="Spaces">
+        <NavLink href="/spaces" icon="users" label="People and invites" />
         {spaces.map((s) => (
           <Link
             key={s.id}
@@ -77,8 +80,16 @@ export function Sidebar({
         ))}
       </Section>
 
+      {/* The switcher is impersonation by design: any seeded profile can be
+          assumed in one click. It is therefore rendered only when the dev
+          provider is live, and `switchUser` refuses on the same condition — the
+          button being absent is a courtesy, the refusal is the boundary. */}
       <div className="mt-auto">
-        <UserSwitcher current={user} users={users} />
+        {usesDevAuth() && users.length > 0 ? (
+          <UserSwitcher current={user} users={users} />
+        ) : (
+          <AccountPanel user={user} />
+        )}
       </div>
     </nav>
   );

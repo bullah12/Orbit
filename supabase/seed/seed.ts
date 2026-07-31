@@ -244,6 +244,24 @@ async function main() {
     values (${S_WORK}, ${PRIYA}, ${DANNY}, 'block')
   `;
 
+  // One pending invite, so `space_invites` is covered by the pgTAP outsider
+  // check from a fresh seed rather than only after somebody sends one.
+  //
+  // Its `token_hash` is random bytes rather than the hash of a token: there is
+  // no raw token for this row and there never was, so nothing can redeem it and
+  // `pnpm smoke` cannot accidentally consume it — which is what keeps the suite
+  // passing twice in a row. It is addressed to somebody who is not seeded for
+  // the same reason. What it demonstrates is the pending state on the Spaces
+  // screen, which is exactly what a seeded row is for.
+  await sql`
+    insert into public.space_invites
+      (space_id, owner_id, token_hash, role, invited_email, expires_at)
+    values (
+      ${S_HOME}, ${PRIYA}, encode(gen_random_bytes(32), 'hex'),
+      'member', 'newcomer@example.com', now() + interval '14 days'
+    )
+  `;
+
   // -- categories -----------------------------------------------------------
   console.log('▸ categories');
   const catId: Record<string, Record<string, string>> = {};
@@ -1096,6 +1114,7 @@ async function main() {
     union all select 'rule_runs', count(*)::int from public.rule_runs
     union all select 'devices', count(*)::int from public.devices
     union all select 'sync_cursors', count(*)::int from public.sync_cursors
+    union all select 'space_invites', count(*)::int from public.space_invites
     order by 1
   `;
   console.log('▸ seeded:');

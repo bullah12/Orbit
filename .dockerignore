@@ -1,0 +1,12 @@
+# What must not go into the image. The .env line is the one that matters: a
+# credential baked into a layer is a credential you cannot rotate.
+node_modules
+.next
+.git
+.env
+.env.local
+*.log
+docs
+supabase/seed
+tests
+scripts/smoke.mjs

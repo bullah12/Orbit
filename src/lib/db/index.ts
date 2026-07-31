@@ -26,6 +26,13 @@ export const pool: Sql =
   postgres(DATABASE_URL, {
     max: 10,
     idle_timeout: 20,
+    // Supabase's transaction pooler (port 6543) hands a different backend to
+    // every statement, so a prepared statement is never there when it is used
+    // again and `asUser`'s queries fail. Session mode (5432) has no such
+    // problem. This is an env flag rather than a code edit at deploy time
+    // because "change this line before you deploy" is an instruction somebody
+    // eventually does not follow. Default unchanged: prepared statements on.
+    prepare: process.env.DATABASE_PREPARE !== 'false',
     // Dates and timestamps come back as strings and are formatted once, in
     // src/lib/format.ts, against Europe/London. Letting the driver build JS
     // Dates here would silently reintroduce the server's timezone.
