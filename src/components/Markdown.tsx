@@ -14,7 +14,7 @@ export function Markdown({ source }: { source: string }) {
   if (blocks.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-2.5 text-[13px] leading-relaxed">
+    <div className="flex flex-col gap-2.5 text-sm leading-relaxed">
       {blocks.map((b, i) => (
         <BlockNode key={i} block={b} />
       ))}
@@ -26,9 +26,9 @@ function BlockNode({ block }: { block: Block }) {
   switch (block.type) {
     case 'heading': {
       const cls =
-        block.level === 1 ? 'mt-1 text-[15px] font-semibold'
-        : block.level === 2 ? 'mt-1 text-[13.5px] font-semibold'
-        : 'muted mt-1 text-[12px] font-semibold uppercase tracking-wide';
+        block.level === 1 ? 'mt-1 text-lg font-semibold'
+        : block.level === 2 ? 'mt-1 text-sm font-semibold'
+        : 'muted mt-1 text-xs font-semibold uppercase tracking-wide';
       if (block.level === 1) return <h2 className={cls}><InlineNodes nodes={block.children} /></h2>;
       if (block.level === 2) return <h3 className={cls}><InlineNodes nodes={block.children} /></h3>;
       return <h4 className={cls}><InlineNodes nodes={block.children} /></h4>;
@@ -61,7 +61,7 @@ function BlockNode({ block }: { block: Block }) {
     case 'code':
       return (
         <pre
-          className="surface overflow-x-auto rounded p-2.5 font-mono text-[12px] leading-snug"
+          className="surface overflow-x-auto rounded p-2.5 font-mono text-xs"
           aria-label={block.lang ? `Code, ${block.lang}` : 'Code'}
         >
           <code>{block.value}</code>
@@ -96,7 +96,7 @@ function InlineNode({ node }: { node: Inline }) {
     case 'code':
       return (
         <code
-          className="rounded px-1 py-0.5 font-mono text-[12px]"
+          className="rounded px-1 py-0.5 font-mono text-xs"
           style={{ background: 'var(--bg-hover)' }}
         >
           {node.value}

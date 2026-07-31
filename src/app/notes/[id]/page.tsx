@@ -68,26 +68,26 @@ export default async function NotePage({
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Link href="/notes" className="faint text-[12px]">
+          <Link href="/notes" className="faint text-xs">
             Notes
           </Link>
-          <span className="faint text-[12px]" aria-hidden="true">
+          <span className="faint text-xs" aria-hidden="true">
             /
           </span>
           <SpaceIndicator space={note.space} />
           <CategoryChip category={note.category} />
           {note.visibility === 'private' && (
-            <span className="faint flex items-center gap-1 text-[11px]">
+            <span className="faint flex items-center gap-1 text-2xs">
               <Icon name="eye_off" size={11} />
               Private to you
             </span>
           )}
-          <span className="faint ml-auto text-[11px]">
+          <span className="faint ml-auto text-2xs">
             Edited {formatRelative(note.updatedAt)}
           </span>
         </div>
         {note.archivedAt && (
-          <p className="muted mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+          <p className="muted mt-2 flex flex-wrap items-center gap-2 text-xs">
             <Icon name="archive" size={12} />
             Archived {formatRelative(note.archivedAt)}.
             <form action={restoreNote} className="inline">
@@ -101,7 +101,7 @@ export default async function NotePage({
       </header>
 
       {note.isLocked ? (
-        <div className="muted flex items-center gap-2 px-5 py-10 text-[13px]">
+        <div className="muted flex items-center gap-2 px-5 py-10 text-sm">
           <Icon name="lock" size={14} />
           This note is locked. It is end-to-end encrypted and can only be opened on a
           device holding the key — the server has never seen its contents.
@@ -117,9 +117,9 @@ export default async function NotePage({
               id="note-title"
               name="title"
               defaultValue={note.title}
-              className="bg-transparent text-[17px] font-semibold outline-none"
+              className="bg-transparent text-xl font-semibold outline-none"
             />
-            <label htmlFor="note-body" className="faint text-[11px] font-medium">
+            <label htmlFor="note-body" className="faint text-2xs font-medium">
               Body (Markdown)
             </label>
             <textarea
@@ -127,17 +127,17 @@ export default async function NotePage({
               name="bodyMd"
               defaultValue={note.bodyMd}
               rows={16}
-              className="resize-y bg-transparent font-mono text-[12.5px] leading-relaxed outline-none"
+              className="resize-y bg-transparent font-mono text-xs leading-relaxed outline-none"
             />
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-[12px] font-medium"
+                className="rounded px-3 py-1.5 text-xs font-medium"
                 style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
               >
                 Save
               </button>
-              <span className="faint text-[11px]">
+              <span className="faint text-2xs">
                 The previous version is kept every time you save.
               </span>
             </div>
@@ -145,7 +145,7 @@ export default async function NotePage({
 
           {note.bodyMd.trim() !== '' && (
             <section className="hairline border-t px-5 py-4">
-              <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+              <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
                 Rendered
               </h2>
               <Markdown source={note.bodyMd} />
@@ -155,19 +155,19 @@ export default async function NotePage({
       )}
 
       <section className="hairline border-t px-5 py-4">
-        <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
           <Icon name="link" size={11} />
           Linked to
         </h2>
 
         {links.length === 0 ? (
-          <p className="faint mb-3 text-[12px]">Not linked to anything yet.</p>
+          <p className="faint mb-3 text-xs">Not linked to anything yet.</p>
         ) : (
           <ul className="mb-3 flex flex-wrap gap-2">
             {links.map((l) => (
               <li
                 key={`${l.entityKind}-${l.entityId}`}
-                className="surface flex items-center gap-1.5 rounded px-2 py-1 text-[11px]"
+                className="surface flex items-center gap-1.5 rounded px-2 py-1 text-2xs"
               >
                 <Icon name={KIND_ICON[l.entityKind] ?? 'circle'} size={11} className="faint" />
                 {l.entityKind === 'task' ? (
@@ -198,7 +198,7 @@ export default async function NotePage({
           <form action={addNoteLink} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="noteId" value={note.id} />
             <div className="flex min-w-56 flex-col gap-1">
-              <label htmlFor="link-target" className="faint text-[11px] font-medium">
+              <label htmlFor="link-target" className="faint text-2xs font-medium">
                 Link to something in {note.space.name}
               </label>
               <select id="link-target" name="target" className="input" defaultValue="">
@@ -222,7 +222,7 @@ export default async function NotePage({
             </div>
             <button
               type="submit"
-              className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+              className="hairline rounded border px-3 py-1.5 text-xs font-medium"
             >
               Link
             </button>
@@ -244,7 +244,7 @@ export default async function NotePage({
             <input type="hidden" name="noteId" value={note.id} />
             <button
               type="submit"
-              className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+              className="hairline rounded border px-3 py-1.5 text-xs font-medium"
               style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
             >
               <span className="inline-flex items-center gap-1.5">
@@ -252,7 +252,7 @@ export default async function NotePage({
                 Delete permanently
               </span>
             </button>
-            <span className="faint text-[12px]">
+            <span className="faint text-xs">
               This also removes every saved version. There is no undo.
             </span>
           </form>
@@ -261,14 +261,14 @@ export default async function NotePage({
             <input type="hidden" name="noteId" value={note.id} />
             <button
               type="submit"
-              className="hairline rounded border px-3 py-1.5 text-[12px] font-medium"
+              className="hairline rounded border px-3 py-1.5 text-xs font-medium"
             >
               <span className="inline-flex items-center gap-1.5">
                 <Icon name="archive" size={12} />
                 Archive
               </span>
             </button>
-            <span className="faint text-[12px]">
+            <span className="faint text-xs">
               Archiving is reversible. Deleting is offered from the archive.
             </span>
           </form>
@@ -306,16 +306,16 @@ function NoteMoveSection({
 
   return (
     <section className="hairline border-t px-5 py-4">
-      <h2 className="faint mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
+      <h2 className="faint mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider">
         <Icon name="move" size={11} />
         Move to another space
       </h2>
 
       {targets.length === 0 ? (
-        <p className="faint text-[12px]">There is nowhere else to move this.</p>
+        <p className="faint text-xs">There is nowhere else to move this.</p>
       ) : !target ? (
         <>
-          <p className="muted mb-2 text-[12px]">
+          <p className="muted mb-2 text-xs">
             Pick a destination. You will see exactly who gains and loses access before
             anything changes.
           </p>
@@ -336,13 +336,13 @@ function NoteMoveSection({
         </>
       ) : (
         <div className="surface rounded-md p-4">
-          <div className="mb-3 flex items-center gap-2 text-[13px]">
+          <div className="mb-3 flex items-center gap-2 text-sm">
             <SpaceIndicator space={note.space} size="md" />
             <Icon name="arrow_right" size={13} className="faint" />
             <SpaceIndicator space={target} size="md" />
           </div>
 
-          <div className="flex flex-col gap-2 text-[12px]">
+          <div className="flex flex-col gap-2 text-xs">
             {loses.length > 0 && (
               <MoveGroup tone="var(--danger)" heading="These people lose access" people={loses} />
             )}
@@ -355,7 +355,7 @@ function NoteMoveSection({
             {preview.length === 0 && <p className="faint">Nobody’s access changes.</p>}
           </div>
 
-          <p className="muted mt-3 flex items-start gap-1.5 text-[12px]">
+          <p className="muted mt-3 flex items-start gap-1.5 text-xs">
             <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
             <span>
               The saved version history moves with the note.
@@ -375,13 +375,13 @@ function NoteMoveSection({
               <input type="hidden" name="targetSpaceId" value={target.id} />
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-[12px] font-medium"
+                className="rounded px-3 py-1.5 text-xs font-medium"
                 style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
               >
                 Move to {target.name}
               </button>
             </form>
-            <Link href={`/notes/${note.id}`} className="muted text-[12px]">
+            <Link href={`/notes/${note.id}`} className="muted text-xs">
               Cancel
             </Link>
           </div>

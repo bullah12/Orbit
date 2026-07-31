@@ -51,7 +51,7 @@ export function ComposeTask({
         aria-label="Task title"
         autoComplete="off"
         required
-        className="min-w-40 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[color:var(--text-faint)]"
+        className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
       />
 
       <label className="flex items-center gap-1.5">
@@ -59,7 +59,7 @@ export function ComposeTask({
         <input
           type="date"
           name="dueOn"
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
         />
       </label>
 
@@ -67,7 +67,7 @@ export function ComposeTask({
         <span className="sr-only">Category</span>
         <select
           name="categoryId"
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
           // Keyed on the space so the browser resets the selection when the
           // space changes, rather than keeping a category from the old one.
           key={spaceId}
@@ -105,7 +105,7 @@ export function ComposeTask({
 
       <button
         type="submit"
-        className="rounded px-2 py-1 text-[12px] font-medium"
+        className="rounded px-2 py-1 text-xs font-medium"
         style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
       >
         Add

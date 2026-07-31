@@ -28,9 +28,6 @@ export function EventBlock({
   continuesTo?: boolean;
 }) {
   const time = item.allDay ? 'All day' : formatTime(item.startsAt);
-  const accent = item.isBusy
-    ? 'var(--c-slate)'
-    : `var(--c-${item.category?.colour ?? item.space.colour}, var(--c-slate))`;
 
   const body = (
     <>
@@ -53,7 +50,7 @@ export function EventBlock({
           <SpaceIndicator space={item.space} />
           {!item.isBusy && item.category && (
             <span
-              className="inline-flex shrink-0 items-center gap-0.5 text-[10px]"
+              className="inline-flex shrink-0 items-center gap-0.5 text-2xs"
               style={{ color: `var(--c-${item.category.colour}, var(--c-slate))` }}
             >
               <Icon name={item.category.icon} size={9} strokeWidth={2} />
@@ -64,7 +61,7 @@ export function EventBlock({
             <Icon name="undo" size={9} className="faint" aria-label="Repeats" />
           )}
           {!item.isBusy && item.attendeeCount > 0 && (
-            <span className="faint inline-flex items-center gap-0.5 text-[10px]">
+            <span className="faint inline-flex items-center gap-0.5 text-2xs">
               <Icon name="users" size={9} />
               {item.attendeeCount}
             </span>
@@ -75,27 +72,23 @@ export function EventBlock({
     </>
   );
 
-  const className =
-    'flex h-full flex-col gap-0.5 overflow-hidden rounded-sm border-l-2 px-1 py-0.5 text-[11px] leading-tight';
-  const style = {
-    borderColor: accent,
-    background: item.isBusy ? 'var(--bg-sunken)' : 'var(--bg-raised)',
-    // A busy block is deliberately quieter than a real event: it is a fact
-    // about somebody else's time, not something to act on.
-    opacity: item.isBusy ? 0.85 : 1,
-  };
+  const className = 'flex h-full flex-col gap-0.5 overflow-hidden px-1 py-0.5 text-2xs';
 
   if (item.isBusy) {
+    // A busy block is quieter than a real event by shape rather than by colour:
+    // .busy is the sunken substrate, the dashed edge and the italic muted text,
+    // and it spends none of the ten category colours on somebody else's time.
+    // No inline style here — it would out-rank the class it is meant to wear.
     return (
-      <div
-        className={`hairline border-y border-r ${className}`}
-        style={style}
-        title={`${item.space.name} — busy, ${time}`}
-      >
+      <div className={`busy ${className}`} title={`${item.space.name} — busy, ${time}`}>
         {body}
       </div>
     );
   }
+
+  // Past the early return, the union has narrowed to a real event, which is the
+  // only shape that has a category to take a colour from.
+  const accent = `var(--c-${item.category?.colour ?? item.space.colour}, var(--c-slate))`;
 
   // A recurring event's block names which occurrence was clicked, by its own
   // start instant — RFC 5545's RECURRENCE-ID. Every occurrence of a series links
@@ -108,8 +101,8 @@ export function EventBlock({
           ? `/calendar/event/${item.id}?on=${encodeURIComponent(item.startsAt)}`
           : `/calendar/event/${item.id}`
       }
-      className={`hairline row-hover border-y border-r ${className}`}
-      style={style}
+      className={`hairline row-hover rounded-sm border-y border-l-2 border-r ${className}`}
+      style={{ borderColor: accent, background: 'var(--bg-raised)' }}
       aria-label={`${item.title || 'Untitled event'}, ${
         item.allDay ? 'all day' : formatTime(item.startsAt)
       }, ${item.space.name}`}

@@ -29,13 +29,13 @@ export default async function NotesPage({
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">
+          <h1 className="text-lg font-semibold">
             {showArchived ? 'Archived notes' : 'Notes'}
           </h1>
-          <span className="faint text-[12px]">{plural(notes.length, 'note')}</span>
+          <span className="faint text-xs">{plural(notes.length, 'note')}</span>
           <Link
             href={showArchived ? '/notes' : '/notes?archived=1'}
-            className="muted ml-auto text-[12px] underline underline-offset-2"
+            className="muted ml-auto text-xs underline underline-offset-2"
           >
             {showArchived ? 'Back to notes' : 'Archive'}
           </Link>
@@ -55,7 +55,7 @@ export default async function NotesPage({
           aria-label="Note title"
           autoComplete="off"
           required
-          className="min-w-40 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[color:var(--text-faint)]"
+          className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
         />
         <fieldset className="flex items-center gap-1">
           <legend className="sr-only">Space</legend>
@@ -76,7 +76,7 @@ export default async function NotesPage({
         </fieldset>
         <button
           type="submit"
-          className="rounded px-2 py-1 text-[12px] font-medium"
+          className="rounded px-2 py-1 text-xs font-medium"
           style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
         >
           Add
@@ -85,7 +85,7 @@ export default async function NotesPage({
       )}
 
       {notes.length === 0 ? (
-        <p className="faint px-5 py-10 text-[13px]">
+        <p className="faint px-5 py-10 text-sm">
           {showArchived ? 'Nothing archived.' : 'No notes yet.'}
         </p>
       ) : (
@@ -95,20 +95,20 @@ export default async function NotesPage({
               <Link href={`/notes/${n.id}` as never} className="block">
                 <div className="flex items-baseline gap-2">
                   {n.pinnedAt && <Icon name="pin" size={11} className="faint shrink-0" />}
-                  <span className="min-w-0 flex-1 truncate text-[13px]">
+                  <span className="min-w-0 flex-1 truncate text-sm">
                     {n.isLocked ? <em className="muted">Locked note</em> : n.title}
                   </span>
                   <CategoryChip category={n.category} />
-                  <span className="faint shrink-0 text-[11px]">{formatRelative(n.updatedAt)}</span>
+                  <span className="faint shrink-0 text-2xs">{formatRelative(n.updatedAt)}</span>
                   <SpaceIndicator space={n.space} />
                 </div>
                 {!n.isLocked && n.bodyMd && (
-                  <p className="faint mt-0.5 truncate pl-0 text-[11px]">
+                  <p className="faint mt-0.5 truncate pl-0 text-2xs">
                     {markdownToPlainText(n.bodyMd).replace(/\n/g, ' · ').slice(0, 140)}
                   </p>
                 )}
                 {n.linkCount > 0 && (
-                  <p className="faint mt-0.5 flex items-center gap-1 text-[11px]">
+                  <p className="faint mt-0.5 flex items-center gap-1 text-2xs">
                     <Icon name="arrow_right" size={10} />
                     {plural(n.linkCount, 'link')}
                   </p>

@@ -39,13 +39,13 @@ export default async function RulesPage({
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">Rules</h1>
-          <span className="faint text-[12px]">{plural(rules.length, 'rule')}</span>
-          <span className="faint text-[12px]">
+          <h1 className="text-lg font-semibold">Rules</h1>
+          <span className="faint text-xs">{plural(rules.length, 'rule')}</span>
+          <span className="faint text-xs">
             {enabled} on, {rules.length - enabled} off
           </span>
         </div>
-        <p className="muted mt-0.5 text-[12px]">
+        <p className="muted mt-0.5 text-xs">
           A rule watches for something, checks some conditions, and does
           something. It only ever touches its own space, it never reads a locked
           item, and it cannot be switched on until you have dry-run it and read
@@ -56,7 +56,7 @@ export default async function RulesPage({
       {error && (
         <p
           role="alert"
-          className="hairline border-b px-5 py-2 text-[12px]"
+          className="hairline border-b px-5 py-2 text-xs"
           style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
         >
           {error}
@@ -81,11 +81,11 @@ export default async function RulesPage({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <SpaceIndicator space={row.space} />
-                  <span className="text-[13px] font-medium">{row.name}</span>
+                  <span className="text-sm font-medium">{row.name}</span>
                   <EnabledChip enabled={row.isEnabled} />
                   {problems.length > 0 && (
                     <span
-                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs"
                       style={{ background: 'var(--c-rose-bg)', color: 'var(--c-rose)' }}
                     >
                       <Icon name="alert" size={11} />
@@ -94,11 +94,11 @@ export default async function RulesPage({
                   )}
                 </div>
 
-                <p className="muted text-[12px]">
+                <p className="muted text-xs">
                   {rule ? describeRule(rule) : problems.join('; ')}
                 </p>
 
-                <p className="faint flex flex-wrap gap-x-3 text-[11px]">
+                <p className="faint flex flex-wrap gap-x-3 text-2xs">
                   <span>
                     {triggerKind && isTriggerKind(triggerKind)
                       ? TRIGGER_LABEL[triggerKind]
@@ -121,7 +121,7 @@ export default async function RulesPage({
         })}
 
         {rules.length === 0 && (
-          <li className="muted px-5 py-8 text-[13px]">
+          <li className="muted px-5 py-8 text-sm">
             No rules yet. Adding one above creates it switched off — nothing runs
             until you have previewed it.
           </li>
@@ -129,8 +129,8 @@ export default async function RulesPage({
       </ul>
 
       <section className="px-5 py-4">
-        <h2 className="text-[13px] font-semibold">Recent runs</h2>
-        <p className="muted mt-0.5 text-[12px]">
+        <h2 className="text-sm font-semibold">Recent runs</h2>
+        <p className="muted mt-0.5 text-xs">
           Every run is recorded, dry ones included — what you were shown before
           you switched something on is the thing worth keeping.
         </p>
@@ -138,20 +138,20 @@ export default async function RulesPage({
           {runs.map((run) => (
             <li key={run.id} className="hairline flex flex-wrap items-center gap-2 rounded border px-2 py-1.5">
               <SpaceIndicator space={run.space} />
-              <Link href={`/rules/${run.ruleId}`} className="text-[12px] font-medium underline-offset-2 hover:underline">
+              <Link href={`/rules/${run.ruleId}`} className="text-xs font-medium underline-offset-2 hover:underline">
                 {run.ruleName}
               </Link>
               <RunSummaryLine run={run} />
             </li>
           ))}
           {runs.length === 0 && (
-            <li className="faint text-[12px]">Nothing has run yet.</li>
+            <li className="faint text-xs">Nothing has run yet.</li>
           )}
         </ul>
       </section>
       <section className="px-5 pb-6">
-        <h2 className="text-[13px] font-semibold">Notifications sent</h2>
-        <p className="muted mt-0.5 text-[12px]">
+        <h2 className="text-sm font-semibold">Notifications sent</h2>
+        <p className="muted mt-0.5 text-xs">
           Every attempt is recorded, including the ones that went nowhere — it
           is the only way to tell “the rule never fired” from “it fired and the
           push failed”. The provider that answered is named, so a delivery is
@@ -161,21 +161,21 @@ export default async function RulesPage({
           {deliveries.map((d) => (
             <li key={d.id} className="hairline flex flex-wrap items-center gap-2 rounded border px-2 py-1.5">
               <SpaceIndicator space={d.space} />
-              <span className="text-[12px]">{d.channel}</span>
-              <span className="faint text-[11px]">{d.status}</span>
-              <span className="faint text-[11px]">via {d.provider}</span>
-              <span className="faint text-[11px]">
+              <span className="text-xs">{d.channel}</span>
+              <span className="faint text-2xs">{d.status}</span>
+              <span className="faint text-2xs">via {d.provider}</span>
+              <span className="faint text-2xs">
                 {d.sentAt ? formatRelative(d.sentAt) : `queued ${formatRelative(d.createdAt)}`}
               </span>
               {d.error && (
-                <span className="text-[11px]" style={{ color: 'var(--c-rose)' }}>
+                <span className="text-2xs" style={{ color: 'var(--c-rose)' }}>
                   {d.error}
                 </span>
               )}
             </li>
           ))}
           {deliveries.length === 0 && (
-            <li className="faint text-[12px]">Nothing has been sent.</li>
+            <li className="faint text-xs">Nothing has been sent.</li>
           )}
         </ul>
       </section>
@@ -186,7 +186,7 @@ export default async function RulesPage({
 function EnabledChip({ enabled }: { enabled: boolean }) {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs"
       style={
         enabled
           ? { background: 'var(--bg-sunken)', color: 'var(--text)', border: '1px solid var(--line-strong)' }

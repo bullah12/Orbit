@@ -35,16 +35,16 @@ export default async function PlacesPage({
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">Places</h1>
+          <h1 className="text-lg font-semibold">Places</h1>
           {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
-          <span className="faint text-[12px]">{plural(places.length, 'place')}</span>
+          <span className="faint text-xs">{plural(places.length, 'place')}</span>
           {withoutPoint > 0 && (
-            <span className="faint text-[12px]">
+            <span className="faint text-xs">
               {withoutPoint} without coordinates
             </span>
           )}
         </div>
-        <p className="muted mt-0.5 text-[12px]">
+        <p className="muted mt-0.5 text-xs">
           Somewhere you go. A place belongs to one space, and moving it between
           spaces changes who can see it — you will be shown exactly who first.
         </p>
@@ -70,26 +70,26 @@ export default async function PlacesPage({
           defaultValue={q ?? ''}
           placeholder="Search by name, address or postcode…"
           autoComplete="off"
-          className="min-w-40 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[color:var(--text-faint)]"
+          className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
         />
-        <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
+        <button type="submit" className="hairline rounded border px-2 py-1 text-xs">
           Search
         </button>
         {q && (
-          <Link href="/places" className="faint text-[12px]">
+          <Link href="/places" className="faint text-xs">
             Clear
           </Link>
         )}
         <Link
           href={showArchived ? '/places' : '/places?archived=1'}
-          className="faint ml-auto text-[12px]"
+          className="faint ml-auto text-xs"
         >
           {showArchived ? 'Hide archived' : 'Show archived'}
         </Link>
       </form>
 
       {places.length === 0 ? (
-        <p className="faint px-5 py-10 text-[13px]">
+        <p className="faint px-5 py-10 text-sm">
           {q ? `Nothing matches “${q}”.` : 'No places here yet.'}
         </p>
       ) : (
@@ -98,18 +98,18 @@ export default async function PlacesPage({
             <li key={p.id} className="hairline row-hover border-b px-3 py-2">
               <Link href={`/places/${p.id}` as never} className="block">
                 <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[13px]">
+                  <span className="min-w-0 flex-1 truncate text-sm">
                     {p.isLocked ? <em className="muted">Locked place</em> : p.name}
                     {p.archivedAt && (
-                      <span className="faint ml-1.5 text-[11px]">archived</span>
+                      <span className="faint ml-1.5 text-2xs">archived</span>
                     )}
                   </span>
                   {p.postcode && !p.isLocked && (
-                    <span className="faint shrink-0 font-mono text-[11px]">{p.postcode}</span>
+                    <span className="faint shrink-0 font-mono text-2xs">{p.postcode}</span>
                   )}
                   {p.lat === null ? (
                     <span
-                      className="faint inline-flex shrink-0 items-center gap-1 text-[11px]"
+                      className="faint inline-flex shrink-0 items-center gap-1 text-2xs"
                       title="No coordinates yet"
                     >
                       <Icon name="alert" size={10} />
@@ -117,7 +117,7 @@ export default async function PlacesPage({
                     </span>
                   ) : (
                     <span
-                      className="faint inline-flex shrink-0 items-center gap-1 text-[11px]"
+                      className="faint inline-flex shrink-0 items-center gap-1 text-2xs"
                       title={`${p.lat.toFixed(4)}, ${p.lon!.toFixed(4)} — from ${p.geocodeSource ?? 'manual'}`}
                     >
                       <Icon name="map_pin" size={10} />
@@ -125,13 +125,13 @@ export default async function PlacesPage({
                     </span>
                   )}
                   {p.eventCount > 0 && (
-                    <span className="faint inline-flex shrink-0 items-center gap-1 text-[11px]">
+                    <span className="faint inline-flex shrink-0 items-center gap-1 text-2xs">
                       <Icon name="calendar" size={10} />
                       {p.eventCount}
                     </span>
                   )}
                   {p.visitCount > 0 && (
-                    <span className="faint inline-flex shrink-0 items-center gap-1 text-[11px]">
+                    <span className="faint inline-flex shrink-0 items-center gap-1 text-2xs">
                       <Icon name="check" size={10} />
                       {plural(p.visitCount, 'visit')}
                     </span>

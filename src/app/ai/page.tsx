@@ -41,18 +41,18 @@ export default async function AiPage({
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">AI</h1>
-          <span className="faint text-[12px]">
+          <h1 className="text-lg font-semibold">AI</h1>
+          <span className="faint text-xs">
             {enabled} of {consents.length} on
           </span>
         </div>
-        <p className="muted mt-0.5 text-[12px]">
+        <p className="muted mt-0.5 text-xs">
           Every AI feature is off until you switch it on, one feature at a time,
           in one space at a time. Each row says exactly what would leave this
           device. Locked items never reach any of them — they have no plaintext
           on the server, so there is nothing to send.
         </p>
-        <p className="faint mt-1 text-[11px]">
+        <p className="faint mt-1 text-2xs">
           Natural-language capture is <strong>not</strong> on this page, on
           purpose: it is parsed locally and never sends anything anywhere,
           whatever is switched on here.
@@ -62,7 +62,7 @@ export default async function AiPage({
       {error && (
         <p
           role="alert"
-          className="hairline border-b px-5 py-2 text-[12px]"
+          className="hairline border-b px-5 py-2 text-xs"
           style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
         >
           {error}
@@ -70,8 +70,8 @@ export default async function AiPage({
       )}
 
       <section className="px-5 py-4">
-        <h2 className="text-[13px] font-semibold">Which provider would answer</h2>
-        <p className="mt-1 inline-flex flex-wrap items-center gap-2 text-[12px]">
+        <h2 className="text-sm font-semibold">Which provider would answer</h2>
+        <p className="mt-1 inline-flex flex-wrap items-center gap-2 text-xs">
           <span
             className="hairline inline-flex items-center gap-1 rounded border px-2 py-1"
             id="ai-provider"
@@ -88,15 +88,15 @@ export default async function AiPage({
       </section>
 
       <section className="px-5 pb-4" aria-labelledby="consent-heading">
-        <h2 id="consent-heading" className="text-[13px] font-semibold">
+        <h2 id="consent-heading" className="text-sm font-semibold">
           What you have agreed to
         </h2>
-        <p className="muted mt-0.5 text-[12px]">
+        <p className="muted mt-0.5 text-xs">
           These are yours alone. Being in somebody&rsquo;s space does not show
           you what they agreed to send, and does not let you agree for them —
           the policy on the table says so, not this page.
         </p>
-        <p className="faint mt-1 text-[11px]" id="ai-where">
+        <p className="faint mt-1 text-2xs" id="ai-where">
           Each is run from where the thing it acts on lives: a note here, a
           task from its own page, and the week from Today, once per space.
         </p>
@@ -105,11 +105,11 @@ export default async function AiPage({
             <li key={c.id} className="hairline flex flex-col gap-1 rounded border px-3 py-2">
               <div className="flex flex-wrap items-center gap-2">
                 <SpaceIndicator space={c.space} />
-                <span className="text-[13px] font-medium">
+                <span className="text-sm font-medium">
                   {isAiFeature(c.feature) ? AI_FEATURE_LABEL[c.feature] : c.feature}
                 </span>
                 <span
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs"
                   style={
                     c.isEnabled
                       ? { background: 'var(--bg-sunken)', color: 'var(--text)', border: '1px solid var(--line-strong)' }
@@ -120,19 +120,19 @@ export default async function AiPage({
                   {c.isEnabled ? 'On' : 'Off'}
                 </span>
               </div>
-              <p className="muted text-[12px]">{c.dataLeavesDevice}</p>
+              <p className="muted text-xs">{c.dataLeavesDevice}</p>
               <div className="flex flex-wrap items-center gap-3">
                 <form action={setAiConsent}>
                   <input type="hidden" name="consentId" value={c.id} />
                   <input type="hidden" name="enabled" value={c.isEnabled ? '0' : '1'} />
                   <button
                     type="submit"
-                    className="hairline rounded border px-2 py-1 text-[12px]"
+                    className="hairline rounded border px-2 py-1 text-xs"
                   >
                     {c.isEnabled ? 'Switch off' : 'Switch on, and send this'}
                   </button>
                 </form>
-                <span className="faint text-[11px]">
+                <span className="faint text-2xs">
                   {c.consentedAt ? `Consented ${formatRelative(c.consentedAt)}` : 'Never consented'}
                   {c.revokedAt ? ` · revoked ${formatRelative(c.revokedAt)}` : ''}
                 </span>
@@ -140,7 +140,7 @@ export default async function AiPage({
             </li>
           ))}
           {consents.length === 0 && (
-            <li className="muted text-[12px]">
+            <li className="muted text-xs">
               There are no AI features in your spaces to consent to.
             </li>
           )}
@@ -148,10 +148,10 @@ export default async function AiPage({
       </section>
 
       <section className="px-5 pb-4" aria-labelledby="try-heading">
-        <h2 id="try-heading" className="text-[13px] font-semibold">
+        <h2 id="try-heading" className="text-sm font-semibold">
           Summarise a note
         </h2>
-        <p className="muted mt-0.5 text-[12px]">
+        <p className="muted mt-0.5 text-xs">
           Locked notes are listed here and refused when you pick one. They are
           not hidden, because a note that vanishes looks like a note that is not
           there.
@@ -175,7 +175,7 @@ export default async function AiPage({
           </select>
           <button
             type="submit"
-            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px]"
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm"
             style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
           >
             <Icon name="sparkle" size={13} />
@@ -187,7 +187,7 @@ export default async function AiPage({
           {refused && (
             <p
               role="alert"
-              className="hairline rounded border px-3 py-2 text-[12px]"
+              className="hairline rounded border px-3 py-2 text-xs"
               style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
               id="ai-refusal"
             >
@@ -196,20 +196,20 @@ export default async function AiPage({
           )}
           {sent && (
             <div className="hairline rounded border px-3 py-2">
-              <p className="faint text-[11px] font-semibold uppercase tracking-wider">
+              <p className="faint text-2xs font-semibold uppercase tracking-wider">
                 What was sent
               </p>
-              <pre id="ai-sent" className="mt-1 whitespace-pre-wrap text-[12px]">
+              <pre id="ai-sent" className="mt-1 whitespace-pre-wrap text-xs">
                 {sent}
               </pre>
             </div>
           )}
           {answer && (
             <div className="hairline rounded border px-3 py-2">
-              <p className="faint text-[11px] font-semibold uppercase tracking-wider">
+              <p className="faint text-2xs font-semibold uppercase tracking-wider">
                 What came back
               </p>
-              <p id="ai-answer" className="mt-1 text-[12px]">
+              <p id="ai-answer" className="mt-1 text-xs">
                 {answer}
               </p>
             </div>
@@ -218,8 +218,8 @@ export default async function AiPage({
       </section>
 
       <section className="px-5 pb-6">
-        <h2 className="text-[13px] font-semibold">Every attempt</h2>
-        <p className="muted mt-0.5 text-[12px]">
+        <h2 className="text-sm font-semibold">Every attempt</h2>
+        <p className="muted mt-0.5 text-xs">
           Recorded whether or not anything was sent, and never with the content.
           A refusal is a row, so “nothing was sent” is a fact you can check
           rather than an absence you have to trust.
@@ -231,11 +231,11 @@ export default async function AiPage({
               className="hairline flex flex-wrap items-center gap-2 rounded border px-2 py-1.5"
             >
               <SpaceIndicator space={r.space} />
-              <span className="text-[12px]">{describeAiRun(r)}</span>
-              <span className="faint text-[11px]">{formatRelative(r.ranAt)}</span>
+              <span className="text-xs">{describeAiRun(r)}</span>
+              <span className="faint text-2xs">{formatRelative(r.ranAt)}</span>
             </li>
           ))}
-          {runs.length === 0 && <li className="faint text-[12px]">Nothing has run yet.</li>}
+          {runs.length === 0 && <li className="faint text-xs">Nothing has run yet.</li>}
         </ul>
       </section>
     </div>

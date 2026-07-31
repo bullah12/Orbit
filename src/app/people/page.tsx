@@ -29,11 +29,11 @@ export default async function PeoplePage({
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">People</h1>
+          <h1 className="text-lg font-semibold">People</h1>
           {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
-          <span className="faint text-[12px]">{plural(people.length, 'person', 'people')}</span>
+          <span className="faint text-xs">{plural(people.length, 'person', 'people')}</span>
         </div>
-        <p className="muted mt-0.5 text-[12px]">
+        <p className="muted mt-0.5 text-xs">
           The same person can appear in more than one space. Those records stay separate
           and are linked, never merged.
         </p>
@@ -58,20 +58,20 @@ export default async function PeoplePage({
           defaultValue={q ?? ''}
           placeholder="Search by name or nickname…"
           autoComplete="off"
-          className="min-w-40 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[color:var(--text-faint)]"
+          className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
         />
-        <button type="submit" className="hairline rounded border px-2 py-1 text-[12px]">
+        <button type="submit" className="hairline rounded border px-2 py-1 text-xs">
           Search
         </button>
         {q && (
-          <Link href="/people" className="faint text-[12px]">
+          <Link href="/people" className="faint text-xs">
             Clear
           </Link>
         )}
       </form>
 
       {people.length === 0 ? (
-        <p className="faint px-5 py-10 text-[13px]">
+        <p className="faint px-5 py-10 text-sm">
           {q ? `Nobody matches “${q}”.` : 'No people here.'}
         </p>
       ) : (
@@ -80,15 +80,15 @@ export default async function PeoplePage({
             <li key={p.id} className="hairline row-hover border-b px-3 py-2">
               <Link href={`/people/${p.id}` as never} className="block">
                 <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[13px]">
+                  <span className="min-w-0 flex-1 truncate text-sm">
                     {p.isLocked ? <em className="muted">Locked person</em> : p.displayName}
                     {p.nickname && !p.isLocked && (
-                      <span className="faint ml-1.5 text-[11px]">“{p.nickname}”</span>
+                      <span className="faint ml-1.5 text-2xs">“{p.nickname}”</span>
                     )}
                   </span>
                   {p.linkCount > 0 && (
                     <span
-                      className="faint inline-flex shrink-0 items-center gap-1 text-[11px]"
+                      className="faint inline-flex shrink-0 items-center gap-1 text-2xs"
                       title="Also has a record in another space"
                     >
                       <Icon name="link" size={10} />
@@ -96,7 +96,7 @@ export default async function PeoplePage({
                     </span>
                   )}
                   {p.nextDate && (
-                    <span className="faint inline-flex shrink-0 items-center gap-1 text-[11px]">
+                    <span className="faint inline-flex shrink-0 items-center gap-1 text-2xs">
                       <Icon name="cake" size={10} />
                       {formatDueDate(nextOccurrence(p.nextDate.onDate))}
                     </span>

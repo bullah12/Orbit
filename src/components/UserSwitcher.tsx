@@ -16,7 +16,7 @@ export function UserSwitcher({
 }) {
   return (
     <form action={switchUser} className="hairline border-t px-2 pt-3">
-      <div className="faint mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider">
+      <div className="faint mb-1.5 flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider">
         <Icon name="user" size={10} />
         Viewing as
       </div>
@@ -27,7 +27,7 @@ export function UserSwitcher({
             name="userId"
             value={u.id}
             type="submit"
-            className="row-hover flex items-center gap-2 rounded px-1.5 py-1 text-left text-[12px]"
+            className="row-hover flex items-center gap-2 rounded px-1.5 py-1 text-left text-xs"
             style={
               u.id === current.id
                 ? { background: 'var(--bg-hover)', fontWeight: 600 }

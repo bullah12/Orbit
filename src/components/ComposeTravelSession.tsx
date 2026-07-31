@@ -58,28 +58,28 @@ export function ComposeTravelSession({
       </fieldset>
 
       <div className="flex min-w-44 flex-1 flex-col gap-1">
-        <label htmlFor="session-title" className="faint text-[11px] font-medium">
+        <label htmlFor="session-title" className="faint text-2xs font-medium">
           Where to
         </label>
         <input id="session-title" name="title" required className="input" placeholder="Manchester" />
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="session-start" className="faint text-[11px] font-medium">
+        <label htmlFor="session-start" className="faint text-2xs font-medium">
           From
         </label>
         <input id="session-start" type="date" name="startDate" required defaultValue={today} className="input" />
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="session-end" className="faint text-[11px] font-medium">
+        <label htmlFor="session-end" className="faint text-2xs font-medium">
           Until
         </label>
         <input id="session-end" type="date" name="endDate" required defaultValue={today} className="input" />
       </div>
 
       <div className="flex min-w-40 flex-col gap-1">
-        <label htmlFor="session-destination" className="faint text-[11px] font-medium">
+        <label htmlFor="session-destination" className="faint text-2xs font-medium">
           Staying at
         </label>
         <select
@@ -100,7 +100,7 @@ export function ComposeTravelSession({
 
       <button
         type="submit"
-        className="rounded px-3 py-1.5 text-[12px] font-medium"
+        className="rounded px-3 py-1.5 text-xs font-medium"
         style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
       >
         Start a trip

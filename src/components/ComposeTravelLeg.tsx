@@ -68,7 +68,7 @@ export function ComposeTravelLeg({
       </fieldset>
 
       <div className="flex min-w-44 flex-col gap-1">
-        <label htmlFor="leg-from" className="faint text-[11px] font-medium">
+        <label htmlFor="leg-from" className="faint text-2xs font-medium">
           From
         </label>
         <select id="leg-from" name="fromPlaceId" key={`from-${spaceId}`} defaultValue="" className="input">
@@ -84,7 +84,7 @@ export function ComposeTravelLeg({
       <Icon name="arrow_right" size={13} className="faint mb-2" />
 
       <div className="flex min-w-44 flex-col gap-1">
-        <label htmlFor="leg-to" className="faint text-[11px] font-medium">
+        <label htmlFor="leg-to" className="faint text-2xs font-medium">
           To
         </label>
         <select id="leg-to" name="toPlaceId" key={`to-${spaceId}`} defaultValue="" className="input">
@@ -98,7 +98,7 @@ export function ComposeTravelLeg({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="leg-mode" className="faint text-[11px] font-medium">
+        <label htmlFor="leg-mode" className="faint text-2xs font-medium">
           How
         </label>
         <select id="leg-mode" name="mode" defaultValue="car" className="input">
@@ -112,7 +112,7 @@ export function ComposeTravelLeg({
 
       {trips.length > 0 && (
         <div className="flex min-w-40 flex-col gap-1">
-          <label htmlFor="leg-session" className="faint text-[11px] font-medium">
+          <label htmlFor="leg-session" className="faint text-2xs font-medium">
             Part of
           </label>
           <select id="leg-session" name="sessionId" key={`trip-${spaceId}`} defaultValue="" className="input">
@@ -127,14 +127,14 @@ export function ComposeTravelLeg({
       )}
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="leg-depart" className="faint text-[11px] font-medium">
+        <label htmlFor="leg-depart" className="faint text-2xs font-medium">
           Leaves
         </label>
         <input id="leg-depart" type="time" name="departTime" className="input" />
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="leg-arrive" className="faint text-[11px] font-medium">
+        <label htmlFor="leg-arrive" className="faint text-2xs font-medium">
           Arrives
         </label>
         <input id="leg-arrive" type="time" name="arriveTime" className="input" />
@@ -142,13 +142,13 @@ export function ComposeTravelLeg({
 
       <button
         type="submit"
-        className="rounded px-3 py-1.5 text-[12px] font-medium"
+        className="rounded px-3 py-1.5 text-xs font-medium"
         style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
       >
         Add journey
       </button>
 
-      <p className="faint w-full text-[11px]">
+      <p className="faint w-full text-2xs">
         Leave the arrival empty and Orbit estimates it, including the few minutes
         either end that are not the moving part.
       </p>

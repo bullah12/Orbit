@@ -36,7 +36,7 @@ export function MonthGrid({
         {headings.map((h) => (
           <div
             key={h}
-            className="hairline faint border-b border-r px-2 py-1 text-[10px] font-semibold uppercase tracking-wider"
+            className="hairline faint border-b border-r px-2 py-1 text-2xs font-semibold uppercase tracking-wider"
             style={{ background: 'var(--bg-sunken)' }}
           >
             {h}
@@ -61,10 +61,10 @@ export function MonthGrid({
                 href={`/calendar/day?date=${day}`}
                 className={
                   day === today
-                    ? 'day-heading self-start rounded px-1 text-[12px] font-semibold tabular-nums'
+                    ? 'day-heading self-start rounded px-1 text-xs font-semibold tabular-nums'
                     : outside
-                      ? 'day-heading faint self-start px-1 text-[12px] tabular-nums'
-                      : 'day-heading muted self-start px-1 text-[12px] tabular-nums'
+                      ? 'day-heading faint self-start px-1 text-xs tabular-nums'
+                      : 'day-heading muted self-start px-1 text-xs tabular-nums'
                 }
                 aria-label={`${day}, ${plural(dayItems.length, 'entry', 'entries')}`}
               >
@@ -74,7 +74,7 @@ export function MonthGrid({
                 <EventBlock key={item.key} item={item} compact />
               ))}
               {hidden > 0 && (
-                <Link href={`/calendar/day?date=${day}`} className="faint px-1 text-[10px]">
+                <Link href={`/calendar/day?date=${day}`} className="faint px-1 text-2xs">
                   {hidden} more
                 </Link>
               )}

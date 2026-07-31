@@ -36,8 +36,12 @@ export function SpaceIndicator({
     <span
       className={
         size === 'sm'
-          ? 'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium leading-tight'
-          : 'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium'
+          ? 'chip shrink-0'
+          : // The stylesheet defines one chip geometry, and .chip lands after the
+            // Tailwind utilities in the cascade, so a larger variant cannot be
+            // built by overriding it. The header-sized indicator keeps its own
+            // measurements until the system names a second size.
+            'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium'
       }
       style={{ color: fg, background: bg }}
       title={`Space: ${space.name}`}
@@ -60,7 +64,7 @@ export function CategoryChip({
   if (!category) return null;
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1 text-[11px] leading-tight"
+      className="chip chip-plain shrink-0"
       style={{ color: `var(--c-${category.colour}, var(--c-slate))` }}
     >
       <Icon name={category.icon} size={11} strokeWidth={2} />

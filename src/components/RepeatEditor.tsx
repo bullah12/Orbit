@@ -57,7 +57,7 @@ export function RepeatEditor({
       <input type="hidden" name="eventId" value={eventId} />
 
       <label className="flex flex-col gap-1">
-        <span className="faint text-[11px] font-medium">Repeats</span>
+        <span className="faint text-2xs font-medium">Repeats</span>
         <select
           name="repeatFreq"
           value={freq}
@@ -75,7 +75,7 @@ export function RepeatEditor({
       {freq !== '' && (
         <>
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px] font-medium">Every</span>
+            <span className="faint text-2xs font-medium">Every</span>
             <span className="flex items-center gap-1.5">
               <input
                 type="number"
@@ -88,13 +88,13 @@ export function RepeatEditor({
                 max={99}
                 className="input w-16"
               />
-              <span className="faint text-[11px]">{UNIT[freq]}</span>
+              <span className="faint text-2xs">{UNIT[freq]}</span>
             </span>
           </label>
 
           {freq === 'WEEKLY' && (
             <fieldset className="flex flex-col gap-1">
-              <legend className="faint text-[11px] font-medium">On these days</legend>
+              <legend className="faint text-2xs font-medium">On these days</legend>
               <span className="flex items-center gap-1">
                 {WEEKDAYS.map((code) => (
                   <label key={code} className="cursor-pointer">
@@ -108,21 +108,21 @@ export function RepeatEditor({
                     <span className="sr-only">{WEEKDAY_NAME[code]}</span>
                     <span
                       aria-hidden="true"
-                      className="hairline block rounded border px-1.5 py-1 text-[11px] opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2"
+                      className="hairline block rounded border px-1.5 py-1 text-2xs opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2"
                     >
                       {code}
                     </span>
                   </label>
                 ))}
               </span>
-              <span className="faint text-[10px]">
+              <span className="faint text-2xs">
                 None chosen uses the day the event starts on.
               </span>
             </fieldset>
           )}
 
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px] font-medium">Until</span>
+            <span className="faint text-2xs font-medium">Until</span>
             <input
               type="date"
               name="repeatUntil"
@@ -134,7 +134,7 @@ export function RepeatEditor({
         </>
       )}
 
-      <button type="submit" className="hairline rounded border px-3 py-1.5 text-[12px] font-medium">
+      <button type="submit" className="hairline rounded border px-3 py-1.5 text-xs font-medium">
         {freq === '' ? 'Stop repeating' : current ? 'Change the repeat' : 'Make it repeat'}
       </button>
     </form>

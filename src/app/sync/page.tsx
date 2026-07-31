@@ -77,13 +77,13 @@ export default async function SyncPage({
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-[15px] font-semibold">Sync</h1>
-          <span className="faint text-[12px]">
+          <h1 className="text-lg font-semibold">Sync</h1>
+          <span className="faint text-xs">
             {devices.length} device{devices.length === 1 ? '' : 's'}, {cursors.length} cursor
             {cursors.length === 1 ? '' : 's'}
           </span>
         </div>
-        <p className="muted mt-0.5 text-[12px]">
+        <p className="muted mt-0.5 text-xs">
           What this browser has not sent yet, and how far each device has caught
           up with each space. Nothing here is ever resolved silently: an edit
           that clashes with somebody else’s is held with both versions kept,
@@ -95,14 +95,14 @@ export default async function SyncPage({
         {error && (
           <p
             role="alert"
-            className="hairline border-b px-5 py-2 text-[12px]"
+            className="hairline border-b px-5 py-2 text-xs"
             style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
           >
             {error}
           </p>
         )}
         {!error && named && (
-          <p className="hairline muted border-b px-5 py-2 text-[12px]">
+          <p className="hairline muted border-b px-5 py-2 text-xs">
             This browser is now {myLabel}. Its queue above and its cursors below are
             the same device — one row per space, because a cursor is space-scoped.
           </p>
@@ -121,19 +121,19 @@ export default async function SyncPage({
           writable space and a cookie the server can read, so the halves agree.
       */}
       <section className="hairline border-b px-5 py-4" aria-labelledby="thisdevice-heading">
-        <h2 id="thisdevice-heading" className="text-[13px] font-semibold">
+        <h2 id="thisdevice-heading" className="text-sm font-semibold">
           This browser
         </h2>
         {myLabel === null ? (
-          <p className="muted mt-1 text-[12px]">
+          <p className="muted mt-1 text-xs">
             This browser has not said which device it is, so the queue above is not
             tied to any of the rows below: it is one browser profile’s
-            <code className="mx-1 text-[11px]">localStorage</code>, and a cursor
+            <code className="mx-1 text-2xs">localStorage</code>, and a cursor
             belongs to a device. Name it and the two halves of this page describe
             the same thing.
           </p>
         ) : (
-          <p className="muted mt-1 text-[12px]">
+          <p className="muted mt-1 text-xs">
             This browser is <strong>{myLabel}</strong>
             {mine.length === 0
               ? ' — but no device rows carry that name, so nothing below is its cursor. Save it again to create them.'
@@ -144,21 +144,21 @@ export default async function SyncPage({
         )}
         <form action={nameThisDevice} className="mt-2 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
-            <span className="faint text-[11px]">What to call this browser</span>
+            <span className="faint text-2xs">What to call this browser</span>
             <input
               name="label"
               defaultValue={myLabel ?? suggestion}
               maxLength={DEVICE_LABEL_MAX}
               required
               autoComplete="off"
-              className="input text-[12px]"
+              className="input text-xs"
             />
           </label>
-          <button type="submit" className="hairline rounded border px-2.5 py-1 text-[12px]">
+          <button type="submit" className="hairline rounded border px-2.5 py-1 text-xs">
             {myLabel === null ? 'Name this browser' : 'Save this name'}
           </button>
         </form>
-        <p className="faint mt-1 text-[11px]">
+        <p className="faint mt-1 text-2xs">
           Renaming keeps the cursors: the rows are updated, not replaced, so a
           browser does not forget how far it had caught up because you renamed it.
           The name is a label, never a permission — every write still goes through
@@ -167,11 +167,11 @@ export default async function SyncPage({
       </section>
 
       <section className="hairline border-b px-5 py-4" aria-labelledby="devices-heading">
-        <h2 id="devices-heading" className="text-[13px] font-semibold">
+        <h2 id="devices-heading" className="text-sm font-semibold">
           Devices
         </h2>
         {devices.length === 0 ? (
-          <p className="muted mt-1 text-[12px]">
+          <p className="muted mt-1 text-xs">
             No devices are registered to this account. A cursor belongs to a
             device, so there is nothing to be behind.
           </p>
@@ -182,7 +182,7 @@ export default async function SyncPage({
                 <a
                   href={`/sync?device=${d.id}`}
                   aria-current={device?.id === d.id ? 'true' : undefined}
-                  className="hairline flex items-center gap-2 rounded border px-2.5 py-1.5 text-[12px]"
+                  className="hairline flex items-center gap-2 rounded border px-2.5 py-1.5 text-xs"
                   style={
                     device?.id === d.id
                       ? { background: 'var(--bg-raised)', borderColor: 'var(--text-faint)' }
@@ -193,13 +193,13 @@ export default async function SyncPage({
                   <span className="font-medium">{d.label}</span>
                   {isMine(d.id) && (
                     <span
-                      className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                      className="rounded px-1.5 py-0.5 text-2xs font-medium"
                       style={{ background: 'var(--bg-sunken)', color: 'var(--accent)' }}
                     >
                       this browser
                     </span>
                   )}
-                  <span className="faint text-[11px]">
+                  <span className="faint text-2xs">
                     {d.lastSeenAt ? `seen ${formatRelative(d.lastSeenAt)}` : 'never seen'}
                   </span>
                 </a>
@@ -212,21 +212,21 @@ export default async function SyncPage({
       {device && (
         <section className="hairline border-b px-5 py-4" aria-labelledby="cursors-heading">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="cursors-heading" className="text-[13px] font-semibold">
+            <h2 id="cursors-heading" className="text-sm font-semibold">
               How far <span className="font-normal">{device.label}</span> has caught up
             </h2>
             <SpaceIndicator space={device.space} />
           </div>
 
           {cursorsForDevice.length === 0 ? (
-            <p className="muted mt-1 text-[12px]">
+            <p className="muted mt-1 text-xs">
               This device has no cursors yet, so its next sync reads everything.
             </p>
           ) : (
-            <table className="mt-2 w-full text-[12px]" id="sync-cursors">
+            <table className="mt-2 w-full text-xs" id="sync-cursors">
               <caption className="sr-only">One cursor per kind for {device.label}</caption>
               <thead>
-                <tr className="faint text-left text-[11px]">
+                <tr className="faint text-left text-2xs">
                   <th scope="col" className="py-1 pr-3 font-medium">Kind</th>
                   <th scope="col" className="py-1 pr-3 font-medium">Caught up to</th>
                   <th scope="col" className="py-1 pr-3 font-medium">Last sync</th>
@@ -257,18 +257,18 @@ export default async function SyncPage({
               <input type="hidden" name="deviceId" value={device.id} />
               <input type="hidden" name="spaceId" value={device.spaceId} />
               <input type="hidden" name="upTo" value={now} />
-              <button type="submit" className="hairline rounded border px-2.5 py-1 text-[12px]">
+              <button type="submit" className="hairline rounded border px-2.5 py-1 text-xs">
                 Mark caught up
               </button>
             </form>
             <form action={rewindDevice}>
               <input type="hidden" name="deviceId" value={device.id} />
               <input type="hidden" name="spaceId" value={device.spaceId} />
-              <button type="submit" className="hairline rounded border px-2.5 py-1 text-[12px]">
+              <button type="submit" className="hairline rounded border px-2.5 py-1 text-xs">
                 Rewind to the beginning
               </button>
             </form>
-            <span className="faint self-center text-[11px]">
+            <span className="faint self-center text-2xs">
               A cursor only ever moves forward when it is advanced — rewinding is a
               separate, deliberate thing, and it makes the next sync read the lot.
             </span>
@@ -278,11 +278,11 @@ export default async function SyncPage({
 
       {device && (
         <section className="px-5 py-4" aria-labelledby="changes-heading">
-          <h2 id="changes-heading" className="text-[13px] font-semibold">
+          <h2 id="changes-heading" className="text-sm font-semibold">
             Changed since this device last caught up
           </h2>
           {changes.length === 0 ? (
-            <p className="muted mt-1 text-[12px]" id="sync-changes-none">
+            <p className="muted mt-1 text-xs" id="sync-changes-none">
               Nothing has changed in {device.space.name} since this device last
               read it.
             </p>
@@ -291,10 +291,10 @@ export default async function SyncPage({
               {changes.map((c) => (
                 <li
                   key={`${c.entityKind}-${c.entityId}`}
-                  className="hairline flex flex-wrap items-center gap-2 rounded border px-2.5 py-1.5 text-[12px]"
+                  className="hairline flex flex-wrap items-center gap-2 rounded border px-2.5 py-1.5 text-xs"
                 >
                   <SpaceIndicator space={c.space} />
-                  <span className="hairline rounded border px-1.5 py-0.5 text-[11px]">{c.entityKind}</span>
+                  <span className="hairline rounded border px-1.5 py-0.5 text-2xs">{c.entityKind}</span>
                   <span className="font-medium">
                     {c.isLocked ? (
                       <span className="faint inline-flex items-center gap-1">
@@ -304,12 +304,12 @@ export default async function SyncPage({
                       c.title || 'Untitled'
                     )}
                   </span>
-                  <span className="faint ml-auto text-[11px]">{formatRelative(c.updatedAt)}</span>
+                  <span className="faint ml-auto text-2xs">{formatRelative(c.updatedAt)}</span>
                 </li>
               ))}
             </ul>
           )}
-          <p className="faint mt-2 text-[11px]">
+          <p className="faint mt-2 text-2xs">
             A locked row is listed rather than hidden: a device that never hears
             it changed can never fetch its ciphertext either. Its title is empty
             on the server by constraint, so there is nothing to show and nothing

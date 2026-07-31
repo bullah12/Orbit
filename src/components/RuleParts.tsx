@@ -16,7 +16,7 @@ export function RunSummaryLine({ run }: { run: RuleRunRow }) {
   const skipped = run.effects.filter((e) => e.skipped).length;
 
   return (
-    <span className="faint flex flex-wrap items-center gap-x-2 text-[11px]">
+    <span className="faint flex flex-wrap items-center gap-x-2 text-2xs">
       <RunKindChip isDryRun={run.isDryRun} />
       <span>{formatRelative(run.ranAt)}</span>
       <span>
@@ -37,7 +37,7 @@ export function RunSummaryLine({ run }: { run: RuleRunRow }) {
 export function RunKindChip({ isDryRun }: { isDryRun: boolean }) {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-medium"
       style={
         isDryRun
           ? { background: 'var(--bg-sunken)', color: 'var(--text-muted)' }
@@ -60,7 +60,7 @@ export function RunKindChip({ isDryRun }: { isDryRun: boolean }) {
 export function RunDetail({ run }: { run: RuleRunRow }) {
   if (run.effects.length === 0) {
     return (
-      <p className="muted text-[12px]">
+      <p className="muted text-xs">
         Nothing to consider — this rule had no item it could apply to.
       </p>
     );
@@ -82,14 +82,14 @@ export function RunDetail({ run }: { run: RuleRunRow }) {
           ))}
         </ul>
       ) : (
-        <p className="muted text-[12px]">
+        <p className="muted text-xs">
           Nothing would change — every task this rule looked at is already the
           way it wants it.
         </p>
       )}
 
       {quiet.length > 0 && (
-        <details className="text-[12px]">
+        <details className="text-xs">
           <summary className="faint cursor-pointer">
             {quiet.length} {quiet.length === 1 ? 'task was' : 'tasks were'} looked
             at and left alone
@@ -115,13 +115,13 @@ function Item({ item }: { item: RuleRunRow['effects'][number] }) {
         <span style={{ color: item.matched ? 'var(--text)' : 'var(--text-faint)' }}>
           <Icon name={item.skipped ? 'lock' : item.matched ? 'arrow_right' : 'x'} size={11} />
         </span>
-        <span className="text-[12px] font-medium">{item.title}</span>
-        <span className="faint text-[11px]">{item.reason}</span>
+        <span className="text-xs font-medium">{item.title}</span>
+        <span className="faint text-2xs">{item.reason}</span>
       </div>
       {item.changes.length > 0 && (
         <ul className="mt-1 flex flex-col gap-0.5 pl-4">
           {item.changes.map((change, i) => (
-            <li key={i} className="text-[12px]">
+            <li key={i} className="text-xs">
               {change.description}
             </li>
           ))}

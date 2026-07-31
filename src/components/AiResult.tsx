@@ -29,7 +29,7 @@ export function AiResult({
       {refused && (
         <p
           role="alert"
-          className="hairline rounded border px-3 py-2 text-[12px]"
+          className="hairline rounded border px-3 py-2 text-xs"
           style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
           id="ai-refusal"
         >
@@ -39,16 +39,16 @@ export function AiResult({
       )}
       {sent && (
         <div className="hairline rounded border px-3 py-2">
-          <p className="faint text-[11px] font-semibold uppercase tracking-wider">What was sent</p>
-          <pre id="ai-sent" className="mt-1 whitespace-pre-wrap text-[12px]">
+          <p className="faint text-2xs font-semibold uppercase tracking-wider">What was sent</p>
+          <pre id="ai-sent" className="mt-1 whitespace-pre-wrap text-xs">
             {sent}
           </pre>
         </div>
       )}
       {answer && (
         <div className="hairline rounded border px-3 py-2">
-          <p className="faint text-[11px] font-semibold uppercase tracking-wider">What came back</p>
-          <p id="ai-answer" className="mt-1 text-[12px]">
+          <p className="faint text-2xs font-semibold uppercase tracking-wider">What came back</p>
+          <p id="ai-answer" className="mt-1 text-xs">
             {answer}
           </p>
         </div>

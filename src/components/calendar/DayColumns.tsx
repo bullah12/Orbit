@@ -56,7 +56,7 @@ export function DayColumns({
 
         {/* --- all-day banner ---------------------------------------------- */}
         <div
-          className="hairline border-b border-r px-1 py-1 text-right text-[10px] leading-tight"
+          className="hairline border-b border-r px-1 py-1 text-right text-2xs"
           style={{ background: 'var(--bg-sunken)' }}
         >
           <span className="faint">All day</span>
@@ -80,7 +80,7 @@ export function DayColumns({
           {hourLines(days[0] ?? today).map((line, i) => (
             <span
               key={`${line.label}-${i}`}
-              className="faint absolute right-1 -translate-y-1/2 text-[10px] tabular-nums"
+              className="faint absolute right-1 -translate-y-1/2 text-2xs tabular-nums"
               style={{ top: `${line.top * 100}%` }}
             >
               {line.label}
@@ -153,13 +153,13 @@ function DayHeading({ day, today, view }: { day: DateOnly; today: DateOnly; view
       className="day-heading flex items-baseline gap-1.5"
       aria-label={`${weekday} ${dayNum} ${month}${isToday ? ', today' : ''}`}
     >
-      <span className={isToday ? 'text-[12px] font-semibold' : 'muted text-[12px] font-medium'}>
+      <span className={isToday ? 'text-xs font-semibold' : 'muted text-xs font-medium'}>
         {view === 'day' ? new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long' }).format(d) : weekday}
       </span>
-      <span className={isToday ? 'text-[13px] font-semibold tabular-nums' : 'text-[13px] tabular-nums'}>
+      <span className={isToday ? 'text-sm font-semibold tabular-nums' : 'text-sm tabular-nums'}>
         {dayNum}
       </span>
-      <span className="faint text-[10px]">{month}</span>
+      <span className="faint text-2xs">{month}</span>
       {isToday && <span className="sr-only">(today)</span>}
     </a>
   );

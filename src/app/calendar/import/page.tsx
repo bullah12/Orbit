@@ -57,19 +57,19 @@ export default async function ImportPage({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
-        <h1 className="text-[15px] font-semibold">Import a calendar</h1>
-        <p className="muted mt-0.5 text-[12px]">
+        <h1 className="text-lg font-semibold">Import a calendar</h1>
+        <p className="muted mt-0.5 text-xs">
           Events are matched on the feed’s own UID, so importing the same feed twice
           updates rather than duplicates.
         </p>
-        <Link href="/calendar/week" className="faint mt-2 inline-block text-[12px]">
+        <Link href="/calendar/week" className="faint mt-2 inline-block text-xs">
           ← Back to the calendar
         </Link>
       </header>
 
       {imported != null && (
         <div
-          className="hairline border-b px-5 py-2 text-[13px]"
+          className="hairline border-b px-5 py-2 text-sm"
           role="status"
           aria-live="polite"
         >
@@ -80,7 +80,7 @@ export default async function ImportPage({
 
       {added != null && (
         <div
-          className="hairline border-b px-5 py-2 text-[13px]"
+          className="hairline border-b px-5 py-2 text-sm"
           role="status"
           aria-live="polite"
         >
@@ -91,7 +91,7 @@ export default async function ImportPage({
 
       {pushed != null && (
         <div
-          className="hairline border-b px-5 py-2 text-[13px]"
+          className="hairline border-b px-5 py-2 text-sm"
           role="status"
           aria-live="polite"
           id="push-result"
@@ -103,17 +103,17 @@ export default async function ImportPage({
       )}
 
       <section className="hairline border-b px-5 py-4">
-        <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">Source</h2>
+        <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">Source</h2>
 
         {provider.isFake ? (
-          <p className="muted mb-3 text-[12px]">
+          <p className="muted mb-3 text-xs">
             <Icon name="alert" size={11} className="mr-1 inline" />
             Using the fixture-backed provider (<code>ICS_PROVIDER=fake</code>). These feeds
             ship with Orbit and need no network. Set <code>ICS_PROVIDER=http</code> to import
             a real URL — that implementation is written but has never been run here.
           </p>
         ) : (
-          <p className="muted mb-3 text-[12px]">
+          <p className="muted mb-3 text-xs">
             <Icon name="alert" size={11} className="mr-1 inline" />
             Using <code>ICS_PROVIDER=http</code>. This implementation has never been executed
             in this environment; if it fails, that is the first thing to suspect.
@@ -121,11 +121,11 @@ export default async function ImportPage({
         )}
 
         {writableSpaces.length === 0 ? (
-          <p className="faint text-[12px]">You cannot write to any space, so there is nowhere to import to.</p>
+          <p className="faint text-xs">You cannot write to any space, so there is nowhere to import to.</p>
         ) : (
           <form action={importIcs} className="flex flex-col gap-3" aria-label="Import an ICS feed">
             <label className="flex max-w-md flex-col gap-1">
-              <span className="faint text-[11px] font-medium">
+              <span className="faint text-2xs font-medium">
                 {provider.isFake ? 'Fixture' : 'Feed URL'}
               </span>
               {provider.isFake ? (
@@ -145,7 +145,7 @@ export default async function ImportPage({
             </label>
 
             <label className="flex max-w-md flex-col gap-1">
-              <span className="faint text-[11px] font-medium">Import into</span>
+              <span className="faint text-2xs font-medium">Import into</span>
               <select name="calendarId" className="input" required>
                 {writableSpaces.map((space) =>
                   (calendars[space.id] ?? [])
@@ -160,7 +160,7 @@ export default async function ImportPage({
             </label>
 
             <div className="flex flex-wrap items-center gap-2">
-              <span className="faint text-[11px]">Destination spaces:</span>
+              <span className="faint text-2xs">Destination spaces:</span>
               {writableSpaces.map((s) => (
                 <SpaceIndicator key={s.id} space={s} />
               ))}
@@ -169,7 +169,7 @@ export default async function ImportPage({
             <div>
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-[12px] font-medium"
+                className="rounded px-3 py-1.5 text-xs font-medium"
                 style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
               >
                 Import
@@ -181,10 +181,10 @@ export default async function ImportPage({
 
 
       <section className="hairline border-b px-5 py-4">
-        <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
           Connect a calendar
         </h2>
-        <p className="muted mb-3 text-[12px]">
+        <p className="muted mb-3 text-xs">
           <Icon name="alert" size={11} className="mr-1 inline" />
           {calProvider.isFake
             ? 'Using the fixture-backed calendar provider (CALENDAR_PROVIDER=fake). Connecting one pulls its events in with no network and no credential. A second pull is incremental — it carries the sync token from the first and returns only what changed.'
@@ -192,18 +192,18 @@ export default async function ImportPage({
         </p>
 
         {remoteError ? (
-          <p className="muted text-[12px]" role="status">
+          <p className="muted text-xs" role="status">
             The provider could not list its calendars: <code>{remoteError}</code>
           </p>
         ) : writableSpaces.length === 0 ? (
-          <p className="faint text-[12px]">You cannot write to any space, so there is nowhere to connect one.</p>
+          <p className="faint text-xs">You cannot write to any space, so there is nowhere to connect one.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {remoteCalendars.map((rc) => (
               <li key={rc.externalId} className="surface flex flex-wrap items-center gap-2 rounded p-2">
                 <Icon name="calendar" size={12} className="muted" />
-                <span className="text-[13px]">{rc.name}</span>
-                <span className="faint text-[11px]">
+                <span className="text-sm">{rc.name}</span>
+                <span className="faint text-2xs">
                   {rc.writable ? 'read and write' : 'read only'}
                 </span>
                 <form action={connectCalendar} className="ml-auto flex items-center gap-2">
@@ -220,7 +220,7 @@ export default async function ImportPage({
                   </label>
                   <button
                     type="submit"
-                    className="hairline row-hover rounded border px-2 py-1 text-[12px]"
+                    className="hairline row-hover rounded border px-2 py-1 text-xs"
                   >
                     Connect and pull
                   </button>
@@ -232,12 +232,12 @@ export default async function ImportPage({
       </section>
 
       <section className="hairline border-b px-5 py-4">
-        <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
           Calendars in your spaces
         </h2>
         <ul className="flex flex-col gap-1" id="connected-calendars">
           {connected.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-2 text-[12px]">
+            <li key={c.id} className="flex flex-wrap items-center gap-2 text-xs">
               <SpaceIndicator
                 space={
                   spaces.find((s) => s.id === c.spaceId) ?? {
@@ -246,7 +246,7 @@ export default async function ImportPage({
                   }
                 }
               />
-              <span className="text-[13px]">{c.name}</span>
+              <span className="text-sm">{c.name}</span>
               <span className="faint">{c.provider}</span>
               <span className="faint">{plural(c.eventCount, 'event')}</span>
               {c.lastStatus && (
@@ -271,7 +271,7 @@ export default async function ImportPage({
                     <input type="hidden" name="calendarId" value={c.id} />
                     <button
                       type="submit"
-                      className="hairline row-hover rounded border px-2 py-0.5 text-[11px]"
+                      className="hairline row-hover rounded border px-2 py-0.5 text-2xs"
                     >
                       Pull again
                     </button>
@@ -280,7 +280,7 @@ export default async function ImportPage({
                     <input type="hidden" name="calendarId" value={c.id} />
                     <button
                       type="submit"
-                      className="hairline row-hover rounded border px-2 py-0.5 text-[11px]"
+                      className="hairline row-hover rounded border px-2 py-0.5 text-2xs"
                       disabled={c.dirtyCount === 0}
                     >
                       Push {c.dirtyCount > 0 ? c.dirtyCount : ''} back
@@ -294,15 +294,15 @@ export default async function ImportPage({
       </section>
 
       <section className="px-5 py-4">
-        <h2 className="faint mb-2 text-[10px] font-semibold uppercase tracking-wider">
+        <h2 className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
           Integrations in use
         </h2>
-        <p className="muted mb-2 text-[12px]">
+        <p className="muted mb-2 text-xs">
           Every external service sits behind an interface with a fixture-backed fake.
           Orbit runs end to end with none of them configured, and nothing below leaves
           this machine while it says “fake”.
         </p>
-        <ul className="flex flex-col gap-1 text-[12px]">
+        <ul className="flex flex-col gap-1 text-xs">
           {summary.map((row) => (
             <li key={row.variable} className="flex items-baseline gap-2">
               <code className="faint">{row.variable}</code>

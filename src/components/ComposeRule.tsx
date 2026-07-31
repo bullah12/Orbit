@@ -37,14 +37,14 @@ export function ComposeRule({ spaces }: { spaces: SpaceSummary[] }) {
         aria-label="Rule name"
         autoComplete="off"
         required
-        className="min-w-40 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[color:var(--text-faint)]"
+        className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
       />
       <input
         name="description"
         placeholder="What it is for"
         aria-label="Description"
         autoComplete="off"
-        className="min-w-32 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[color:var(--text-faint)]"
+        className="min-w-32 flex-1 bg-transparent text-xs outline-none placeholder:text-[color:var(--text-faint)]"
       />
 
       <label className="flex items-center gap-1.5">
@@ -53,7 +53,7 @@ export function ComposeRule({ spaces }: { spaces: SpaceSummary[] }) {
           name="triggerKind"
           value={kind}
           onChange={(e) => setKind(e.target.value)}
-          className="faint rounded bg-transparent text-[11px] outline-none"
+          className="faint rounded bg-transparent text-2xs outline-none"
         >
           {TRIGGER_KINDS.map((k) => (
             <option key={k} value={k}>
@@ -71,7 +71,7 @@ export function ComposeRule({ spaces }: { spaces: SpaceSummary[] }) {
             defaultValue="0 7 * * *"
             aria-label="Schedule, as cron"
             size={10}
-            className="faint w-24 bg-transparent font-mono text-[11px] outline-none"
+            className="faint w-24 bg-transparent font-mono text-2xs outline-none"
           />
         </label>
       )}
@@ -97,7 +97,7 @@ export function ComposeRule({ spaces }: { spaces: SpaceSummary[] }) {
 
       <button
         type="submit"
-        className="rounded px-2 py-1 text-[12px] font-medium"
+        className="rounded px-2 py-1 text-xs font-medium"
         style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
       >
         Add
