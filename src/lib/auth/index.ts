@@ -1,22 +1,27 @@
 import 'server-only';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { pool } from '@/lib/db';
+import { authProviderName, usesDevAuth, type SessionUser } from './session';
+import { currentSupabaseUser } from './supabase';
 
 /**
- * Authentication, behind an interface with exactly one implementation.
+ * Authentication, behind an interface with two implementations.
  *
  * `dev` is a cookie naming a seeded profile. There is no password and no OAuth,
- * because Orbit must run end to end with zero credentials. When a real provider
- * arrives it implements `AuthProvider` and is selected by AUTH_PROVIDER; nothing
- * that calls getCurrentUser() has to change.
+ * because Orbit must run end to end with zero credentials — 637 Vitest tests and
+ * every smoke check depend on it. It is the default and it stays the default.
+ *
+ * `supabase` verifies a real Supabase session server-side and hands the JWT's
+ * `sub` to the existing `asUser()`. It is **written, never run**: there is no
+ * project and no credential here. See `src/lib/auth/supabase.ts`.
+ *
+ * Nothing that calls `getCurrentUser()` had to change when the second provider
+ * arrived, which is what the interface was for.
  */
 
-export type SessionUser = {
-  id: string;
-  email: string;
-  displayName: string;
-  timezone: string;
-};
+export type { SessionUser };
+export { authProviderName, usesDevAuth } from './session';
 
 export interface AuthProvider {
   getCurrentUser(): Promise<SessionUser | null>;
@@ -56,27 +61,63 @@ const devProvider: AuthProvider = {
   },
 };
 
-const providers: Record<string, AuthProvider> = { dev: devProvider };
+/**
+ * The Supabase provider offers nobody to become.
+ *
+ * `listSelectableUsers` is the dev switcher's query and a real provider has no
+ * equivalent — becoming somebody else is not a feature, it is the thing real
+ * accounts exist to stop. It returns an empty list rather than throwing, and
+ * the sidebar renders no switcher for an empty list.
+ */
+const supabaseProvider: AuthProvider = {
+  getCurrentUser: currentSupabaseUser,
+  async listSelectableUsers() {
+    return [];
+  },
+};
+
+const providers: Record<string, AuthProvider> = {
+  dev: devProvider,
+  supabase: supabaseProvider,
+};
 
 export function authProvider(): AuthProvider {
-  const name = process.env.AUTH_PROVIDER ?? 'dev';
+  const name = authProviderName();
   const provider = providers[name];
-  if (!provider) throw new Error(`Unknown AUTH_PROVIDER: ${name}`);
+  if (!provider) {
+    throw new Error(
+      `Unknown AUTH_PROVIDER: ${name}. Known providers: ${Object.keys(providers).join(', ')}.`,
+    );
+  }
   return provider;
 }
 
 export const getCurrentUser = () => authProvider().getCurrentUser();
-export const listSelectableUsers = () => authProvider().listSelectableUsers();
 
-/** Pages call this; it throws rather than rendering a page with no identity. */
+/**
+ * Who you could become. Empty unless the dev provider is live — the switcher is
+ * impersonation by design and must be unreachable when identity means something.
+ */
+export const listSelectableUsers = async (): Promise<SessionUser[]> =>
+  usesDevAuth() ? devProvider.listSelectableUsers() : [];
+
+/**
+ * Pages call this.
+ *
+ * Under `dev` it throws, because no profile means no seeded database and the
+ * message names the command that fixes it. Under a real provider it redirects
+ * to the sign-in page, because no session is an ordinary state somebody can get
+ * out of by signing in.
+ */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
-  if (!user) {
-    throw new Error(
-      'No profile found. Run ./scripts/db-reset.sh to create and seed the database.',
-    );
-  }
-  return user;
+  if (user) return user;
+
+  if (!usesDevAuth()) redirect('/auth/signin');
+
+  throw new Error(
+    'No profile found. Run ./scripts/db-reset.sh to create and seed the database.',
+  );
 }
 
 export const USER_COOKIE = COOKIE;

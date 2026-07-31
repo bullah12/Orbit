@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { requireUser, listSelectableUsers } from '@/lib/auth';
+import { getCurrentUser, listSelectableUsers, usesDevAuth } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
 import { Sidebar } from '@/components/Sidebar';
@@ -16,23 +16,42 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   let body: React.ReactNode;
 
   try {
-    const user = await requireUser();
-    const [spaces, counts, users] = await Promise.all([
-      listSpaces(user.id),
-      smartListCounts(user.id),
-      listSelectableUsers(),
-    ]);
-    body = (
-      <div className="flex min-h-screen">
-        <a href="#main" className="skip-link">
-          Skip to content
-        </a>
-        <Sidebar user={user} users={users} spaces={spaces} counts={counts} />
-        <main id="main" tabIndex={-1} className="min-w-0 flex-1">
+    // getCurrentUser rather than requireUser: with a real provider, "nobody is
+    // signed in" is an ordinary state and the sign-in page is a page like any
+    // other. It renders with no sidebar — there are no spaces to list and
+    // nobody to switch to — and every other page redirects here itself, via
+    // requireUser().
+    const user = await getCurrentUser();
+
+    if (!user) {
+      if (usesDevAuth()) {
+        throw new Error(
+          'No profile found. Run ./scripts/db-reset.sh to create and seed the database.',
+        );
+      }
+      body = (
+        <main id="main" tabIndex={-1}>
           {children}
         </main>
-      </div>
-    );
+      );
+    } else {
+      const [spaces, counts, users] = await Promise.all([
+        listSpaces(user.id),
+        smartListCounts(user.id),
+        listSelectableUsers(),
+      ]);
+      body = (
+        <div className="flex min-h-screen">
+          <a href="#main" className="skip-link">
+            Skip to content
+          </a>
+          <Sidebar user={user} users={users} spaces={spaces} counts={counts} />
+          <main id="main" tabIndex={-1} className="min-w-0 flex-1">
+            {children}
+          </main>
+        </div>
+      );
+    }
   } catch (err) {
     // A missing database is the single most likely first-run failure. Say so
     // plainly with the command that fixes it, rather than a stack trace.

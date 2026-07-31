@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(83);
+select plan(106);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -955,8 +955,12 @@ select is(
   (select coalesce(string_agg(t, ', ' order by t), '')
    from unnest(string_to_array(tests.tables_with_rows(), ', ')) as t
    where t <> ''
+     -- `space_invites` left this ledger in session 9: the seed now writes one
+     -- pending invite, so the outsider check above is no longer vacuous for it.
+     -- Two tables remain, both deliberately unused with a paragraph each in
+     -- docs/decisions-log.md.
      and t <> all (array[
-       'attachments', 'person_relationships', 'space_invites'
+       'attachments', 'person_relationships'
      ])),
   '',
   'every table outside the known-empty ledger holds rows, so the outsider check is not vacuous'
@@ -1015,6 +1019,217 @@ select is(
   0,
   'no column anywhere records that something was viewed'
 );
+
+-- ===========================================================================
+-- 11. auth.users → public.profiles (migration 0012)
+--
+-- The delicate one. `profiles.id` must equal the JWT's `sub` or every policy in
+-- this file returns zero rows and says nothing about why. The trigger is what
+-- makes them equal, so it gets assertions rather than trust.
+-- ===========================================================================
+select tests.as_owner();
+
+select is(
+  (select count(*)::int from pg_trigger
+   where tgrelid = 'auth.users'::regclass and tgname = 'on_auth_user_created'
+     and not tgisinternal),
+  1,
+  'a trigger on auth.users insert creates the profile');
+
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('55555555-5555-5555-5555-555555555555', 'newcomer@example.com',
+   '{"display_name": "Nadia Ferreira"}'::jsonb),
+  ('66666666-6666-6666-6666-666666666666', 'quiet.person@example.com', '{}'::jsonb);
+
+select is(
+  (select p.id from public.profiles p where p.id = '55555555-5555-5555-5555-555555555555'),
+  '55555555-5555-5555-5555-555555555555'::uuid,
+  'a new auth user gets a profile with the same id — which is what auth.uid() will be');
+
+select is(
+  (select p.display_name from public.profiles p
+   where p.id = '55555555-5555-5555-5555-555555555555'),
+  'Nadia Ferreira',
+  'and the display name comes from the sign-up form, via raw_user_meta_data');
+
+select is(
+  (select p.display_name from public.profiles p
+   where p.id = '66666666-6666-6666-6666-666666666666'),
+  'quiet.person',
+  'with no metadata it falls back to the email local part, never to an empty name');
+
+-- profiles_email_key, handled rather than hit. The seeded profiles are dev
+-- data and a real deployment starts empty; if the two are ever mixed, this is
+-- what happens — loudly, and naming the address.
+select throws_ok(
+  $$insert into auth.users (id, email)
+    values ('77777777-7777-7777-7777-777777777777', 'alice@example.com')$$,
+  '23505',
+  null,
+  'an account whose email already belongs to a profile is refused, not silently attached to it');
+
+-- ===========================================================================
+-- 12. Space invites — app.space_invite, the one SECURITY DEFINER exception
+--
+-- `space_invites` is admin-only in both directions and `space_members_insert`
+-- requires being an admin already, so redeeming an invite is a thing the
+-- policies cannot express: the person doing it is, by definition, not in the
+-- space yet. That is what the function is for, and these are the assertions
+-- that keep it from becoming a way in for anybody else.
+-- ===========================================================================
+select tests.as_owner();
+
+create function tests.invite_hash(p_token text) returns text
+language sql immutable as $$ select encode(digest(p_token, 'sha256'), 'hex') $$;
+grant execute on function tests.invite_hash(text) to authenticated;
+
+-- Alice is an owner of Home, so the policy lets her create one.
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+insert into public.space_invites (space_id, owner_id, token_hash, role, invited_email)
+values
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
+   tests.invite_hash('open-token'), 'member', null),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
+   tests.invite_hash('for-carol'), 'member', 'carol@example.com'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
+   tests.invite_hash('stale-token'), 'free_busy', null);
+
+update public.space_invites set expires_at = now() - interval '1 day'
+where token_hash = tests.invite_hash('stale-token');
+
+select is(
+  (select count(*)::int from public.space_invites
+   where space_id = 'aaaaaaaa-0000-0000-0000-000000000002'),
+  3,
+  'an admin of a space can create an invite in it, and read it back');
+
+-- Bob is an ordinary member of Home. Inviting people is not an ordinary
+-- member's job, and the policy is what says so.
+select tests.act_as('22222222-2222-2222-2222-222222222222');
+
+select throws_ok(
+  $$insert into public.space_invites (space_id, owner_id, token_hash, role)
+    values ('aaaaaaaa-0000-0000-0000-000000000002',
+            '22222222-2222-2222-2222-222222222222', 'deadbeef', 'member')$$,
+  '42501',
+  null,
+  'a member who is not an admin cannot create an invite');
+
+-- Mallory is a member of nothing and holds a token she was not given.
+select tests.act_as('44444444-4444-4444-4444-444444444444');
+
+select is(
+  (select count(*)::int from public.space_invites),
+  0,
+  'the person holding the link cannot read the invite row itself — which is why the function exists');
+
+select is(
+  (select i.status from app.space_invite('open-token', 'preview') i),
+  'ok',
+  'but the function shows her which space and which role the link is for');
+
+select is(
+  (select i.space_name from app.space_invite('open-token', 'preview') i),
+  'Home',
+  'named, so nobody accepts an invitation to a space they cannot see');
+
+select is(
+  (select i.status from app.space_invite('no-such-token', 'preview') i),
+  'unknown',
+  'a token nobody issued is "unknown" — a sentence, not an error and not a hint that a space exists');
+
+select is(
+  (select i.status from app.space_invite('stale-token', 'accept') i),
+  'expired',
+  'an expired invite is refused by name, whatever verb is asked for');
+
+select is(
+  (select i.status from app.space_invite('for-carol', 'accept') i),
+  'wrong_person',
+  'an invite addressed to somebody else cannot be redeemed by whoever holds the link');
+
+select is(
+  (select count(*)::int from public.space_members m
+   where m.user_id = '44444444-4444-4444-4444-444444444444'),
+  0,
+  'and trying it made her a member of nothing');
+
+select is(
+  (select i.status from app.space_invite('open-token', 'accept') i),
+  'accepted',
+  'a bearer invite she does hold is accepted');
+
+select tests.as_owner();
+
+select is(
+  (select m.role::text || ' ' || m.status from public.space_members m
+   where m.user_id = '44444444-4444-4444-4444-444444444444'
+     and m.space_id = 'aaaaaaaa-0000-0000-0000-000000000002'),
+  'member active',
+  'with exactly the role the invite named, and no other');
+
+select is(
+  (select i.accepted_by from public.space_invites i
+   where i.token_hash = tests.invite_hash('open-token')),
+  '44444444-4444-4444-4444-444444444444'::uuid,
+  'the invite records who accepted it, so an admin can see the link was used');
+
+select tests.act_as('44444444-4444-4444-4444-444444444444');
+
+select is(
+  (select i.status from app.space_invite('open-token', 'accept') i),
+  'accepted_by_you',
+  'a second accept is refused rather than being a second join');
+
+select is(
+  (select count(*)::int from public.space_members m
+   where m.user_id = '44444444-4444-4444-4444-444444444444'),
+  1,
+  'and there is still exactly one membership');
+
+select is(
+  (select count(*)::int from public.tasks t
+   where t.id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  1,
+  'having joined, she sees the space''s shared content');
+
+select is(
+  (select count(*)::int from public.tasks t
+   where t.id = 'bbbbbbbb-0000-0000-0000-000000000003'),
+  0,
+  'and joining is not a way into somebody''s private rows');
+
+-- Revoking. `space_invites` has no `revoked_at` column and this brief adds no
+-- migration, so an admin revokes by expiring: the token stops working and the
+-- row stays as a record of what was offered.
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+update public.space_invites set expires_at = now()
+where token_hash = tests.invite_hash('for-carol');
+
+select tests.act_as('33333333-3333-3333-3333-333333333333');
+
+select is(
+  (select i.status from app.space_invite('for-carol', 'accept') i),
+  'expired',
+  'an invite revoked by its admin stops working for the person it was addressed to');
+
+-- Removing a member. `space_members.status` already has 'left', so nothing is
+-- deleted: the row is the record that they were once here.
+select tests.act_as('11111111-1111-1111-1111-111111111111');
+
+update public.space_members set status = 'left'
+where space_id = 'aaaaaaaa-0000-0000-0000-000000000002'
+  and user_id = '44444444-4444-4444-4444-444444444444';
+
+select tests.act_as('44444444-4444-4444-4444-444444444444');
+
+select is(
+  (select count(*)::int from public.tasks t
+   where t.space_id = 'aaaaaaaa-0000-0000-0000-000000000002'),
+  0,
+  'a member set to left sees zero rows again, without the row being deleted');
 
 select * from finish();
 rollback;
