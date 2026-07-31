@@ -1,0 +1,56 @@
+{
+ "light": {
+  "surf": {
+   "--map-land / --map-water": 1.1047797356293392,
+   "--map-land / --bg": 1.1557811306450674,
+   "--map-water / --bg": 1.046164310740797,
+   "--map-line / --map-land": 1.3356936227659402,
+   "--text / --map-land": 14.39299223580011,
+   "--text-muted / --map-land": 5.553621703700929,
+   "--accent / --map-land": 5.511519030459725
+  },
+  "catLand": {
+   "sky": 4.55,
+   "lime": 4.67,
+   "violet": 4.85,
+   "amber": 4.89,
+   "orange": 4.93,
+   "emerald": 5.12,
+   "slate": 5.32,
+   "fuchsia": 5.44,
+   "rose": 5.46,
+   "indigo": 6.02
+  },
+  "catWaterWorst": [
+   "sky",
+   5.02
+  ]
+ },
+ "dark": {
+  "surf": {
+   "--map-land / --map-water": 1.2862846406508224,
+   "--map-land / --bg": 1.221808384573046,
+   "--map-water / --bg": 1.0527711684515138,
+   "--map-line / --map-land": 1.607943671873422,
+   "--text / --map-land": 13.629426157795185,
+   "--text-muted / --map-land": 6.837283294623797,
+   "--accent / --map-land": 7.328668534023108
+  },
+  "catLand": {
+   "indigo": 6.62,
+   "slate": 6.71,
+   "rose": 6.79,
+   "fuchsia": 7.11,
+   "violet": 7.69,
+   "orange": 8.17,
+   "emerald": 8.2,
+   "sky": 8.36,
+   "amber": 9.46,
+   "lime": 10.54
+  },
+  "catWaterWorst": [
+   "indigo",
+   8.51
+  ]
+ }
+}

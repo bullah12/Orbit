@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { background: oklch(98.6% 0.002 265); }
+  ::selection { background: oklch(88% 0.05 258); }
+</style>
+</helmet>
+<div style="min-height:100%;background:oklch(98.6% 0.002 265);color:oklch(22% 0.014 265);font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;padding:40px 32px 96px;">
+<div style="max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:44px;">
+
+  <header style="display:flex;flex-direction:column;gap:10px;border-bottom:1px solid oklch(89% 0.006 265);padding-bottom:20px;">
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">Orbit — design system revision</div>
+    <h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em;">globals.css, second pass — three surfaces</h1>
+    <p style="margin:0;max-width:60ch;color:oklch(47.5% 0.013 265);text-wrap:pretty;">Refinement of the shipped system: same structure, same token names, tighter numbers — now carrying three pages rather than one. Every ratio below is computed from the oklch values in the stylesheet, not eyeballed.</p>
+  </header>
+
+  <section style="display:flex;flex-direction:column;gap:14px;">
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">0 — Screens the system now has to serve</div>
+    <p style="margin:0;max-width:78ch;color:oklch(47.5% 0.013 265);text-wrap:pretty;">Three surfaces, one shell. <strong style="font-weight:600;color:oklch(22% 0.014 265);">Now</strong> is the landing page and the only one that answers a question ("what do I need to do today"); <strong style="font-weight:600;color:oklch(22% 0.014 265);">Calendar</strong> is the grid you go to when you need to place something; <strong style="font-weight:600;color:oklch(22% 0.014 265);">People</strong> is where everyone is. The Today/Week/Month switch belongs to Now, not to the calendar — that is the rework worth doing, and it is argued below.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0;">
+        <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">Now — <span style="text-transform:none;letter-spacing:0;">the tool page</span></div>
+        <div style="background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding:8px 10px;border-bottom:1px solid oklch(89% 0.006 265);">
+            <span style="font-size:17px;font-weight:600;letter-spacing:-0.01em;">Thursday</span>
+            <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(47.5% 0.013 265);">30 July</span>
+            <span style="flex:1;"></span>
+            <span style="display:inline-flex;gap:0;flex:none;background:oklch(96.2% 0.004 265);border:1px solid oklch(89% 0.006 265);border-radius:4px;padding:2px;white-space:nowrap;">
+              <span style="padding:2px 8px;border-radius:3px;font-size:13px;background:oklch(100% 0 0);border:1px solid oklch(80% 0.01 265);font-weight:600;">Today</span>
+              <span style="padding:2px 8px;border-radius:3px;font-size:13px;color:oklch(47.5% 0.013 265);border:1px solid transparent;">Week</span>
+              <span style="padding:2px 8px;border-radius:3px;font-size:13px;color:oklch(47.5% 0.013 265);border:1px solid transparent;">Month</span>
+            </span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 22px;padding:10px;border-bottom:1px solid oklch(89% 0.006 265);background:oklch(98.6% 0.002 265);">
+            <span style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.01em;">3</span><span style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">events</span></span>
+            <span style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.01em;">5</span><span style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">tasks</span></span>
+            <span style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.01em;color:oklch(47% 0.2 25);">1</span><span style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:oklch(47% 0.2 25);">overdue</span></span>
+            <span style="flex:1;"></span>
+            <span style="align-self:flex-end;font-size:12px;white-space:nowrap;color:oklch(60% 0.012 265);">Priya has 2</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;padding:10px;">
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <span style="width:44px;flex:none;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;color:oklch(47.5% 0.013 265);padding-top:9px;">09:30</span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;padding:8px 10px;background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);border-left:3px solid oklch(50.5% 0.13 228);border-radius:4px;">
+                <span style="font-size:14px;">Standup</span>
+                <span style="font-size:12px;color:oklch(47.5% 0.013 265);">30 min · Travel</span>
+              </div>
+            </div>
+            <div style="position:relative;height:0;border-top:1px solid oklch(48% 0.14 258);margin:2px 0 2px 52px;">
+              <span style="position:absolute;left:-8px;top:-3px;width:6px;height:6px;border-radius:50%;background:oklch(48% 0.14 258);"></span>
+              <span style="position:absolute;right:0;top:-16px;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;color:oklch(48% 0.14 258);">now 11:04</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <span style="width:44px;flex:none;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;color:oklch(47.5% 0.013 265);padding-top:9px;">13:00</span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;padding:8px 10px;background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);border-left:3px solid oklch(51.5% 0.145 52);border-radius:4px;">
+                <span style="font-size:14px;">Plumber — front door</span>
+                <span style="font-size:12px;color:oklch(47.5% 0.013 265);">1 hr · Home</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <span style="width:44px;flex:none;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;color:oklch(47.5% 0.013 265);padding-top:9px;">16:40</span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;padding:8px 10px;background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);border-left:3px solid oklch(50.5% 0.14 128);border-radius:4px;">
+                <span style="font-size:14px;">Danny — swimming pickup</span>
+                <span style="font-size:12px;color:oklch(47.5% 0.013 265);">Danny · Priya driving</span>
+              </div>
+            </div>
+          </div>
+          <div style="border-top:1px solid oklch(89% 0.006 265);">
+            <div style="font-size:11px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);padding:7px 10px 3px;">Due today</div>
+            <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 10px;border-top:1px solid oklch(89% 0.006 265);">
+              <span style="width:13px;height:13px;border:1px solid oklch(80% 0.01 265);border-radius:3px;flex:none;"></span>
+              <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Book dentist</span>
+              <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(47% 0.2 25);">overdue</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 10px;border-top:1px solid oklch(89% 0.006 265);">
+              <span style="width:13px;height:13px;border:1px solid oklch(80% 0.01 265);border-radius:3px;flex:none;"></span>
+              <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Bins out</span>
+              <span style="font-size:11px;font-weight:500;color:oklch(51.5% 0.145 52);">Home</span>
+            </div>
+          </div>
+        </div>
+        <p style="margin:0;font-size:12px;color:oklch(47.5% 0.013 265);text-wrap:pretty;">Summary first, then the day as blocks, then what is due. The range switch reloads this same page at week and month grain — the answer changes, the layout does not.</p>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0;">
+        <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">Calendar — <span style="text-transform:none;letter-spacing:0;">the grid</span></div>
+        <div style="background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);border-radius:8px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid oklch(89% 0.006 265);">
+            <span style="font-size:15px;font-weight:600;">Week 31</span>
+            <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(47.5% 0.013 265);">27 Jul – 2 Aug</span>
+            <span style="flex:1;"></span>
+            <span style="font-size:13px;padding:2px 8px;border:1px solid oklch(89% 0.006 265);border-radius:4px;color:oklch(47.5% 0.013 265);">Today</span>
+          </div>
+          <div style="display:grid;grid-template-columns:38px repeat(4,minmax(0,1fr));">
+            <div style="border-right:1px solid oklch(89% 0.006 265);"></div>
+            <div style="padding:4px 6px;border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(89% 0.006 265);font-size:11px;font-weight:500;color:oklch(47.5% 0.013 265);">Wed 29</div>
+            <div style="padding:4px 6px;border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(89% 0.006 265);font-size:11px;font-weight:600;">Thu 30</div>
+            <div style="padding:4px 6px;border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(89% 0.006 265);font-size:11px;font-weight:500;color:oklch(47.5% 0.013 265);">Fri 31</div>
+            <div style="padding:4px 6px;border-bottom:1px solid oklch(89% 0.006 265);font-size:11px;font-weight:500;color:oklch(47.5% 0.013 265);">Sat 1</div>
+
+            <div style="padding:3px 6px;border-right:1px solid oklch(89% 0.006 265);font-size:11px;font-variant-numeric:tabular-nums;color:oklch(60% 0.012 265);text-align:right;">09</div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"></div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"><div style="font-size:11px;padding:2px 4px;border-radius:4px;color:oklch(50.5% 0.13 228);background:oklch(94.5% 0.04 228);border-left:2px solid oklch(50.5% 0.13 228);">Standup</div></div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"></div>
+            <div style="border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"></div>
+
+            <div style="padding:3px 6px;border-right:1px solid oklch(89% 0.006 265);font-size:11px;font-variant-numeric:tabular-nums;color:oklch(60% 0.012 265);text-align:right;">11</div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"><div style="font-size:11px;padding:2px 4px;border-radius:4px;color:oklch(47.5% 0.013 265);background:oklch(96.2% 0.004 265);border:1px dashed oklch(80% 0.01 265);font-style:italic;">Busy</div></div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;position:relative;"><div style="position:absolute;left:0;right:0;top:6px;border-top:1px solid oklch(48% 0.14 258);"><span style="position:absolute;left:-3px;top:-3px;width:6px;height:6px;border-radius:50%;background:oklch(48% 0.14 258);"></span></div></div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"></div>
+            <div style="border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"></div>
+
+            <div style="padding:3px 6px;border-right:1px solid oklch(89% 0.006 265);font-size:11px;font-variant-numeric:tabular-nums;color:oklch(60% 0.012 265);text-align:right;">13</div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"></div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"><div style="font-size:11px;padding:2px 4px;border-radius:4px;color:oklch(51.5% 0.145 52);background:oklch(95% 0.045 52);border-left:2px solid oklch(51.5% 0.145 52);">Plumber</div></div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"><div style="font-size:11px;padding:2px 4px;border-radius:4px;color:oklch(46.5% 0.16 268);background:oklch(94.5% 0.04 268);border-left:2px solid oklch(46.5% 0.16 268);">Rent due</div></div>
+            <div style="border-bottom:1px solid oklch(96.2% 0.004 265);min-height:30px;padding:2px;"></div>
+
+            <div style="padding:3px 6px;border-right:1px solid oklch(89% 0.006 265);font-size:11px;font-variant-numeric:tabular-nums;color:oklch(60% 0.012 265);text-align:right;">16</div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);min-height:30px;padding:2px;"></div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);min-height:30px;padding:2px;"><div style="font-size:11px;padding:2px 4px;border-radius:4px;color:oklch(50.5% 0.14 128);background:oklch(95% 0.05 128);border-left:2px solid oklch(50.5% 0.14 128);">Swim</div></div>
+            <div style="border-right:1px solid oklch(89% 0.006 265);min-height:30px;padding:2px;"></div>
+            <div style="min-height:30px;padding:2px;"></div>
+          </div>
+        </div>
+        <p style="margin:0;font-size:12px;color:oklch(47.5% 0.013 265);text-wrap:pretty;">Same tokens, denser: chips shrink to 11px fills with a 2px colour edge, hour lines use a lighter rule than the day dividers, and the now-line is the one accent hairline.</p>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0;">
+        <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">People — <span style="text-transform:none;letter-spacing:0;">where everyone is</span></div>
+        <div style="background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);border-radius:8px;overflow:hidden;">
+          <div style="position:relative;height:190px;background:oklch(97% 0.008 235);background-image:repeating-linear-gradient(45deg,oklch(93.7% 0.004 265) 0 6px,oklch(97% 0.008 235) 6px 12px);border-bottom:1px solid oklch(89% 0.006 265);">
+            <span style="position:absolute;left:8px;bottom:6px;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;color:oklch(47.5% 0.013 265);">map tiles — real geo data</span>
+            <span style="position:absolute;left:14%;top:22%;display:inline-flex;align-items:center;gap:4px;padding:1px 6px 1px 4px;border-radius:999px;background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);font-size:11px;font-weight:500;white-space:nowrap;box-shadow:0 0 0 2px oklch(93.7% 0.004 265);"><span style="width:7px;height:7px;border-radius:50%;background:oklch(50% 0.17 18);"></span>Priya · home</span>
+            <span style="position:absolute;left:52%;top:44%;display:inline-flex;align-items:center;gap:4px;padding:1px 6px 1px 4px;border-radius:999px;background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);font-size:11px;font-weight:500;white-space:nowrap;box-shadow:0 0 0 2px oklch(93.7% 0.004 265);"><span style="width:7px;height:7px;border-radius:50%;background:oklch(50.5% 0.14 128);"></span>Danny · school</span>
+            <span style="position:absolute;left:30%;top:70%;display:inline-flex;align-items:center;gap:4px;padding:1px 6px 1px 4px;border-radius:999px;background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);font-size:11px;font-weight:500;white-space:nowrap;box-shadow:0 0 0 2px oklch(93.7% 0.004 265);"><span style="width:7px;height:7px;border-radius:50%;background:oklch(46.5% 0.16 268);"></span>You</span>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 10px;">
+              <span style="width:7px;height:7px;border-radius:50%;background:oklch(50% 0.17 18);flex:none;"></span>
+              <span style="flex:1;min-width:0;">Priya</span>
+              <span style="font-size:12px;color:oklch(47.5% 0.013 265);">Home</span>
+              <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(60% 0.012 265);">2 min ago</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 10px;border-top:1px solid oklch(89% 0.006 265);">
+              <span style="width:7px;height:7px;border-radius:50%;background:oklch(50.5% 0.14 128);flex:none;"></span>
+              <span style="flex:1;min-width:0;">Danny</span>
+              <span style="font-size:12px;color:oklch(47.5% 0.013 265);">St Mary's</span>
+              <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(60% 0.012 265);">18 min ago</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 10px;border-top:1px solid oklch(89% 0.006 265);">
+              <span style="width:7px;height:7px;border-radius:50%;background:oklch(48.5% 0.018 265);flex:none;"></span>
+              <span style="flex:1;min-width:0;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;color:oklch(47.5% 0.013 265);">Sam — sharing off</span>
+            </div>
+          </div>
+        </div>
+        <p style="margin:0;font-size:12px;color:oklch(47.5% 0.013 265);text-wrap:pretty;">Every pin carries a name, so the person's colour is reinforcement and never the only cue. Someone not sharing gets the locked treatment rather than disappearing.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px;">
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">1 — Rationale</div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;max-width:80ch;">
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <p style="margin:0;text-wrap:pretty;">The one idea: <strong style="font-weight:600;">a token exists so a decision is made once.</strong> The palette was already sound, so the work went to the places where the system had no opinion and the markup was improvising — type size, radius, row rhythm, focus on coloured ground.</p>
+        <p style="margin:0;text-wrap:pretty;">Six named type steps replace nine hard-coded pixel sizes. 10px folds into 11px (10px is below the size at which this stack stays legible at weight 500); 12.5px and 13.5px fold into 13px. Radius becomes two real values — 4px inside a row, 8px for a surface — and <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">--radius</code> is pinned as the source of truth rather than defined once and ignored.</p>
+        <p style="margin:0;text-wrap:pretty;">Focus is the one place the old system genuinely broke: a single accent outline sitting directly on a violet chip or an emerald calendar block is a ring against a colour it was never measured against. The ring now carries a 2px neutral halo underneath it, so its contrast is against <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">--bg-raised</code> everywhere, on every substrate.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <p style="margin:0;text-wrap:pretty;">The ten category hues keep their names and gain even spacing — the violet/indigo pair was 20° apart and the confusable pairs now differ in lightness as well as hue, so they separate under deuteranopia too. Warm chip fills were the only real failures: amber, orange and lime were sitting between 4.1 and 4.4 against their own fill. Fixed.</p>
+        <p style="margin:0;text-wrap:pretty;"><span style="font-weight:600;">Added:</span> <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">--success</code> and <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">--warning</code>. Borrowing amber from the category palette for an alert means a Home-space chip and a warning banner are the same colour, which makes the category colour mean two things. It should mean one.</p>
+        <p style="margin:0;text-wrap:pretty;"><span style="font-weight:600;">Left alone:</span> no shadows, no elevation language — surface, sunken and a hairline are the correct and complete vocabulary for a dense app, and shadows would put a soft edge on every one of thousands of rows. Native selects and inputs stay. Priority and status stay as text; they are ordinal, not categorical, and colour would compete with the one thing colour already means here.</p>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px;">
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">Specimens — the same design on two substrates</div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;">
+
+      <div style="background:oklch(98.6% 0.002 265);border:1px solid oklch(89% 0.006 265);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:14px;">
+        <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">Light</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(50% 0.17 18);background:oklch(94.5% 0.035 18);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Priya</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(51.5% 0.145 52);background:oklch(95% 0.045 52);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Home</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(50.5% 0.125 88);background:oklch(95% 0.05 88);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Work</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(50.5% 0.14 128);background:oklch(95% 0.05 128);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Danny</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(47.5% 0.12 162);background:oklch(94.5% 0.04 162);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Garden</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(50.5% 0.13 228);background:oklch(94.5% 0.04 228);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Travel</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(46.5% 0.16 268);background:oklch(94.5% 0.04 268);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Money</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(52.5% 0.17 300);background:oklch(94.5% 0.04 300);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Health</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(50.5% 0.19 338);background:oklch(94.5% 0.045 338);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Social</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(48.5% 0.018 265);background:oklch(93.5% 0.006 265);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Admin</span>
+        </div>
+        <div style="background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);border-radius:8px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 8px;border-bottom:1px solid oklch(89% 0.006 265);">
+            <span style="width:13px;height:13px;border:1px solid oklch(80% 0.01 265);border-radius:3px;flex:none;"></span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Renew Danny's passport</span>
+            <span style="font-size:11px;font-weight:500;color:oklch(46.5% 0.16 268);">Money</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(50.5% 0.14 128);background:oklch(95% 0.05 128);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Danny</span>
+            <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(47.5% 0.013 265);">14/08</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 8px;border-bottom:1px solid oklch(89% 0.006 265);background:oklch(94.6% 0.005 265);">
+            <span style="width:13px;height:13px;border:1px solid oklch(80% 0.01 265);border-radius:3px;flex:none;"></span>
+            <span style="flex:1;min-width:0;">Book dentist — <span style="border-bottom:1px dotted oklch(60% 0.012 265);color:oklch(47.5% 0.013 265);">not yet sent</span></span>
+            <span style="font-size:11px;font-weight:500;color:oklch(47.5% 0.12 162);">Garden</span>
+            <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(47% 0.2 25);">overdue</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 8px;">
+            <span style="width:13px;height:13px;border:1px dashed oklch(80% 0.01 265);border-radius:3px;flex:none;"></span>
+            <span style="flex:1;min-width:0;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;color:oklch(47.5% 0.013 265);">Locked — held only on your devices</span>
+            <span style="font-size:11px;font-weight:500;color:oklch(48.5% 0.018 265);">Admin</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:stretch;">
+          <div style="flex:1;border-radius:4px;padding:6px 8px;font-size:12px;color:oklch(50.5% 0.13 228);background:oklch(94.5% 0.04 228);border-left:2px solid oklch(50.5% 0.13 228);"><span style="font-weight:500;">09:30</span> Standup</div>
+          <div style="flex:1;border-radius:4px;padding:6px 8px;font-size:12px;color:oklch(47.5% 0.013 265);background:oklch(96.2% 0.004 265);border:1px dashed oklch(80% 0.01 265);font-style:italic;">Busy — 11:00–12:00</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button style="font-size:13px;padding:4px 10px;border-radius:4px;border:1px solid oklch(89% 0.006 265);background:oklch(100% 0 0);color:oklch(22% 0.014 265);font-family:inherit;">Keep mine</button>
+          <button style="font-size:13px;padding:4px 10px;border-radius:4px;border:1px solid oklch(89% 0.006 265);background:oklch(100% 0 0);color:oklch(22% 0.014 265);font-family:inherit;">Keep theirs</button>
+          <span style="font-size:11px;color:oklch(60% 0.012 265);">Conflict actions carry equal weight, by design.</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(52.5% 0.17 300);background:oklch(94.5% 0.04 300);box-shadow:0 0 0 2px oklch(100% 0 0),0 0 0 4px oklch(48% 0.14 258);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Health</span>
+          <span style="font-size:11px;color:oklch(60% 0.012 265);">Focus ring on a chip fill — halo first, then accent.</span>
+        </div>
+      </div>
+
+      <div style="background:oklch(16.5% 0.008 265);border:1px solid oklch(30% 0.01 265);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:14px;color:oklch(95% 0.004 265);">
+        <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(74% 0.009 265);">Dark</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(75.5% 0.14 18);background:oklch(31.5% 0.055 18);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Priya</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(80% 0.12 52);background:oklch(32.5% 0.055 52);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Home</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(83.5% 0.13 88);background:oklch(33% 0.06 88);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Work</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(85.5% 0.16 128);background:oklch(33% 0.06 128);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Danny</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(77.5% 0.135 162);background:oklch(31% 0.05 162);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Garden</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(79% 0.11 228);background:oklch(30.5% 0.05 228);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Travel</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(73.5% 0.13 268);background:oklch(30% 0.055 268);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Money</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(78.5% 0.13 300);background:oklch(31.5% 0.055 300);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Health</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(77% 0.15 338);background:oklch(32% 0.06 338);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Social</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(73.5% 0.018 265);background:oklch(28.5% 0.008 265);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Admin</span>
+        </div>
+        <div style="background:oklch(21% 0.01 265);border:1px solid oklch(30% 0.01 265);border-radius:8px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 8px;border-bottom:1px solid oklch(30% 0.01 265);">
+            <span style="width:13px;height:13px;border:1px solid oklch(40% 0.012 265);border-radius:3px;flex:none;"></span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Renew Danny's passport</span>
+            <span style="font-size:11px;font-weight:500;color:oklch(73.5% 0.13 268);">Money</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(85.5% 0.16 128);background:oklch(33% 0.06 128);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Danny</span>
+            <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(74% 0.009 265);">14/08</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 8px;border-bottom:1px solid oklch(30% 0.01 265);background:oklch(26% 0.012 265);">
+            <span style="width:13px;height:13px;border:1px solid oklch(40% 0.012 265);border-radius:3px;flex:none;"></span>
+            <span style="flex:1;min-width:0;">Book dentist — <span style="border-bottom:1px dotted oklch(60% 0.01 265);color:oklch(74% 0.009 265);">not yet sent</span></span>
+            <span style="font-size:11px;font-weight:500;color:oklch(77.5% 0.135 162);">Garden</span>
+            <span style="font-size:12px;font-variant-numeric:tabular-nums;color:oklch(74% 0.15 25);">overdue</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;min-height:30px;padding:5px 8px;">
+            <span style="width:13px;height:13px;border:1px dashed oklch(40% 0.012 265);border-radius:3px;flex:none;"></span>
+            <span style="flex:1;min-width:0;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;color:oklch(74% 0.009 265);">Locked — held only on your devices</span>
+            <span style="font-size:11px;font-weight:500;color:oklch(73.5% 0.018 265);">Admin</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:stretch;">
+          <div style="flex:1;border-radius:4px;padding:6px 8px;font-size:12px;color:oklch(79% 0.11 228);background:oklch(30.5% 0.05 228);border-left:2px solid oklch(79% 0.11 228);"><span style="font-weight:500;">09:30</span> Standup</div>
+          <div style="flex:1;border-radius:4px;padding:6px 8px;font-size:12px;color:oklch(74% 0.009 265);background:oklch(13% 0.007 265);border:1px dashed oklch(40% 0.012 265);font-style:italic;">Busy — 11:00–12:00</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button style="font-size:13px;padding:4px 10px;border-radius:4px;border:1px solid oklch(30% 0.01 265);background:oklch(21% 0.01 265);color:oklch(95% 0.004 265);font-family:inherit;">Keep mine</button>
+          <button style="font-size:13px;padding:4px 10px;border-radius:4px;border:1px solid oklch(30% 0.01 265);background:oklch(21% 0.01 265);color:oklch(95% 0.004 265);font-family:inherit;">Keep theirs</button>
+          <span style="font-size:11px;color:oklch(60% 0.01 265);">Neither is a default.</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 6px;border-radius:4px;color:oklch(78.5% 0.13 300);background:oklch(31.5% 0.055 300);box-shadow:0 0 0 2px oklch(21% 0.01 265),0 0 0 4px oklch(76% 0.12 258);"><span style="width:7px;height:7px;border-radius:2px;background:currentColor;"></span>Health</span>
+          <span style="font-size:11px;color:oklch(60% 0.01 265);">Same ring, other substrate.</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px;">
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">2 — src/app/globals.css</div>
+    <pre style="margin:0;background:oklch(100% 0 0);border:1px solid oklch(89% 0.006 265);border-radius:8px;padding:18px 20px;overflow:auto;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;line-height:1.6;color:oklch(22% 0.014 265);">{{ css }}</pre>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px;">
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">3 — Computed contrast, both themes</div>
+    <p style="margin:0;max-width:70ch;color:oklch(47.5% 0.013 265);">oklch → linear sRGB → WCAG relative luminance. <span style="color:oklch(51.5% 0.145 52);font-weight:600;">▲</span> marks a pair below the flag threshold — passing, but with less headroom than the rest. No pair fails.</p>
+
+    <div style="border:1px solid oklch(89% 0.006 265);border-radius:8px;background:oklch(100% 0 0);overflow:hidden;">
+      <div style="display:grid;grid-template-columns:minmax(0,2.4fr) 90px 90px 90px;gap:8px;padding:7px 12px;border-bottom:1px solid oklch(89% 0.006 265);background:oklch(96.2% 0.004 265);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">
+        <span>Pair</span><span style="text-align:right;">Min</span><span style="text-align:right;">Light</span><span style="text-align:right;">Dark</span>
+      </div>
+      <sc-for list="{{ core }}" as="r" hint-placeholder-count="19">
+        <div style="display:grid;grid-template-columns:minmax(0,2.4fr) 90px 90px 90px;gap:8px;padding:5px 12px;border-bottom:1px solid oklch(89% 0.006 265);font-size:13px;font-variant-numeric:tabular-nums;">
+          <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">{{ r.pair }}</span>
+          <span style="text-align:right;color:oklch(60% 0.012 265);">{{ r.min }}</span>
+          <span style="text-align:right;">{{ r.l }}</span>
+          <span style="text-align:right;">{{ r.d }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="border:1px solid oklch(89% 0.006 265);border-radius:8px;background:oklch(100% 0 0);overflow:hidden;">
+      <div style="display:grid;grid-template-columns:minmax(0,1.4fr) repeat(6,minmax(0,1fr));gap:8px;padding:7px 12px;border-bottom:1px solid oklch(89% 0.006 265);background:oklch(96.2% 0.004 265);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">
+        <span>Category</span>
+        <span style="text-align:right;">fg/chip L</span><span style="text-align:right;">fg/chip D</span>
+        <span style="text-align:right;">fg/bg L</span><span style="text-align:right;">fg/bg D</span>
+        <span style="text-align:right;">chip/bg L</span><span style="text-align:right;">chip/bg D</span>
+      </div>
+      <sc-for list="{{ cats }}" as="c" hint-placeholder-count="10">
+        <div style="display:grid;grid-template-columns:minmax(0,1.4fr) repeat(6,minmax(0,1fr));gap:8px;padding:5px 12px;border-bottom:1px solid oklch(89% 0.006 265);font-size:13px;font-variant-numeric:tabular-nums;">
+          <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">{{ c.name }}</span>
+          <span style="text-align:right;">{{ c.a }}</span><span style="text-align:right;">{{ c.b }}</span>
+          <span style="text-align:right;">{{ c.c }}</span><span style="text-align:right;">{{ c.d }}</span>
+          <span style="text-align:right;">{{ c.e }}</span><span style="text-align:right;">{{ c.f }}</span>
+        </div>
+      </sc-for>
+      <div style="padding:7px 12px;font-size:12px;color:oklch(47.5% 0.013 265);">Minimums: fg/chip 4.5, fg/bg 4.5, chip/bg &gt; 1.05.</div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px;">
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">4 — Change list</div>
+    <div style="border:1px solid oklch(89% 0.006 265);border-radius:8px;background:oklch(100% 0 0);overflow:hidden;">
+      <sc-for list="{{ changes }}" as="ch" hint-placeholder-count="14">
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr) minmax(0,1.5fr);gap:12px;padding:7px 12px;border-bottom:1px solid oklch(89% 0.006 265);font-size:13px;align-items:baseline;">
+          <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">{{ ch.what }}</span>
+          <span style="color:oklch(47.5% 0.013 265);font-size:12px;">{{ ch.move }}</span>
+          <span style="text-wrap:pretty;">{{ ch.why }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);margin-top:8px;">Markup changes needed</div>
+    <p style="margin:0;max-width:74ch;text-wrap:pretty;">Everything above lands in one file. Three markup passes are worth the churn; the rest can be adopted whenever a component is next touched, because the old utilities still resolve.</p>
+    <ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;max-width:78ch;">
+      <li style="text-wrap:pretty;"><strong style="font-weight:600;">Worth it now — the type scale.</strong> Codemod across <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">src/</code>: <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[10px]</code>/<code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[11px]</code> → <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-2xs</code>, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[12px]</code>/<code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[12.5px]</code> → <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-xs</code>, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[13px]</code>/<code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[13.5px]</code> → <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-sm</code>, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[15px]</code> → <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-lg</code>, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[17px]</code> → <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-xl</code>. Mechanical, one commit, and it also brings the line-heights with it. 663 sites; only the 50 former 10px ones change size.</li>
+      <li style="text-wrap:pretty;"><strong style="font-weight:600;">Worth it now — <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">SpaceIndicator.tsx</code> and <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">CategoryChip.tsx</code>.</strong> Replace the ad-hoc chip styling with <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">className="chip"</code> / <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">"chip chip-plain"</code>, keeping the existing inline <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">style</code> colour vars. Two files, and chip geometry stops being copied by hand.</li>
+      <li style="text-wrap:pretty;"><strong style="font-weight:600;">Worth it now — calendar busy blocks.</strong> In the calendar block component, give anonymous blocks <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">className="busy"</code> instead of a colour var. One file; it is the only way the "somebody else's time" distinction survives without a colour of its own.</li>
+      <li style="text-wrap:pretty;"><strong style="font-weight:600;">Optional, adopt gradually.</strong> <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">.row</code> for dense list rows (replaces <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">py-1.5 gap-2</code> pairs), <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">.tabular</code> on dates and times, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">.section-label</code> on the uppercase headings, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">.locked</code> on encrypted placeholders, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">.pending</code> on optimistic fields.</li>
+      <li style="text-wrap:pretty;"><strong style="font-weight:600;">Not worth it.</strong> Nothing needs to change for the colour, focus, radius or elevation work to land — those are pure CSS.</li>
+    </ol>
+
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);margin-top:8px;">The rework I'd argue for</div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;max-width:80ch;">
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <p style="margin:0;text-wrap:pretty;"><strong style="font-weight:600;">Now is the landing page, and the range switch belongs to it.</strong> The instinct is to put Today/Week/Month on the calendar, because that is where those words live in every other product. But the calendar is a placement tool — you open it knowing the date. Now is the page that answers a question, and Today/Week/Month is just that question at three grains: what do I need to do <em>today</em>, this <em>week</em>, this <em>month</em>. Same query, same layout, one parameter. Putting the switch on the calendar instead splits one idea across two pages.</p>
+        <p style="margin:0;text-wrap:pretty;">Cost: <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">/</code> becomes Now rather than the calendar, and the range state moves into the URL (<code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">/?range=week</code>) so it survives reload and can be linked. One route, one query hook.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <p style="margin:0;text-wrap:pretty;"><strong style="font-weight:600;">One query per page, not one per widget.</strong> If the backend is doing the work, the front end should ask once: a single <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">summary(range)</code> returning counts, events and due items together. That is what makes the summary strip trustworthy — the number and the list below it cannot disagree, because they came from the same response.</p>
+        <p style="margin:0;text-wrap:pretty;"><strong style="font-weight:600;">People is a page, not a widget on Now.</strong> Location is glanceable but rarely actionable, and putting a live map on the landing page means the first thing the app does every morning is ask for GPS. Keep it one nav step away.</p>
+        <p style="margin:0;text-wrap:pretty;"><strong style="font-weight:600;">Nav goes to three items.</strong> Now · Calendar · People, plus settings. Three is small enough that a dense sidebar is no longer necessary — a top row of three works and gives the content its width back.</p>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px;">
+    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:oklch(47.5% 0.013 265);">5 — Verification</div>
+    <ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;max-width:78ch;">
+      <li style="text-wrap:pretty;"><code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">pnpm test</code> — <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">tests/contrast.test.ts</code> must be green with no skipped tokens. Check the count of parsed tokens went up by the six new ones (<code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">--success</code>, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">--warning</code> and their <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">-bg</code>s, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">--focus-ring</code>, <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">--focus-halo</code>) per theme — a silently-unparsed token is the failure mode this test exists to catch.</li>
+      <li style="text-wrap:pretty;"><code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">pnpm build</code> — confirms Tailwind emits the new <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-2xs…text-xl</code> utilities. If a <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-*</code> class silently produces nothing, the <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">@theme</code> name is wrong.</li>
+      <li style="text-wrap:pretty;"><code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">pnpm smoke</code> — both colour schemes, every interactive control named. Unchanged by this work; a failure here means markup drift, not palette.</li>
+      <li style="text-wrap:pretty;"><strong style="font-weight:600;">By eye, in both schemes:</strong> tab through a task list until focus lands on a space chip and on a calendar event block — the ring must show a neutral gap against both fills. Then open week view with a "busy" block visible: it must read quieter than every real event, with no hover needed.</li>
+      <li style="text-wrap:pretty;"><strong style="font-weight:600;">New surfaces, by eye:</strong> on People, check a pin sitting half on water and half on land — the halo is what keeps it readable, so it must not be dropped when the pin component is styled. On Now, tab onto the range switch and confirm selection is still obvious in greyscale (screenshot, desaturate) since none of its three signals is hue.</li>
+      <li style="text-wrap:pretty;"><strong style="font-weight:600;">Regression to watch:</strong> the 50 former <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">text-[10px]</code> sites grow by 1px. Scan the sidebar footer and the calendar hour gutter for wrapping.</li>
+    </ol>
+    <p style="margin:0;max-width:78ch;color:oklch(47.5% 0.013 265);text-wrap:pretty;">Assumptions, each cheap to reverse: chip fills got a hair lighter in light mode to buy warm-hue headroom; the two extra status colours are additive and touch nothing existing; a manual theme toggle was not added — if you want one, it means a <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">data-theme</code> attribute on <code style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">&lt;html&gt;</code>, duplicating the dark block under that selector, and teaching the test's brace-matcher about it — worth doing only alongside a settings surface.</p>
+  </section>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1160},&quot;flagThreshold&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:6,&quot;min&quot;:4.5,&quot;max&quot;:10,&quot;step&quot;:0.5,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Contrast tables&quot;,&quot;unit&quot;:&quot;:1&quot;}}">
+class Component extends DCLogic {
+  css = String.raw`@import 'tailwindcss';
+
+/* Orbit. One stylesheet, on purpose: two people sharing a household organiser
+   should not need a component library to keep it consistent. Everything here is
+   either a decision that must be made once, or a shape the markup kept
+   improvising. */
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Six steps. The app was hard-coding nine pixel sizes to say six things, and
+     the two half-pixel sizes were saying nothing at all. Line-heights ride with
+     the size so a dense row can't be tuned in one place and broken in another. */
+  --text-2xs: 0.6875rem;   --text-2xs--line-height: 1.36;   /* 11px  chips, meta, column heads */
+  --text-xs: 0.75rem;      --text-xs--line-height: 1.4;     /* 12px  dates, secondary row text */
+  --text-sm: 0.8125rem;    --text-sm--line-height: 1.4;     /* 13px  controls, dense rows */
+  --text-base: 0.875rem;   --text-base--line-height: 1.45;  /* 14px  body, row titles */
+  --text-lg: 0.9375rem;    --text-lg--line-height: 1.4;     /* 15px  detail-page lead */
+  --text-xl: 1.0625rem;    --text-xl--line-height: 1.28;    /* 17px  page titles */
+
+  /* Radius is a two-value idea: things inside a row, and things that are a
+     surface. DEFAULT is pinned so the 169 existing "rounded" uses land on the
+     scale rather than on a framework default nobody chose. */
+  --radius-DEFAULT: 0.25rem;
+  --radius-sm: 0.1875rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.5rem;
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* Chrome stays greyscale, but not literally neutral: a trace of blue keeps
+     white surfaces from going yellow next to the category chips. */
+  --bg:            oklch(98.6% 0.002 265);
+  --bg-raised:     oklch(100% 0 0);
+  --bg-sunken:     oklch(96.2% 0.004 265);
+  --bg-hover:      oklch(94.6% 0.005 265);
+
+  --text:          oklch(22% 0.014 265);
+  --text-muted:    oklch(47.5% 0.013 265);
+  --text-faint:    oklch(60% 0.012 265);
+
+  --line:          oklch(89% 0.006 265);
+  --line-strong:   oklch(80% 0.010 265);
+
+  --accent:        oklch(48% 0.14 258);
+  --accent-text:   oklch(100% 0 0);
+
+  /* Status is not category. Borrowing amber for a warning made one colour mean
+     both "Work" and "careful", which is one meaning too many. */
+  --danger:        oklch(47% 0.20 25);
+  --danger-bg:     oklch(95% 0.035 25);
+  --warning:       oklch(47% 0.12 70);
+  --warning-bg:    oklch(95.5% 0.045 70);
+  --success:       oklch(45% 0.12 155);
+  --success-bg:    oklch(95% 0.035 155);
+
+  /* The focus ring is measured against the halo, never against whatever it
+     happens to be sitting on. That is what makes it safe on a chip fill. */
+  --focus-ring:    oklch(48% 0.14 258);
+  --focus-halo:    oklch(100% 0 0);
+
+  --radius:        0.5rem;
+
+  /* Vertical rhythm for ~30px rows: 14px/1.45 text plus 5px of padding. Every
+     dense surface should reach this number the same way. */
+  --row-min:       1.875rem;
+  --row-pad-y:     0.3125rem;
+  --row-pad-x:     0.5rem;
+  --row-gap:       0.5rem;
+
+  /* The time gutter. Agenda blocks, week columns and the day grid all hang off
+     the same left edge, so a 24-hour time reads down one straight line. */
+  --gutter:        3.25rem;
+
+  /* Map surfaces. Land and water are chrome, not category colour: they are
+     greyscale plus the smallest amount of blue that still says "sea", because
+     ten category pins have to sit on top of them and stay legible. */
+  --map-water:     oklch(97% 0.008 235);
+  --map-land:      oklch(93.7% 0.004 265);
+  --map-line:      oklch(84.5% 0.006 265);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Not an inversion. Dark rows separate by a wider luminance step because a
+       hairline carries less on a dark substrate than it does on a light one. */
+    --bg:          oklch(16.5% 0.008 265);
+    --bg-raised:   oklch(21% 0.010 265);
+    --bg-sunken:   oklch(13% 0.007 265);
+    --bg-hover:    oklch(26% 0.012 265);
+
+    --text:        oklch(95% 0.004 265);
+    --text-muted:  oklch(74% 0.009 265);
+    --text-faint:  oklch(60% 0.010 265);
+
+    --line:        oklch(30% 0.010 265);
+    --line-strong: oklch(40% 0.012 265);
+
+    --accent:      oklch(76% 0.12 258);
+    --accent-text: oklch(16.5% 0.008 265);
+
+    --danger:      oklch(74% 0.15 25);
+    --danger-bg:   oklch(30% 0.06 25);
+    --warning:     oklch(80% 0.11 70);
+    --warning-bg:  oklch(31% 0.055 70);
+    --success:     oklch(78% 0.12 155);
+    --success-bg:  oklch(29% 0.05 155);
+
+    --focus-ring:  oklch(76% 0.12 258);
+    --focus-halo:  oklch(21% 0.010 265);
+
+    /* Water goes below --bg and land above it, so the coastline still reads when
+       the whole app is dark and the map is the brightest thing on screen. */
+    --map-water:   oklch(12% 0.012 235);
+    --map-land:    oklch(25.5% 0.008 265);
+    --map-line:    oklch(38.5% 0.010 265);
+  }
+}
+
+/* The ten names are database values (spaces.colour, categories.colour), so they
+   are fixed. What changed is their spacing: hues are now 27-40 degrees apart
+   instead of clustering (violet and indigo were 20 apart), and the pairs that
+   collapse under deuteranopia - emerald/lime, rose/orange, indigo/violet - also
+   differ in lightness, so they stay told apart when hue stops helping. */
+:root {
+  --c-rose:     oklch(50% 0.17 18);      --c-rose-bg:     oklch(94.5% 0.035 18);
+  --c-orange:   oklch(51.5% 0.145 52);   --c-orange-bg:   oklch(95% 0.045 52);
+  --c-amber:    oklch(50.5% 0.125 88);   --c-amber-bg:    oklch(95% 0.05 88);
+  --c-lime:     oklch(50.5% 0.14 128);   --c-lime-bg:     oklch(95% 0.05 128);
+  --c-emerald:  oklch(47.5% 0.12 162);   --c-emerald-bg:  oklch(94.5% 0.04 162);
+  --c-sky:      oklch(50.5% 0.13 228);   --c-sky-bg:      oklch(94.5% 0.04 228);
+  --c-indigo:   oklch(46.5% 0.16 268);   --c-indigo-bg:   oklch(94.5% 0.04 268);
+  --c-violet:   oklch(52.5% 0.17 300);   --c-violet-bg:   oklch(94.5% 0.04 300);
+  --c-fuchsia:  oklch(50.5% 0.19 338);   --c-fuchsia-bg:  oklch(94.5% 0.045 338);
+  --c-slate:    oklch(48.5% 0.018 265);  --c-slate-bg:    oklch(93.5% 0.006 265);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark chips are light text on a dark tint - the same relationship, flipped.
+       Chroma is held near the light values so a space keeps its identity when
+       the OS switches at sunset. */
+    --c-rose:     oklch(75.5% 0.14 18);     --c-rose-bg:     oklch(31.5% 0.055 18);
+    --c-orange:   oklch(80% 0.12 52);       --c-orange-bg:   oklch(32.5% 0.055 52);
+    --c-amber:    oklch(83.5% 0.13 88);     --c-amber-bg:    oklch(33% 0.06 88);
+    --c-lime:     oklch(85.5% 0.16 128);    --c-lime-bg:     oklch(33% 0.06 128);
+    --c-emerald:  oklch(77.5% 0.135 162);   --c-emerald-bg:  oklch(31% 0.05 162);
+    --c-sky:      oklch(79% 0.11 228);      --c-sky-bg:      oklch(30.5% 0.05 228);
+    --c-indigo:   oklch(73.5% 0.13 268);    --c-indigo-bg:   oklch(30% 0.055 268);
+    --c-violet:   oklch(78.5% 0.13 300);    --c-violet-bg:   oklch(31.5% 0.055 300);
+    --c-fuchsia:  oklch(77% 0.15 338);      --c-fuchsia-bg:  oklch(32% 0.06 338);
+    --c-slate:    oklch(73.5% 0.018 265);   --c-slate-bg:    oklch(28.5% 0.008 265);
+  }
+}
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dates, times and counts are read in columns, so they are set in columns. */
+.tabular, time, td { font-variant-numeric: tabular-nums; }
+
+::selection { background: var(--bg-hover); color: var(--text); }
+input, textarea { caret-color: var(--accent); }
+
+/* Focus is always visible. A dense interface is a keyboard interface - and this
+   ring has to survive landing on a violet chip or an emerald calendar block, so
+   its contrast is measured against the halo rather than against whatever is
+   underneath. Outline alone could not promise that. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 2px var(--focus-halo);
+}
+
+.skip-link { position: absolute; left: -9999px; top: 0; z-index: 50; }
+.skip-link:focus {
+  left: 0.5rem; top: 0.5rem; padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--accent); color: var(--accent-text); font-size: 0.8125rem;
+}
+
+/* Native elements, styled - a custom select would have to reimplement keyboard
+   behaviour the browser already gets right. */
+.input {
+  width: 100%; min-width: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--row-pad-y) 0.45rem;
+  font-size: 0.8125rem;
+  color: var(--text);
+  font-family: inherit;
+}
+.input:hover { border-color: var(--line-strong); }
+select.input { appearance: auto; }
+
+@layer utilities {
+  /* The original six. What they do changed; the names did not, because 20
+     components and thousands of lines of JSX depend on them. */
+  .surface     { background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); }
+  .hairline    { border-color: var(--line); }
+  .muted       { color: var(--text-muted); }
+  .faint       { color: var(--text-faint); }
+  .row-hover:hover { background: var(--bg-hover); }
+
+  /* Rhythm, so a dense row is a decision rather than a habit. */
+  .row {
+    display: flex; align-items: center;
+    gap: var(--row-gap);
+    min-height: var(--row-min);
+    padding: var(--row-pad-y) var(--row-pad-x);
+  }
+  .row + .row { border-top: 1px solid var(--line); }
+  .section-label {
+    font-size: var(--text-2xs); font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* Colour never travels alone: .chip is geometry only, and the component still
+     supplies an icon and a text label. There is deliberately no fill-only
+     variant to reach for. */
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: var(--radius-md);
+    font-size: var(--text-2xs); font-weight: 500;
+    white-space: nowrap;
+  }
+  .chip-plain { background: none; padding-inline: 0; }
+
+  /* Somebody else's time. Quieter by shape, not by a colour of its own: no hue,
+     a dashed edge, and the sunken substrate say "not yours to act on" without
+     spending one of the ten category colours on it. */
+  .busy {
+    background: var(--bg-sunken);
+    border: 1px dashed var(--line-strong);
+    color: var(--text-muted);
+    font-style: italic;
+    border-radius: var(--radius-md);
+  }
+
+  /* End-to-end encrypted. This has to read as deliberate, not broken: the mono
+     face is the tell that the absence is the design, and the dashed edge says
+     "a shape exists, its contents do not live here". */
+  .locked {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-md);
+    padding: var(--row-pad-y) var(--row-pad-x);
+  }
+
+  /* Optimistically edited, not yet sent. A dotted underline survives greyscale,
+     and unlike an icon it does not change the row's height or width. */
+  .pending {
+    color: var(--text-muted);
+    text-decoration: underline dotted var(--text-faint);
+    text-underline-offset: 2px;
+  }
+
+  /* Range switch — Today / Week / Month. Selection is carried by a raised
+     surface, a stronger edge and weight 600: three signals, none of them hue,
+     because this control sits directly above ten coloured chips. */
+  .seg { display: inline-flex; gap: 0; background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 2px; }
+  .seg > * { padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--text-muted); background: none; border: 1px solid transparent; }
+  .seg > [aria-current='true'] { background: var(--bg-raised); border-color: var(--line-strong); color: var(--text); font-weight: 600; }
+
+  /* An agenda block. Bigger than a row because it is the thing you read at a
+     glance in the morning; the category colour lives on the left edge only, so
+     stacked blocks stay scannable instead of becoming a colour chart. */
+  .block { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.5rem 0.625rem; background: var(--bg-raised); border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--radius-md); }
+  .block-time { font-size: var(--text-2xs); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+  .block-now { border-left-color: var(--accent); }
+
+  /* Now-line. One per day view, and the only element in the app allowed to be
+     a bare accent hairline — it is not interactive and it means one thing. */
+  .now-line { position: relative; height: 0; border-top: 1px solid var(--accent); }
+  .now-line::before { content: ''; position: absolute; left: calc(var(--gutter) * -1 + 0.25rem); top: -0.1875rem; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--accent); }
+
+  /* Summary numbers. Tabular, quiet label, no card — a stat that needs a box
+     around it is a stat nobody trusted. */
+  .stat { display: flex; flex-direction: column; gap: 0.125rem; }
+  .stat-num { font-size: var(--text-xl); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  /* Map. The surface is chrome; pins carry the person's colour and a label,
+     never colour alone. */
+  .map { background: var(--map-water); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .map-land { fill: var(--map-land); stroke: var(--map-line); stroke-width: 1; }
+  .pin { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.0625rem 0.375rem 0.0625rem 0.25rem; border-radius: 999px; background: var(--bg-raised); border: 1px solid var(--line); font-size: var(--text-2xs); font-weight: 500; white-space: nowrap; box-shadow: 0 0 0 2px var(--map-land); }
+
+  /* Elevation stays flat. Surface, sunken and a hairline are the whole
+     vocabulary and that is the right answer here: a shadow on a flat row is a
+     soft edge repeated a thousand times, which is how a dense app starts to
+     look tired. box-shadow appears on exactly two things, and neither is
+     decorative: the focus halo, and the map pin's halo - both are hard-edged
+     rings whose only job is to separate an element from a substrate the palette
+     cannot predict. */
+}
+
+/* Almost nothing moves. What does, stops moving on request. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Printing a task list or a trip is a real thing a household does. Deliberately
+   no oklch() here and no token overrides: contrast.test.ts parses this file as
+   text and treats anything outside the dark block as a light-theme value, so a
+   print palette written in tokens would quietly become the palette under test.
+   Keywords do the job and stay invisible to the parser. */
+@media print {
+  body { background: white; color: black; }
+  .surface, .row, .chip { background: white; color: black; }
+  .muted, .faint { color: dimgray; }
+  .surface, .row + .row, .locked, .busy { border-color: gray; }
+  nav, .skip-link, button { display: none; }
+  .row { break-inside: avoid; }
+}
+`;
+
+  core = [
+    { pair: '--text / --bg', min: '4.5', l: '16.64', d: '16.65' },
+    { pair: '--text / --bg-raised', min: '4.5', l: '17.32', d: '15.31' },
+    { pair: '--text / --bg-sunken', min: '4.5', l: '15.51', d: '17.38' },
+    { pair: '--text / --bg-hover', min: '4.5', l: '14.79', d: '13.43' },
+    { pair: '--text-muted / --bg', min: '4.5', l: '6.42', d: '8.35' },
+    { pair: '--text-muted / --bg-raised', min: '4.5', l: '6.68', d: '7.68' },
+    { pair: '--text-faint / --bg', min: '3.0', l: '3.79', d: '4.88' },
+    { pair: '--text-faint / --bg-raised', min: '3.0', l: '3.95', d: '4.49' },
+    { pair: '--text-faint / --bg-sunken', min: '3.0', l: '3.54', d: '5.10' },
+    { pair: '--accent-text / --accent', min: '4.5', l: '6.63', d: '8.95' },
+    { pair: '--accent / --bg', min: '4.5', l: '6.37', d: '8.95' },
+    { pair: '--danger / --bg', min: '4.5', l: '7.07', d: '7.84' },
+    { pair: '--danger / --bg-raised', min: '4.5', l: '7.36', d: '7.21' },
+    { pair: '--warning / --bg  (new)', min: '4.5', l: '6.71', d: '10.14' },
+    { pair: '--warning / --bg-raised  (new)', min: '4.5', l: '6.99', d: '9.32' },
+    { pair: '--success / --bg  (new)', min: '4.5', l: '6.67', d: '10.10' },
+    { pair: '--success / --bg-raised  (new)', min: '4.5', l: '6.95', d: '9.29' },
+    { pair: '--line / --bg', min: '1.1–6.0', l: '1.34', d: '1.41' },
+    { pair: '--line-strong / --bg  (info)', min: '—', l: '1.79', d: '2.09' },
+    { pair: '--map-land / --map-water  (new)', min: '1.05', l: '1.10', d: '1.29' },
+    { pair: '--map-land / --bg  (new)', min: '1.05', l: '1.16', d: '1.22' },
+    { pair: '--map-line / --map-land  (new)', min: '1.05', l: '1.34', d: '1.61' },
+    { pair: '--text / --map-land  (new)', min: '4.5', l: '14.39', d: '13.63' },
+    { pair: '--text-muted / --map-land  (new)', min: '4.5', l: '5.55', d: '6.84' },
+    { pair: '--accent / --map-land  (new)', min: '4.5', l: '5.51', d: '7.33' },
+    { pair: 'worst --c-* / --map-land  (sky · indigo)', min: '4.5', l: '4.55', d: '6.62' },
+    { pair: 'worst --c-* / --map-water  (sky · indigo)', min: '4.5', l: '5.02', d: '8.51' },
+  ];
+
+  cats = [
+    { name: 'rose',    a: '5.47', b: '5.70', c: '6.31', d: '8.30',  e: '1.15', f: '1.46' },
+    { name: 'orange',  a: '4.97', b: '6.56', c: '5.69', d: '9.98',  e: '1.15', f: '1.52' },
+    { name: 'amber',   a: '5.09', b: '7.35', c: '5.65', d: '11.56', e: '1.11', f: '1.57' },
+    { name: 'lime',    a: '4.92', b: '8.03', c: '5.40', d: '12.88', e: '1.10', f: '1.60' },
+    { name: 'emerald', a: '5.32', b: '6.69', c: '5.92', d: '10.02', e: '1.11', f: '1.50' },
+    { name: 'sky',     a: '4.69', b: '7.02', c: '5.25', d: '10.22', e: '1.12', f: '1.45' },
+    { name: 'indigo',  a: '6.12', b: '5.76', c: '6.96', d: '8.09',  e: '1.14', f: '1.40' },
+    { name: 'violet',  a: '4.90', b: '6.42', c: '5.60', d: '9.39',  e: '1.14', f: '1.46' },
+    { name: 'fuchsia', a: '5.44', b: '5.88', c: '6.29', d: '8.69',  e: '1.16', f: '1.48' },
+    { name: 'slate',   a: '5.29', b: '6.11', c: '6.15', d: '8.20',  e: '1.16', f: '1.34' },
+  ];
+
+  changes = [
+    { what: '--bg / --bg-raised / --bg-sunken / --bg-hover', move: 'hue 250 → 265, hover 95.2% → 94.6%', why: 'One chrome hue instead of two, and a hover step you can actually see without hunting for it.' },
+    { what: '--text / --text-muted', move: '24% → 22%, 50% → 47.5%', why: 'Buys headroom so muted text clears 6:1 on every surface, not just on --bg.' },
+    { what: '--accent', move: '52% → 48% L, 0.13 → 0.14 C', why: 'It is the link colour on --bg: 5.33 was too near the 4.5 floor to survive a nudge. Now 6.37.' },
+    { what: '--danger', move: '52% → 47% L', why: 'Same reason, plus it now also clears on --bg-raised where destructive dialogs live.' },
+    { what: '--success, --warning (+ -bg)', move: 'new', why: 'Alerts were borrowing category amber and rose, which made a colour mean both "Work" and "careful".' },
+    { what: '--focus-ring, --focus-halo', move: 'new', why: 'A single accent outline on a violet chip or an emerald event block was never measured against those fills.' },
+    { what: ':focus-visible', move: '+ 2px halo box-shadow', why: 'Guarantees the ring separates from any substrate in the app, including coloured ones.' },
+    { what: '--c-* hues', move: 'respaced 27–40° apart', why: 'violet/indigo were 20° apart; adjacent chips at 11px were doing too much work.' },
+    { what: '--c-* lightness', move: 'varied 46.5–52.5%', why: 'Confusable pairs now differ in lightness too, so they survive deuteranopia.' },
+    { what: '--c-orange/-amber/-lime on their fills', move: '4.30 / 4.42 / 4.11 → 4.97 / 5.09 / 4.92', why: 'The only real failures in the old palette: warm fills are luminous and the old foregrounds were under 4.5.' },
+    { what: '--text-* scale (@theme)', move: 'new, six steps', why: 'Replaces nine hard-coded pixel sizes; line-height travels with the size.' },
+    { what: '--radius-* scale (@theme)', move: 'new; --radius kept at 0.5rem', why: 'Makes the token the source of truth for the 169 existing rounded uses instead of a framework default.' },
+    { what: '--row-min / --row-pad-* / --row-gap', move: 'new', why: 'Names the 30px row so density is a decision, not an accumulation of py-1.5.' },
+    { what: '.surface', move: '+ border-radius: var(--radius)', why: 'The radius token was defined and used once; now it is used wherever a surface is.' },
+    { what: '.chip, .chip-plain', move: 'new', why: 'SpaceIndicator and CategoryChip are the same geometry; only the fill differs.' },
+    { what: '.busy, .locked, .pending', move: 'new', why: 'Three states that must read without colour: shape, typeface and a dotted underline carry them.' },
+    { what: '.row, .section-label, .tabular', move: 'new', why: 'One line each in CSS, adoptable incrementally, and they remove the most-repeated utility clusters.' },
+    { what: 'prefers-reduced-motion, print, ::selection, caret-color', move: 'new', why: 'Cheap. The print block uses colour keywords, never tokens or oklch, so the contrast test cannot mistake it for a light-theme override.' },
+    { what: '--gutter', move: 'new', why: 'Agenda times, week columns and the day grid hang off one left edge, so 24-hour times read down a straight line.' },
+    { what: '--map-water / --map-land / --map-line', move: 'new', why: 'The map needs surfaces that are chrome, not category colour — ten pins sit on top and the worst of them still clears 4.5.' },
+    { what: '.seg', move: 'new', why: 'Today/Week/Month. Selection carried by surface, border and weight — no hue, because it sits directly above coloured chips.' },
+    { what: '.block, .block-time, .block-now', move: 'new', why: 'The agenda block: category colour on the left edge only, so a stack of them stays scannable.' },
+    { what: '.now-line', move: 'new', why: 'One per view, and the only bare accent hairline in the app — not interactive, means exactly one thing.' },
+    { what: '.stat, .stat-num', move: 'new', why: 'Summary numbers, tabular, no card. A stat that needs a box around it is a stat nobody trusted.' },
+    { what: '.map, .map-land, .pin', move: 'new', why: 'Pins are a person\u2019s colour plus their name — colour is reinforcement, never the only cue.' },
+    { what: 'shadows / elevation', move: 'unchanged (none) — one exception', why: 'Soft edges repeated across thousands of rows are how a dense app looks tired. The two hard-edged rings — focus halo, pin halo — separate an element from an unpredictable substrate.' },
+    { what: 'priority & status colour', move: 'unchanged (text only)', why: 'They are ordinal, not categorical. Colouring them would compete with the one meaning colour already has.' },
+    { what: 'native select / input', move: 'unchanged', why: 'The browser already gets the keyboard behaviour right.' },
+  ];
+
+  renderVals() {
+    const flag = this.props.flagThreshold ?? 6;
+    const mark = (v, min) => {
+      const n = parseFloat(v);
+      return min >= 3 && n < flag ? v + ' ▲' : v;
+    };
+    return {
+      css: this.css,
+      core: this.core.map(r => ({
+        ...r,
+        l: mark(r.l, parseFloat(r.min) || 0),
+        d: mark(r.d, parseFloat(r.min) || 0),
+      })),
+      cats: this.cats.map(c => ({
+        ...c,
+        a: mark(c.a, 4.5), b: mark(c.b, 4.5), c: mark(c.c, 4.5), d: mark(c.d, 4.5),
+        e: c.e, f: c.f,
+      })),
+      changes: this.changes,
+    };
+  }
+}
+</script>
+</body>
+</html>

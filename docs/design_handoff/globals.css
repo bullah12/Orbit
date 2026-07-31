@@ -1,0 +1,336 @@
+@import 'tailwindcss';
+
+/* Orbit. One stylesheet, on purpose: two people sharing a household organiser
+   should not need a component library to keep it consistent. Everything here is
+   either a decision that must be made once, or a shape the markup kept
+   improvising. */
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Six steps. The app was hard-coding nine pixel sizes to say six things, and
+     the two half-pixel sizes were saying nothing at all. Line-heights ride with
+     the size so a dense row can't be tuned in one place and broken in another. */
+  --text-2xs: 0.6875rem;   --text-2xs--line-height: 1.36;   /* 11px  chips, meta, column heads */
+  --text-xs: 0.75rem;      --text-xs--line-height: 1.4;     /* 12px  dates, secondary row text */
+  --text-sm: 0.8125rem;    --text-sm--line-height: 1.4;     /* 13px  controls, dense rows */
+  --text-base: 0.875rem;   --text-base--line-height: 1.45;  /* 14px  body, row titles */
+  --text-lg: 0.9375rem;    --text-lg--line-height: 1.4;     /* 15px  detail-page lead */
+  --text-xl: 1.0625rem;    --text-xl--line-height: 1.28;    /* 17px  page titles */
+
+  /* Radius is a two-value idea: things inside a row, and things that are a
+     surface. DEFAULT is pinned so the 169 existing "rounded" uses land on the
+     scale rather than on a framework default nobody chose. */
+  --radius-DEFAULT: 0.25rem;
+  --radius-sm: 0.1875rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.5rem;
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* Chrome stays greyscale, but not literally neutral: a trace of blue keeps
+     white surfaces from going yellow next to the category chips. */
+  --bg:            oklch(98.6% 0.002 265);
+  --bg-raised:     oklch(100% 0 0);
+  --bg-sunken:     oklch(96.2% 0.004 265);
+  --bg-hover:      oklch(94.6% 0.005 265);
+
+  --text:          oklch(22% 0.014 265);
+  --text-muted:    oklch(47.5% 0.013 265);
+  --text-faint:    oklch(60% 0.012 265);
+
+  --line:          oklch(89% 0.006 265);
+  --line-strong:   oklch(80% 0.010 265);
+
+  --accent:        oklch(48% 0.14 258);
+  --accent-text:   oklch(100% 0 0);
+
+  /* Status is not category. Borrowing amber for a warning made one colour mean
+     both "Work" and "careful", which is one meaning too many. */
+  --danger:        oklch(47% 0.20 25);
+  --danger-bg:     oklch(95% 0.035 25);
+  --warning:       oklch(47% 0.12 70);
+  --warning-bg:    oklch(95.5% 0.045 70);
+  --success:       oklch(45% 0.12 155);
+  --success-bg:    oklch(95% 0.035 155);
+
+  /* The focus ring is measured against the halo, never against whatever it
+     happens to be sitting on. That is what makes it safe on a chip fill. */
+  --focus-ring:    oklch(48% 0.14 258);
+  --focus-halo:    oklch(100% 0 0);
+
+  --radius:        0.5rem;
+
+  /* Vertical rhythm for ~30px rows: 14px/1.45 text plus 5px of padding. Every
+     dense surface should reach this number the same way. */
+  --row-min:       1.875rem;
+  --row-pad-y:     0.3125rem;
+  --row-pad-x:     0.5rem;
+  --row-gap:       0.5rem;
+
+  /* The time gutter. Agenda blocks, week columns and the day grid all hang off
+     the same left edge, so a 24-hour time reads down one straight line. */
+  --gutter:        3.25rem;
+
+  /* Map surfaces. Land and water are chrome, not category colour: they are
+     greyscale plus the smallest amount of blue that still says "sea", because
+     ten category pins have to sit on top of them and stay legible. */
+  --map-water:     oklch(97% 0.008 235);
+  --map-land:      oklch(93.7% 0.004 265);
+  --map-line:      oklch(84.5% 0.006 265);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Not an inversion. Dark rows separate by a wider luminance step because a
+       hairline carries less on a dark substrate than it does on a light one. */
+    --bg:          oklch(16.5% 0.008 265);
+    --bg-raised:   oklch(21% 0.010 265);
+    --bg-sunken:   oklch(13% 0.007 265);
+    --bg-hover:    oklch(26% 0.012 265);
+
+    --text:        oklch(95% 0.004 265);
+    --text-muted:  oklch(74% 0.009 265);
+    --text-faint:  oklch(60% 0.010 265);
+
+    --line:        oklch(30% 0.010 265);
+    --line-strong: oklch(40% 0.012 265);
+
+    --accent:      oklch(76% 0.12 258);
+    --accent-text: oklch(16.5% 0.008 265);
+
+    --danger:      oklch(74% 0.15 25);
+    --danger-bg:   oklch(30% 0.06 25);
+    --warning:     oklch(80% 0.11 70);
+    --warning-bg:  oklch(31% 0.055 70);
+    --success:     oklch(78% 0.12 155);
+    --success-bg:  oklch(29% 0.05 155);
+
+    --focus-ring:  oklch(76% 0.12 258);
+    --focus-halo:  oklch(21% 0.010 265);
+
+    /* Water goes below --bg and land above it, so the coastline still reads when
+       the whole app is dark and the map is the brightest thing on screen. */
+    --map-water:   oklch(12% 0.012 235);
+    --map-land:    oklch(25.5% 0.008 265);
+    --map-line:    oklch(38.5% 0.010 265);
+  }
+}
+
+/* The ten names are database values (spaces.colour, categories.colour), so they
+   are fixed. What changed is their spacing: hues are now 27-40 degrees apart
+   instead of clustering (violet and indigo were 20 apart), and the pairs that
+   collapse under deuteranopia - emerald/lime, rose/orange, indigo/violet - also
+   differ in lightness, so they stay told apart when hue stops helping. */
+:root {
+  --c-rose:     oklch(50% 0.17 18);      --c-rose-bg:     oklch(94.5% 0.035 18);
+  --c-orange:   oklch(51.5% 0.145 52);   --c-orange-bg:   oklch(95% 0.045 52);
+  --c-amber:    oklch(50.5% 0.125 88);   --c-amber-bg:    oklch(95% 0.05 88);
+  --c-lime:     oklch(50.5% 0.14 128);   --c-lime-bg:     oklch(95% 0.05 128);
+  --c-emerald:  oklch(47.5% 0.12 162);   --c-emerald-bg:  oklch(94.5% 0.04 162);
+  --c-sky:      oklch(50.5% 0.13 228);   --c-sky-bg:      oklch(94.5% 0.04 228);
+  --c-indigo:   oklch(46.5% 0.16 268);   --c-indigo-bg:   oklch(94.5% 0.04 268);
+  --c-violet:   oklch(52.5% 0.17 300);   --c-violet-bg:   oklch(94.5% 0.04 300);
+  --c-fuchsia:  oklch(50.5% 0.19 338);   --c-fuchsia-bg:  oklch(94.5% 0.045 338);
+  --c-slate:    oklch(48.5% 0.018 265);  --c-slate-bg:    oklch(93.5% 0.006 265);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark chips are light text on a dark tint - the same relationship, flipped.
+       Chroma is held near the light values so a space keeps its identity when
+       the OS switches at sunset. */
+    --c-rose:     oklch(75.5% 0.14 18);     --c-rose-bg:     oklch(31.5% 0.055 18);
+    --c-orange:   oklch(80% 0.12 52);       --c-orange-bg:   oklch(32.5% 0.055 52);
+    --c-amber:    oklch(83.5% 0.13 88);     --c-amber-bg:    oklch(33% 0.06 88);
+    --c-lime:     oklch(85.5% 0.16 128);    --c-lime-bg:     oklch(33% 0.06 128);
+    --c-emerald:  oklch(77.5% 0.135 162);   --c-emerald-bg:  oklch(31% 0.05 162);
+    --c-sky:      oklch(79% 0.11 228);      --c-sky-bg:      oklch(30.5% 0.05 228);
+    --c-indigo:   oklch(73.5% 0.13 268);    --c-indigo-bg:   oklch(30% 0.055 268);
+    --c-violet:   oklch(78.5% 0.13 300);    --c-violet-bg:   oklch(31.5% 0.055 300);
+    --c-fuchsia:  oklch(77% 0.15 338);      --c-fuchsia-bg:  oklch(32% 0.06 338);
+    --c-slate:    oklch(73.5% 0.018 265);   --c-slate-bg:    oklch(28.5% 0.008 265);
+  }
+}
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dates, times and counts are read in columns, so they are set in columns. */
+.tabular, time, td { font-variant-numeric: tabular-nums; }
+
+::selection { background: var(--bg-hover); color: var(--text); }
+input, textarea { caret-color: var(--accent); }
+
+/* Focus is always visible. A dense interface is a keyboard interface - and this
+   ring has to survive landing on a violet chip or an emerald calendar block, so
+   its contrast is measured against the halo rather than against whatever is
+   underneath. Outline alone could not promise that. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 2px var(--focus-halo);
+}
+
+.skip-link { position: absolute; left: -9999px; top: 0; z-index: 50; }
+.skip-link:focus {
+  left: 0.5rem; top: 0.5rem; padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--accent); color: var(--accent-text); font-size: 0.8125rem;
+}
+
+/* Native elements, styled - a custom select would have to reimplement keyboard
+   behaviour the browser already gets right. */
+.input {
+  width: 100%; min-width: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--row-pad-y) 0.45rem;
+  font-size: 0.8125rem;
+  color: var(--text);
+  font-family: inherit;
+}
+.input:hover { border-color: var(--line-strong); }
+select.input { appearance: auto; }
+
+@layer utilities {
+  /* The original six. What they do changed; the names did not, because 20
+     components and thousands of lines of JSX depend on them. */
+  .surface     { background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); }
+  .hairline    { border-color: var(--line); }
+  .muted       { color: var(--text-muted); }
+  .faint       { color: var(--text-faint); }
+  .row-hover:hover { background: var(--bg-hover); }
+
+  /* Rhythm, so a dense row is a decision rather than a habit. */
+  .row {
+    display: flex; align-items: center;
+    gap: var(--row-gap);
+    min-height: var(--row-min);
+    padding: var(--row-pad-y) var(--row-pad-x);
+  }
+  .row + .row { border-top: 1px solid var(--line); }
+  .section-label {
+    font-size: var(--text-2xs); font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* Colour never travels alone: .chip is geometry only, and the component still
+     supplies an icon and a text label. There is deliberately no fill-only
+     variant to reach for. */
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: var(--radius-md);
+    font-size: var(--text-2xs); font-weight: 500;
+    white-space: nowrap;
+  }
+  .chip-plain { background: none; padding-inline: 0; }
+
+  /* Somebody else's time. Quieter by shape, not by a colour of its own: no hue,
+     a dashed edge, and the sunken substrate say "not yours to act on" without
+     spending one of the ten category colours on it. */
+  .busy {
+    background: var(--bg-sunken);
+    border: 1px dashed var(--line-strong);
+    color: var(--text-muted);
+    font-style: italic;
+    border-radius: var(--radius-md);
+  }
+
+  /* End-to-end encrypted. This has to read as deliberate, not broken: the mono
+     face is the tell that the absence is the design, and the dashed edge says
+     "a shape exists, its contents do not live here". */
+  .locked {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-md);
+    padding: var(--row-pad-y) var(--row-pad-x);
+  }
+
+  /* Optimistically edited, not yet sent. A dotted underline survives greyscale,
+     and unlike an icon it does not change the row's height or width. */
+  .pending {
+    color: var(--text-muted);
+    text-decoration: underline dotted var(--text-faint);
+    text-underline-offset: 2px;
+  }
+
+  /* Range switch — Today / Week / Month. Selection is carried by a raised
+     surface, a stronger edge and weight 600: three signals, none of them hue,
+     because this control sits directly above ten coloured chips. */
+  .seg { display: inline-flex; gap: 0; background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 2px; }
+  .seg > * { padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--text-muted); background: none; border: 1px solid transparent; }
+  .seg > [aria-current='true'] { background: var(--bg-raised); border-color: var(--line-strong); color: var(--text); font-weight: 600; }
+
+  /* An agenda block. Bigger than a row because it is the thing you read at a
+     glance in the morning; the category colour lives on the left edge only, so
+     stacked blocks stay scannable instead of becoming a colour chart. */
+  .block { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.5rem 0.625rem; background: var(--bg-raised); border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--radius-md); }
+  .block-time { font-size: var(--text-2xs); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+  .block-now { border-left-color: var(--accent); }
+
+  /* Now-line. One per day view, and the only element in the app allowed to be
+     a bare accent hairline — it is not interactive and it means one thing. */
+  .now-line { position: relative; height: 0; border-top: 1px solid var(--accent); }
+  .now-line::before { content: ''; position: absolute; left: calc(var(--gutter) * -1 + 0.25rem); top: -0.1875rem; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--accent); }
+
+  /* Summary numbers. Tabular, quiet label, no card — a stat that needs a box
+     around it is a stat nobody trusted. */
+  .stat { display: flex; flex-direction: column; gap: 0.125rem; }
+  .stat-num { font-size: var(--text-xl); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  /* Map. The surface is chrome; pins carry the person's colour and a label,
+     never colour alone. */
+  .map { background: var(--map-water); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .map-land { fill: var(--map-land); stroke: var(--map-line); stroke-width: 1; }
+  .pin { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.0625rem 0.375rem 0.0625rem 0.25rem; border-radius: 999px; background: var(--bg-raised); border: 1px solid var(--line); font-size: var(--text-2xs); font-weight: 500; white-space: nowrap; box-shadow: 0 0 0 2px var(--map-land); }
+
+  /* Elevation stays flat. Surface, sunken and a hairline are the whole
+     vocabulary and that is the right answer here: a shadow on a flat row is a
+     soft edge repeated a thousand times, which is how a dense app starts to
+     look tired. box-shadow appears on exactly two things, and neither is
+     decorative: the focus halo, and the map pin's halo - both are hard-edged
+     rings whose only job is to separate an element from a substrate the palette
+     cannot predict. */
+}
+
+/* Almost nothing moves. What does, stops moving on request. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Printing a task list or a trip is a real thing a household does. Deliberately
+   no oklch() here and no token overrides: contrast.test.ts parses this file as
+   text and treats anything outside the dark block as a light-theme value, so a
+   print palette written in tokens would quietly become the palette under test.
+   Keywords do the job and stay invisible to the parser. */
+@media print {
+  body { background: white; color: black; }
+  .surface, .row, .chip { background: white; color: black; }
+  .muted, .faint { color: dimgray; }
+  .surface, .row + .row, .locked, .busy { border-color: gray; }
+  nav, .skip-link, button { display: none; }
+  .row { break-inside: avoid; }
+}
