@@ -21,6 +21,7 @@
  * is interrupted part-way.
  */
 
+import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
 const BASE = process.env.ORBIT_URL ?? 'http://localhost:3000';
@@ -2689,6 +2690,366 @@ try {
     );
 
     await ctx.close();
+  }
+
+  // ------------------------------------------------- spaces, invites, roles
+  //
+  // The invite flow end to end, through the app, with real policies deciding.
+  // Everything this section creates it revokes or removes: the two invitations
+  // it makes are expired at the end, and the membership it grants is set back
+  // to 'left' — which is exactly what running it a second time produces too, so
+  // the suite still passes twice in a row against the same database.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/spaces');
+    check(
+      'the spaces screen lists the spaces you are in, with your role in each',
+      (await page.locator('main').innerText()).includes('you are owner'),
+    );
+
+    await page.goto(`/spaces/${S_HOME}`);
+    const homeText = await page.locator('main').innerText();
+    check(
+      'a space names the people in it',
+      homeText.includes('Danny Whitehouse') && homeText.includes('Priya Raghavan'),
+    );
+    check(
+      'and the seeded pending invitation is listed with when it expires',
+      homeText.includes('newcomer@example.com') && /Expires in \d+ days/.test(homeText),
+    );
+    check(
+      'the space owner cannot be removed from their own space',
+      (await page
+        .locator('li', { hasText: 'Priya Raghavan' })
+        .first()
+        .locator('button', { hasText: 'Remove' })
+        .count()) === 0,
+    );
+
+    // ---- an invitation addressed to one person ----
+    await page.goto(`/spaces/${S_WORK}`);
+    await page.selectOption('select[name="role"]', 'viewer');
+    await page.selectOption('select[name="days"]', '7');
+    await page.fill('input[name="invitedEmail"]', 'danny@orbit.test');
+    await page.getByRole('button', { name: 'Make a link' }).click();
+    await settle(page);
+
+    const addressedLink = await page.locator('input[aria-label="Invitation link"]').inputValue();
+    check(
+      'creating an invitation shows its link once, as a link somebody can send',
+      /\/invite\/[A-Za-z0-9_-]{43}$/.test(addressedLink),
+      addressedLink.replace(/\/invite\/.*/, '/invite/…'),
+    );
+
+    await page.goto(`/spaces/${S_WORK}`);
+    check(
+      'and reloading the page does not show it again — only its fingerprint is stored',
+      (await page.locator('input[aria-label="Invitation link"]').count()) === 0,
+    );
+    check(
+      'the invitation is listed by who it is for and what it grants',
+      (await page.locator('main').innerText()).includes('danny@orbit.test'),
+    );
+
+    // ---- a bearer invitation, free/busy ----
+    await page.selectOption('select[name="role"]', 'free_busy');
+    await page.getByRole('button', { name: 'Make a link' }).click();
+    await settle(page);
+    const bearerLink = await page.locator('input[aria-label="Invitation link"]').inputValue();
+    check('a free/busy invitation can be made too — the role works end to end', Boolean(bearerLink));
+
+    const addressedPath = new URL(addressedLink).pathname;
+    const bearerPath = new URL(bearerLink).pathname;
+
+    const invitesAudit = await labelAuditOn(page);
+    check('every control on a space page has a label', invitesAudit.length === 0, invitesAudit.join(', '));
+
+    await ctx.close();
+
+    // ---- Sam Okafor, who was not invited ----
+    {
+      const { ctx: samCtx, page: sam } = await pageAs(OUTSIDER);
+
+      const res = await sam.goto(`/spaces/${S_WORK}`);
+      check(
+        'the outsider gets 404 on a space he is not in, never 403',
+        res.status() === 404,
+        `HTTP ${res.status()}`,
+      );
+
+      const madeUp = await sam.goto('/invite/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      check(
+        'a token nobody issued is answered with a page, not an error',
+        madeUp.status() === 200,
+        `HTTP ${madeUp.status()}`,
+      );
+      check(
+        'and it says the link is not recognised rather than naming a space',
+        (await sam.locator('#invite-sentence').innerText()).includes('not recognised'),
+      );
+
+      const wrong = await sam.goto(addressedPath);
+      check(
+        'an invitation addressed to somebody else is refused with a sentence, not a 403',
+        wrong.status() === 200,
+        `HTTP ${wrong.status()}`,
+      );
+      check(
+        'and the sentence says whose it is, so he knows what to do about it',
+        (await sam.locator('#invite-sentence').innerText()).includes('danny@orbit.test'),
+      );
+      check(
+        'there is no Accept button on an invitation that is not his',
+        (await sam.getByRole('button', { name: /^Accept/ }).count()) === 0,
+      );
+      await sam.goto('/tasks/all');
+      check(
+        'and he is still a member of nothing',
+        !(await sam.locator('main').innerText()).includes('Work'),
+      );
+
+      // ---- the bearer link, which he does hold ----
+      await sam.goto(bearerPath);
+      check(
+        'a bearer invitation names the space and the role before anything is accepted',
+        (await sam.locator('main').innerText()).includes('Free/busy only'),
+      );
+      await sam.getByRole('button', { name: 'Decline' }).click();
+      await settle(sam);
+      check(
+        'declining changes nothing and says the link is still live',
+        (await sam.locator('#invite-outcome').innerText()).includes('Nothing was changed'),
+      );
+
+      await sam.goto(bearerPath);
+      await sam.getByRole('button', { name: /^Accept/ }).click();
+      await settle(sam);
+      check(
+        'accepting joins the space and says so',
+        (await sam.locator('main').innerText()).includes('You have joined'),
+      );
+      await sam.goto('/calendar/week');
+      check(
+        'and a free/busy member sees the space in the sidebar, marked as free/busy',
+        (await sam.locator('nav[aria-label="Primary"]').innerText()).includes('free/busy'),
+      );
+      check(
+        'no event of somebody else’s is readable to him',
+        (await sam.locator('main a[href^="/calendar/event/"]').count()) === 0,
+      );
+
+      await sam.goto(bearerPath);
+      check(
+        'accepting twice is refused rather than being a second join',
+        (await sam.locator('#invite-sentence').innerText()).includes('accepted this invitation already'),
+      );
+
+      await samCtx.close();
+    }
+
+    // ---- Danny, who is already in Work as free/busy ----
+    {
+      const { ctx: dannyCtx, page: danny } = await pageAs(DANNY);
+      await danny.goto(addressedPath);
+      check(
+        'an invitation to somebody already in the space says so rather than re-adding them',
+        (await danny.locator('#invite-sentence').innerText()).includes('already in'),
+      );
+
+      await danny.goto(`/spaces/${S_HOME}`);
+      check(
+        'a member who is not an admin sees the roster and is told inviting is not their job',
+        (await danny.locator('main').innerText()).includes('is an admin’s job'),
+      );
+      check(
+        'and is offered no invitation form',
+        (await danny.locator('form[aria-label="Invite somebody to this space"]').count()) === 0,
+      );
+      await dannyCtx.close();
+    }
+
+    // ---- put it back ----
+    {
+      const { ctx: tidyCtx, page: tidy } = await pageAs(PRIYA);
+      await tidy.goto(`/spaces/${S_WORK}`);
+      await tidy
+        .locator('li', { hasText: 'Sam Okafor' })
+        .first()
+        .locator('button', { hasText: 'Remove' })
+        .click();
+      await settle(tidy);
+      check(
+        'an admin removes a member, and nothing they made is deleted',
+        (await tidy.locator('main').innerText()).includes('They have left the space'),
+      );
+
+      // Exactly one is revokable: the other has been accepted, and an accepted
+      // invitation is not revoked but *un-joined* — which is the Remove above.
+      const revokes = tidy.locator('button', { hasText: 'Revoke' });
+      let revoked = 0;
+      while ((await revokes.count()) > 0) {
+        await revokes.first().click();
+        await settle(tidy);
+        revoked += 1;
+        if (revoked > 5) break;
+      }
+      check(
+        'the unredeemed invitation is revoked, and the accepted one offers no Revoke at all',
+        revoked === 1,
+        `${revoked} revoked`,
+      );
+      check(
+        'the revoked row stays as the record of what was offered, marked expired',
+        (await tidy.locator('main').innerText()).includes('Expired or revoked'),
+      );
+      await tidyCtx.close();
+    }
+
+    // ---- and the revoked links are dead ----
+    {
+      const { ctx: samCtx, page: sam } = await pageAs(OUTSIDER);
+      await sam.goto(addressedPath);
+      check(
+        'a revoked invitation stops working, with a sentence saying to ask for a new one',
+        (await sam.locator('#invite-sentence').innerText()).includes('expired'),
+      );
+      await sam.goto('/calendar/week');
+      check(
+        'and the removed member sees nothing again, in a sidebar with no spaces in it',
+        !(await sam.locator('nav[aria-label="Primary"]').innerText()).includes('free/busy'),
+      );
+      await samCtx.close();
+    }
+  }
+
+  // --------------------------------------------------------- dev auth is dev
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/');
+    check(
+      'under AUTH_PROVIDER=dev the sidebar offers the user switcher',
+      (await page.locator('nav form[action] button[name="userId"]').count()) >= 3,
+    );
+    check(
+      'and there is no sign-out control, because there is no session to end',
+      (await page.locator('nav a[href="/auth/signout"]').count()) === 0,
+    );
+
+    await page.goto('/auth/signin');
+    const signin = await page.locator('main, body').first().innerText();
+    check(
+      'the sign-in page says which provider is actually running',
+      signin.includes('AUTH_PROVIDER=dev'),
+    );
+    check(
+      'and offers no password box, because there is nothing behind it',
+      (await page.locator('input[name="password"]').count()) === 0,
+    );
+    await ctx.close();
+  }
+
+  // ------------------------------------------ AUTH_PROVIDER=supabase, briefly
+  //
+  // The one thing that cannot be checked on the server this suite has been
+  // driving: what the app does when the dev provider is *not* the live one.
+  // So a second server is started on another port with AUTH_PROVIDER=supabase
+  // and no credentials, which is exactly the state a half-configured
+  // deployment is in.
+  //
+  // Nothing here signs anybody in. There is no Supabase project and no
+  // credential in this repository, and the provider is written-never-run like
+  // `calendar:google`. What is asserted is the part that does not need one:
+  // that identity stops being a cookie, that the switcher is unreachable, and
+  // that a missing credential is a sentence rather than a 500.
+  {
+    const port = Number(process.env.ORBIT_ALT_PORT ?? 3101);
+    const altBase = `http://127.0.0.1:${port}`;
+    const server = spawn('pnpm', ['exec', 'next', 'start', '--port', String(port)], {
+      env: { ...process.env, AUTH_PROVIDER: 'supabase', PORT: String(port) },
+      stdio: 'ignore',
+      detached: true,
+    });
+
+    let up = false;
+    for (let i = 0; i < 60; i += 1) {
+      try {
+        const res = await fetch(`${altBase}/auth/signin`, { redirect: 'manual' });
+        if (res.status < 500) { up = true; break; }
+      } catch {
+        // not listening yet
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    check('a second server starts with AUTH_PROVIDER=supabase and no credentials', up, altBase);
+
+    if (up) {
+      const ctx = await browser.newContext({ baseURL: altBase });
+      // The dev cookie, carried over deliberately: it must mean nothing here.
+      await ctx.addCookies([{ name: 'orbit_user', value: PRIYA, url: altBase }]);
+      const page = await ctx.newPage();
+
+      const res = await page.goto('/tasks/all');
+      check(
+        'with a real provider selected, a page with no session goes to sign in',
+        new URL(page.url()).pathname === '/auth/signin',
+        page.url(),
+      );
+      check('and it is a page, not a 403 or a 500', res.status() === 200, `HTTP ${res.status()}`);
+      check(
+        'the dev cookie naming a seeded profile is not a session any more',
+        !(await page.locator('body').innerText()).includes('Priya'),
+      );
+      check(
+        'the sidebar is not rendered at all, so the user switcher is unreachable',
+        (await page.locator('nav[aria-label="Primary"]').count()) === 0,
+      );
+      check(
+        'and there is no switcher control anywhere on the page',
+        (await page.locator('button[name="userId"]').count()) === 0,
+      );
+
+      check(
+        'the sign-in page offers a password and a magic link, and no OAuth buttons',
+        (await page.locator('input[name="password"]').count()) === 1 &&
+          (await page.getByRole('button', { name: /Email me a link/ }).count()) === 1 &&
+          !(await page.locator('body').innerText()).match(/Google|GitHub|Apple/),
+      );
+
+      await page.fill('input[name="email"]', 'somebody@example.com');
+      await page.fill('input[name="password"]', 'not-a-real-password');
+      await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+      await settle(page);
+      check(
+        'signing in with no project configured says exactly that, in a sentence',
+        (await page.locator('body').innerText()).includes('SUPABASE_URL'),
+      );
+
+      await page.goto('/auth/signup');
+      check(
+        'sign-up is a real form under a real provider',
+        (await page.locator('input[name="displayName"]').count()) === 1,
+      );
+
+      const invited = await page.goto('/invite/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      check(
+        'an invitation link opened by nobody asks them to sign in rather than failing',
+        new URL(page.url()).pathname === '/auth/signin' && invited.status() === 200,
+        `${page.url()} HTTP ${invited.status()}`,
+      );
+
+      const altAudit = await labelAuditOn(page);
+      check('every control on the sign-in page has a label', altAudit.length === 0, altAudit.join(', '));
+
+      await ctx.close();
+    }
+
+    try {
+      process.kill(-server.pid, 'SIGTERM');
+    } catch {
+      server.kill('SIGTERM');
+    }
   }
 
   // ------------------------------------------------------------- dark mode
