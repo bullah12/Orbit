@@ -12,7 +12,7 @@ claim.
 
 ## 1. The two decisions
 
-**Sharing is by space, not by linking accounts.** `public.spaces` is already
+**Sharing is by space, not by linking accounts.** `orbit.spaces` is already
 "the unit of sharing" and `spaces.id` is the `space_id` on every space-scoped
 table. `space_members` maps user→space with a role from
 `('owner','admin','member','viewer','free_busy')`, and all 41 tables' policies
@@ -21,7 +21,7 @@ key off `app.is_space_member`, `app.can_see_space_content` (which excludes
 rewriting every one of those policies. Invites into a space mean writing a
 redeem flow and nothing else.
 
-`public.space_invites` already exists — `token_hash`, `role`, `expires_at`,
+`orbit.space_invites` already exists — `token_hash`, `role`, `expires_at`,
 `accepted_at`, `accepted_by`, RLS for admins in both directions. It has no rows
 because of a deliberate session-5 decision:
 
@@ -43,6 +43,13 @@ So the phone app does **Today, capture, tasks, calendar read, notes** and
 nothing else. The rules builder, travel derivation and the sync console stay on
 the web. This is why the phone app gets its own spine and its own design: it
 has a different job, not a smaller screen.
+
+**Every table Orbit owns lives in the `orbit` schema**, not in `public`
+(session 9). `public` is where Postgres puts things by default and where
+extensions land, so it is a shared namespace with no owner; a schema of our own
+makes the inventory exact. The web app is unaffected — it names `orbit.tasks` in
+SQL over its own connection — but **PostgREST only exposes `public` by default**,
+so anything using the Supabase REST API has one extra step. See §5.
 
 ---
 
@@ -205,6 +212,15 @@ Paste into a fresh session. Written to run without check-ins.
 
 **Run this only after Brief A is merged and a Supabase project exists.** It
 depends on real JWTs; there is nothing to point it at otherwise.
+
+**One thing the brief below predates.** Orbit's tables are in the `orbit`
+schema, and PostgREST exposes `public` by default. Before the Android client can
+read a single row, `orbit` has to be added to **Settings → API → Exposed
+schemas** in the Supabase dashboard, and the PostgREST client has to ask for
+that schema — `Postgrest.from(schema = "orbit")` in supabase-kt, once at
+construction rather than per call. A table PostgREST cannot see answers
+`PGRST106` rather than an empty list, so it fails loudly; `docs/deploy.md` has
+the detail. GoTrue is unaffected: auth is its own API and does not care.
 
 > ## Brief B: Orbit for Android
 >

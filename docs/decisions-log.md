@@ -1108,3 +1108,47 @@ options were weighed.
 - **Nothing was deployed, no hosting account was created and nothing was bought.**
   `docs/deploy.md` is commands somebody can follow and says at the top that none
   of them has been run here.
+
+### After the phase landed — the `orbit` schema
+
+- **Every table Orbit owns moved out of `public` and into a schema called
+  `orbit`.** Same 41 tables, same columns, same policies, same data: the change
+  is the qualified name in every migration, query, test and seed, and nothing
+  else. `app` still holds the helper functions the policies call, `auth` is still
+  Supabase's, and `public` now holds nothing but the extensions.
+- **Why.** `public` is where Postgres puts things by default and where extensions
+  land — pgcrypto and PostGIS locally, and whatever a hosting provider decides to
+  install later. It is a shared namespace with no owner, which makes it the one
+  place a name collision is somebody else's decision. A schema of our own makes
+  `\dt orbit.*` an exact inventory of what Orbit owns.
+- **It made two checks simpler rather than more complicated**, which is the tell
+  that it was the right shape. `./scripts/db-reset.sh`'s "every table has RLS"
+  check and pgTAP's structural checks both used to say *this schema, minus
+  `spatial_ref_sys`*, because PostGIS's reference table sat in the same namespace
+  as ours. They now iterate a schema with nothing to exclude: `spatial_ref_sys`
+  is still in `public`, where it belongs, and is simply not ours.
+- **Every `security definer` function's `search_path` moved with it**, from
+  `public, pg_temp` to `orbit, pg_temp` — which is what makes an unqualified name
+  inside one of them resolve to an Orbit table and nothing else.
+- **`app.space_invite` is the exception, and it is a deliberate one.** It calls
+  `digest()` from pgcrypto, and pgcrypto is installed into `public` by a plain
+  `create extension` (which is what happens locally) and into `extensions` on
+  Supabase. Its search_path is therefore `orbit, extensions, public, pg_temp`:
+  `orbit` first so nothing can shadow a table of ours, and both extension homes
+  named so one function body works in both places. A schema in a `search_path`
+  that does not exist is ignored rather than an error, which is what makes naming
+  both safe. **This also fixes a latent bug**: the function as written in the
+  first version of migration 0012 pinned `public, pg_temp`, which would have
+  failed on Supabase — where pgcrypto is not in `public` — the first time anybody
+  opened an invitation link.
+- **The one consequence that leaves this repository: PostgREST exposes `public`
+  by default.** The web app is unaffected — it connects as `orbit_app` with
+  `postgres.js` and names `orbit.tasks` in the SQL — but the Android client in
+  Brief B talks to PostgREST, and a schema it has not been told about answers
+  `PGRST106` rather than an empty list. Adding `orbit` to *Settings → API →
+  Exposed schemas* is now a by-hand step in `docs/deploy.md`, and the note beside
+  Brief B says so, because that brief was written before this decision. Exposing
+  a schema grants nothing; RLS is still what protects the rows.
+- **All five commands were run again after the move**, from a database rebuilt
+  with `./scripts/db-reset.sh`: 106/106 pgTAP, a clean build and typecheck, 692
+  Vitest and 382/382 smoke. Nothing about the change is visible from the app.

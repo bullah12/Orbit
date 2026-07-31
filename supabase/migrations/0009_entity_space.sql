@@ -21,7 +21,7 @@ returns table (space_id uuid)
 language plpgsql
 stable
 security invoker
-set search_path to public, pg_temp
+set search_path to orbit, pg_temp
 as $$
 declare
   v_table text;
@@ -42,7 +42,7 @@ begin
   end if;
 
   return query execute format(
-    'select t.space_id from public.%I t where t.id = $1', v_table
+    'select t.space_id from orbit.%I t where t.id = $1', v_table
   ) using p_entity_id;
 end;
 $$;

@@ -1,10 +1,12 @@
 -- 0000_bootstrap.sql
--- Extensions, Supabase-compatible auth shim, roles, and the `app` helper schema.
+-- Extensions, Supabase-compatible auth shim, roles, and the two schemas Orbit
+-- owns: `orbit` for every table, `app` for the helper functions the policies
+-- call. Nothing of Orbit's is in `public`.
 --
 -- On a real Supabase project the `auth` schema and the three roles already exist;
 -- every statement here is guarded so this migration is a no-op there.
 
--- The membership helpers below reference public.space_members, which is created
+-- The membership helpers below reference orbit.space_members, which is created
 -- in 0001. Postgres validates `language sql` bodies at CREATE time, so turn that
 -- off for this file. Every referenced object exists by the end of 0001.
 set check_function_bodies = off;
@@ -63,6 +65,24 @@ $$;
 grant usage on schema auth to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
+-- orbit schema — every table Orbit owns
+--
+-- Nothing of Orbit's lives in `public`. That schema is where Postgres puts
+-- things by default and where extensions land (pgcrypto locally, and whatever
+-- else a hosting provider decides to install), so it is a shared namespace with
+-- no owner — the one place a name collision is somebody else's decision. A
+-- schema of our own makes "is this ours?" answerable by looking at it, keeps
+-- `\dt orbit.*` an exact inventory, and means the RLS check in
+-- ./scripts/db-reset.sh can iterate a schema rather than a schema minus a list
+-- of exceptions.
+--
+-- `authenticated` gets USAGE and nothing else: every table grant is issued
+-- per-table by app.apply_standard_rls(), and RLS decides the rest.
+-- ---------------------------------------------------------------------------
+create schema if not exists orbit;
+grant usage on schema orbit to anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
 -- app schema — helper functions used by every policy
 -- ---------------------------------------------------------------------------
 create schema if not exists app;
@@ -103,11 +123,11 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -119,10 +139,10 @@ returns app.member_role
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select m.role
-  from public.space_members m
+  from orbit.space_members m
   where m.space_id = p_space_id
     and m.user_id = auth.uid()
     and m.status = 'active'
@@ -136,11 +156,11 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -154,11 +174,11 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -171,11 +191,11 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -236,30 +256,30 @@ begin
   -- bypass RLS so migrations, seeds, and pgTAP setup can write. The application
   -- never connects as the owner — it connects as `authenticated`, which is not
   -- the owner and is therefore fully subject to these policies.
-  execute format('alter table public.%I enable row level security', p_table);
+  execute format('alter table orbit.%I enable row level security', p_table);
 
-  execute format('drop policy if exists %I on public.%I', p_table || '_select', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_insert', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_update', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_delete', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_select', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_insert', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_update', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_delete', p_table);
 
   execute format(
-    'create policy %I on public.%I for select to authenticated using (app.can_read_space(space_id)%s)',
+    'create policy %I on orbit.%I for select to authenticated using (app.can_read_space(space_id)%s)',
     p_table || '_select', p_table, v_read_extra);
 
   execute format(
-    'create policy %I on public.%I for insert to authenticated with check (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for insert to authenticated with check (app.can_write_space(space_id)%s)',
     p_table || '_insert', p_table, v_owner_ins);
 
   execute format(
-    'create policy %I on public.%I for update to authenticated using (app.can_write_space(space_id)%s) with check (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for update to authenticated using (app.can_write_space(space_id)%s) with check (app.can_write_space(space_id)%s)',
     p_table || '_update', p_table, v_owner_mod, v_owner_mod);
 
   execute format(
-    'create policy %I on public.%I for delete to authenticated using (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for delete to authenticated using (app.can_write_space(space_id)%s)',
     p_table || '_delete', p_table, v_owner_mod);
 
-  execute format('grant select, insert, update, delete on public.%I to authenticated', p_table);
+  execute format('grant select, insert, update, delete on orbit.%I to authenticated', p_table);
 end $$;
 
 -- Convenience: standard columns every space-scoped table carries.

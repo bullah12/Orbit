@@ -12,7 +12,7 @@
 --   * execute granted to orbit_app ONLY — not to `authenticated`, which already
 --     reads profiles through the policy in 0001
 --
--- The alternative, granting orbit_app SELECT on public.profiles, silently
+-- The alternative, granting orbit_app SELECT on orbit.profiles, silently
 -- returns zero rows (RLS is enabled and no policy names that role) and would
 -- have to be widened until it worked. This cannot be widened by accident.
 
@@ -26,10 +26,10 @@ returns table (
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select p.id, p.email, p.display_name, p.timezone
-  from public.profiles p
+  from orbit.profiles p
   where p.id = p_user_id
 $$;
 
@@ -45,10 +45,10 @@ returns table (
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select p.id, p.email, p.display_name, p.timezone
-  from public.profiles p
+  from orbit.profiles p
   order by p.created_at
 $$;
 

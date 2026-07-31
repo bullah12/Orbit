@@ -59,12 +59,12 @@ const LEG_SELECT = `
 `;
 
 const LEG_FROM = `
-  from public.travel_legs l
-  join public.spaces s on s.id = l.space_id
-  left join public.places fp on fp.id = l.from_place_id
-  left join public.places tp on tp.id = l.to_place_id
-  left join public.events e on e.id = l.event_id
-  left join public.travel_sessions ts on ts.id = l.session_id
+  from orbit.travel_legs l
+  join orbit.spaces s on s.id = l.space_id
+  left join orbit.places fp on fp.id = l.from_place_id
+  left join orbit.places tp on tp.id = l.to_place_id
+  left join orbit.events e on e.id = l.event_id
+  left join orbit.travel_sessions ts on ts.id = l.session_id
 `;
 
 /** Legs departing on one London day. A leg with no departure time is listed last. */
@@ -128,12 +128,12 @@ export async function listTravelSessions(userId: string): Promise<TravelSessionR
         coalesce(lg.n, 0) as "legCount",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.travel_sessions t
-      join public.spaces s on s.id = t.space_id
-      left join public.places op on op.id = t.origin_place_id
-      left join public.places dp on dp.id = t.destination_place_id
+      from orbit.travel_sessions t
+      join orbit.spaces s on s.id = t.space_id
+      left join orbit.places op on op.id = t.origin_place_id
+      left join orbit.places dp on dp.id = t.destination_place_id
       left join lateral (
-        select count(*)::int as n from public.travel_legs x where x.session_id = t.id
+        select count(*)::int as n from orbit.travel_legs x where x.session_id = t.id
       ) lg on true
       order by t.starts_at desc
       limit 100
@@ -161,12 +161,12 @@ export async function getTravelSession(
         coalesce(lg.n, 0) as "legCount",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.travel_sessions t
-      join public.spaces s on s.id = t.space_id
-      left join public.places op on op.id = t.origin_place_id
-      left join public.places dp on dp.id = t.destination_place_id
+      from orbit.travel_sessions t
+      join orbit.spaces s on s.id = t.space_id
+      left join orbit.places op on op.id = t.origin_place_id
+      left join orbit.places dp on dp.id = t.destination_place_id
       left join lateral (
-        select count(*)::int as n from public.travel_legs x where x.session_id = t.id
+        select count(*)::int as n from orbit.travel_legs x where x.session_id = t.id
       ) lg on true
       where t.id = ${id}::uuid
     `;
@@ -231,7 +231,7 @@ export async function sessionCandidates(
   const items = await listCalendarItems(userId, from, to);
   const existing = await asUser(userId, async (tx) => {
     const rows = await tx<{ eventId: string }[]>`
-      select distinct event_id as "eventId" from public.travel_sessions
+      select distinct event_id as "eventId" from orbit.travel_sessions
       where event_id is not null
     `;
     return new Set(rows.map((r) => r.eventId));

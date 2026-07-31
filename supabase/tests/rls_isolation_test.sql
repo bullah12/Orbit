@@ -46,14 +46,14 @@ grant usage on schema tests to authenticated;
 grant execute on all functions in schema tests to authenticated;
 
 -- People -------------------------------------------------------------------
-insert into public.profiles (id, email, display_name) values
+insert into orbit.profiles (id, email, display_name) values
   ('11111111-1111-1111-1111-111111111111', 'alice@example.com',   'Alice Okonkwo'),
   ('22222222-2222-2222-2222-222222222222', 'bob@example.com',     'Bob Whitmore'),
   ('33333333-3333-3333-3333-333333333333', 'carol@example.com',   'Carol Reeves'),
   ('44444444-4444-4444-4444-444444444444', 'mallory@example.com', 'Mallory Vance');
 
 -- Spaces -------------------------------------------------------------------
-insert into public.spaces (id, owner_id, name, kind, short_label, colour, icon) values
+insert into orbit.spaces (id, owner_id, name, kind, short_label, colour, icon) values
   ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
    'Alice', 'personal', 'Alice', 'indigo', 'user'),
   ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
@@ -61,7 +61,7 @@ insert into public.spaces (id, owner_id, name, kind, short_label, colour, icon) 
   ('aaaaaaaa-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222',
    'Bob', 'personal', 'Bob', 'amber', 'user');
 
-insert into public.space_members (space_id, user_id, role) values
+insert into orbit.space_members (space_id, user_id, role) values
   ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'owner'),
   ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'owner'),
   ('aaaaaaaa-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'member'),
@@ -72,7 +72,7 @@ insert into public.space_members (space_id, user_id, role) values
 -- Mallory is a member of nothing.
 
 -- Content ------------------------------------------------------------------
-insert into public.tasks (id, space_id, owner_id, title, visibility) values
+insert into orbit.tasks (id, space_id, owner_id, title, visibility) values
   ('bbbbbbbb-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'Renew passport', 'space'),
   ('bbbbbbbb-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002',
@@ -83,19 +83,19 @@ insert into public.tasks (id, space_id, owner_id, title, visibility) values
    '22222222-2222-2222-2222-222222222222', 'Put the bins out', 'space');
 
 -- A locked task: no plaintext, ciphertext lives in encrypted_blobs.
-insert into public.tasks (id, space_id, owner_id, title, body_md, is_locked) values
+insert into orbit.tasks (id, space_id, owner_id, title, body_md, is_locked) values
   ('bbbbbbbb-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', '', '', true);
 
-insert into public.encrypted_blobs (space_id, owner_id, entity_kind, entity_id, ciphertext, nonce)
+insert into orbit.encrypted_blobs (space_id, owner_id, entity_kind, entity_id, ciphertext, nonce)
 values ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
         'task', 'bbbbbbbb-0000-0000-0000-000000000005', 'Y2lwaGVy', 'bm9uY2U=');
 
-insert into public.notes (id, space_id, owner_id, title, body_md) values
+insert into orbit.notes (id, space_id, owner_id, title, body_md) values
   ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'Boiler service notes', 'Worcester Bosch, serviced annually.');
 
-insert into public.events (id, space_id, owner_id, title, starts_at, ends_at) values
+insert into orbit.events (id, space_id, owner_id, title, starts_at, ends_at) values
   ('dddddddd-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'Dentist',
    '2026-08-03 09:00+01', '2026-08-03 09:30+01');
@@ -103,13 +103,13 @@ insert into public.events (id, space_id, owner_id, title, starts_at, ends_at) va
 -- Recurrence rules. One in the shared space, one in Alice's own — a repeat is
 -- one row plus a rule, never expanded copies, so the *rule* is the thing that
 -- leaks if its policy is wrong.
-insert into public.recurrence_rules (id, space_id, owner_id, rrule, dtstart) values
+insert into orbit.recurrence_rules (id, space_id, owner_id, rrule, dtstart) values
   ('ffffffff-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'FREQ=WEEKLY;BYDAY=MO', '2026-08-03 09:00+01'),
   ('ffffffff-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'FREQ=MONTHLY;BYMONTHDAY=31', '2026-08-31 18:00+01');
 
-insert into public.people (id, space_id, owner_id, display_name) values
+insert into orbit.people (id, space_id, owner_id, display_name) values
   ('eeeeeeee-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'Dr Iqbal'),
   ('eeeeeeee-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002',
@@ -122,13 +122,13 @@ insert into public.people (id, space_id, owner_id, display_name) values
 -- Where somebody goes, and when they left to get there, is content. A free/busy
 -- participant gets times from app.free_busy_blocks() and nothing else — so
 -- Carol must see none of these four tables, not a redacted version of them.
-insert into public.places (id, space_id, owner_id, name, postcode) values
+insert into orbit.places (id, space_id, owner_id, name, postcode) values
   ('a1a1a1a1-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'Community centre', 'B14 7SB'),
   ('a1a1a1a1-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'Alice''s lock-up', 'B18 6HQ');
 
-insert into public.place_visits (id, space_id, owner_id, place_id, source, arrived_at) values
+insert into orbit.place_visits (id, space_id, owner_id, place_id, source, arrived_at) values
   ('a2a2a2a2-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'a1a1a1a1-0000-0000-0000-000000000001',
    'manual', '2026-08-03 10:00+01'),
@@ -136,7 +136,7 @@ insert into public.place_visits (id, space_id, owner_id, place_id, source, arriv
    '11111111-1111-1111-1111-111111111111', 'a1a1a1a1-0000-0000-0000-000000000002',
    'manual', '2026-08-03 14:00+01');
 
-insert into public.travel_sessions
+insert into orbit.travel_sessions
   (id, space_id, owner_id, title, source, starts_at, ends_at) values
   ('a3a3a3a3-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'Weekend away', 'manual',
@@ -145,7 +145,7 @@ insert into public.travel_sessions
    '11111111-1111-1111-1111-111111111111', 'Alice alone', 'manual',
    '2026-08-14 08:00+01', '2026-08-15 18:00+01');
 
-insert into public.travel_legs
+insert into orbit.travel_legs
   (id, space_id, owner_id, session_id, from_place_id, to_place_id, mode,
    depart_at, arrive_at, duration_minutes) values
   ('a4a4a4a4-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
@@ -163,7 +163,7 @@ insert into public.travel_legs
 -- record the titles of everything it looked at. Both are strictly more than
 -- "busy", so Carol must see neither. Two of each: one in the shared space, one
 -- in Alice's own.
-insert into public.rules (id, space_id, owner_id, name, slug, trigger, conditions, actions) values
+insert into orbit.rules (id, space_id, owner_id, name, slug, trigger, conditions, actions) values
   ('a5a5a5a5-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'Shared rule', 'shared-rule',
    '{"kind":"task.created"}'::jsonb, '[]'::jsonb,
@@ -173,7 +173,7 @@ insert into public.rules (id, space_id, owner_id, name, slug, trigger, condition
    '{"kind":"schedule","cron":"0 7 * * *"}'::jsonb, '[]'::jsonb,
    '[{"kind":"notify"}]'::jsonb);
 
-insert into public.rule_runs
+insert into orbit.rule_runs
   (id, space_id, owner_id, rule_id, is_dry_run, trigger_kind, matched, effects) values
   ('a6a6a6a6-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'a5a5a5a5-0000-0000-0000-000000000001',
@@ -183,7 +183,7 @@ insert into public.rule_runs
    '11111111-1111-1111-1111-111111111111', 'a5a5a5a5-0000-0000-0000-000000000002',
    false, 'schedule', false, '[]'::jsonb);
 
-insert into public.notification_deliveries
+insert into orbit.notification_deliveries
   (id, space_id, owner_id, channel, status, provider) values
   ('a7a7a7a7-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'push', 'sent', 'push:fake'),
@@ -201,13 +201,13 @@ insert into public.notification_deliveries
 -- Consent is personal, not space-wide: the policy is `owner_id = auth.uid()`.
 -- Alice's consent lives in the space she shares with Bob, which is exactly the
 -- case where a space-wide grant would have leaked it.
-insert into public.ai_feature_consents
+insert into orbit.ai_feature_consents
   (id, space_id, owner_id, feature, is_enabled, data_leaves_device, consented_at) values
   ('a9a9a9a9-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'note_summary', true,
    'The note text is sent to the model provider.', now());
 
-insert into public.ai_runs
+insert into orbit.ai_runs
   (id, space_id, owner_id, feature, provider, model, entity_kind, status, error) values
   ('a8a8a8a8-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'note_summary', 'ai:fake', 'fake-local',
@@ -224,13 +224,13 @@ insert into public.ai_runs
 -- a cursor in a space you are not in is a fact about a space you cannot see.
 -- So it is space-scoped like everything else, and asserted from both sides of
 -- the membership and from the free/busy side, exactly as `ai_runs` was.
-insert into public.devices (id, space_id, owner_id, label, platform) values
+insert into orbit.devices (id, space_id, owner_id, label, platform) values
   ('acacacac-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'Alice — laptop', 'web'),
   ('acacacac-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'Alice — laptop', 'web');
 
-insert into public.sync_cursors
+insert into orbit.sync_cursors
   (id, space_id, owner_id, device_id, entity_kind, cursor_at, last_sync_at) values
   ('adadadad-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111', 'acacacac-0000-0000-0000-000000000001',
@@ -244,8 +244,7 @@ insert into public.sync_cursors
 -- ===========================================================================
 select is(
   (select count(*)::int from pg_tables
-   where schemaname = 'public'
-     and tablename <> 'spatial_ref_sys'
+   where schemaname = 'orbit'
      and not rowsecurity),
   0,
   'every application table has RLS enabled'
@@ -253,18 +252,17 @@ select is(
 
 select isnt(
   (select count(*)::int from pg_tables
-   where schemaname = 'public' and tablename <> 'spatial_ref_sys'),
+   where schemaname = 'orbit'),
   0,
   'there are application tables to check (guards against a vacuous pass)'
 );
 
 select is(
   (select count(*)::int from pg_tables t
-   where t.schemaname = 'public'
-     and t.tablename <> 'spatial_ref_sys'
+   where t.schemaname = 'orbit'
      and not exists (
        select 1 from pg_policies p
-       where p.schemaname = 'public' and p.tablename = t.tablename
+       where p.schemaname = 'orbit' and p.tablename = t.tablename
      )),
   0,
   'every application table has at least one policy'
@@ -275,56 +273,56 @@ select is(
 -- ===========================================================================
 select tests.act_as('11111111-1111-1111-1111-111111111111');
 
-select is((select count(*)::int from public.tasks), 5,
+select is((select count(*)::int from orbit.tasks), 5,
   'alice sees all five tasks across her two spaces');
 
-select is((select count(*)::int from public.tasks
+select is((select count(*)::int from orbit.tasks
            where space_id = 'aaaaaaaa-0000-0000-0000-000000000002'), 4,
   'alice sees four tasks in Home, including her own private one');
 
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
-select is((select count(*)::int from public.tasks
+select is((select count(*)::int from orbit.tasks
            where space_id = 'aaaaaaaa-0000-0000-0000-000000000002'), 3,
   'bob sees three tasks in Home — alice''s private task is hidden from him');
 
-select is((select count(*)::int from public.tasks
+select is((select count(*)::int from orbit.tasks
            where id = 'bbbbbbbb-0000-0000-0000-000000000003'), 0,
   'bob cannot read a private task by id either');
 
-select is((select count(*)::int from public.tasks
+select is((select count(*)::int from orbit.tasks
            where space_id = 'aaaaaaaa-0000-0000-0000-000000000001'), 0,
   'bob sees nothing in alice''s personal space');
 
 select tests.act_as('44444444-4444-4444-4444-444444444444');
 
-select is((select count(*)::int from public.tasks), 0,
+select is((select count(*)::int from orbit.tasks), 0,
   'mallory, a member of nothing, sees no tasks at all');
 
-select is((select count(*)::int from public.notes), 0, 'mallory sees no notes');
-select is((select count(*)::int from public.events), 0, 'mallory sees no events');
-select is((select count(*)::int from public.people), 0, 'mallory sees no people');
-select is((select count(*)::int from public.spaces), 0, 'mallory sees no spaces');
+select is((select count(*)::int from orbit.notes), 0, 'mallory sees no notes');
+select is((select count(*)::int from orbit.events), 0, 'mallory sees no events');
+select is((select count(*)::int from orbit.people), 0, 'mallory sees no people');
+select is((select count(*)::int from orbit.spaces), 0, 'mallory sees no spaces');
 
 -- ===========================================================================
 -- 3. free_busy is availability-only (decision 3)
 -- ===========================================================================
 select tests.act_as('33333333-3333-3333-3333-333333333333');
 
-select is((select count(*)::int from public.tasks), 0,
+select is((select count(*)::int from orbit.tasks), 0,
   'a free_busy participant sees no tasks');
 
-select is((select count(*)::int from public.events), 0,
+select is((select count(*)::int from orbit.events), 0,
   'a free_busy participant sees no events — not even the titles');
 
-select is((select count(*)::int from public.notes), 0,
+select is((select count(*)::int from orbit.notes), 0,
   'a free_busy participant sees no notes');
 
-select is((select count(*)::int from public.spaces), 1,
+select is((select count(*)::int from orbit.spaces), 1,
   'a free_busy participant can see that the space exists, to render its indicator');
 
 select tests.as_owner();
-insert into public.free_busy_shares (space_id, owner_id, grantee_id)
+insert into orbit.free_busy_shares (space_id, owner_id, grantee_id)
 values ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
         '33333333-3333-3333-3333-333333333333');
 
@@ -349,19 +347,19 @@ select is(
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 select is(
-  (select count(*)::int from public.recurrence_rules),
+  (select count(*)::int from orbit.recurrence_rules),
   1,
   'the partner sees the shared space''s recurrence rule and not the private one');
 
 select is(
-  (select rrule from public.recurrence_rules),
+  (select rrule from orbit.recurrence_rules),
   'FREQ=WEEKLY;BYDAY=MO',
   'and the one they see is the shared one');
 
 select tests.act_as('33333333-3333-3333-3333-333333333333');
 
 select is(
-  (select count(*)::int from public.recurrence_rules),
+  (select count(*)::int from orbit.recurrence_rules),
   0,
   'a free_busy participant sees no recurrence rules — the shape of a week is content');
 
@@ -369,28 +367,28 @@ select is(
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 select is(
-  (select count(*)::int from public.places
+  (select count(*)::int from orbit.places
    where id in ('a1a1a1a1-0000-0000-0000-000000000001',
                 'a1a1a1a1-0000-0000-0000-000000000002')),
   1,
   'the partner sees the shared place and not the one in Alice''s own space');
 
 select is(
-  (select count(*)::int from public.place_visits
+  (select count(*)::int from orbit.place_visits
    where id in ('a2a2a2a2-0000-0000-0000-000000000001',
                 'a2a2a2a2-0000-0000-0000-000000000002')),
   1,
   'and the shared visit only — where somebody went is content, not availability');
 
 select is(
-  (select count(*)::int from public.travel_legs
+  (select count(*)::int from orbit.travel_legs
    where id in ('a4a4a4a4-0000-0000-0000-000000000001',
                 'a4a4a4a4-0000-0000-0000-000000000002')),
   1,
   'and the shared journey only');
 
 select is(
-  (select count(*)::int from public.travel_sessions
+  (select count(*)::int from orbit.travel_sessions
    where id in ('a3a3a3a3-0000-0000-0000-000000000001',
                 'a3a3a3a3-0000-0000-0000-000000000002')),
   1,
@@ -399,22 +397,22 @@ select is(
 select tests.act_as('33333333-3333-3333-3333-333333333333');
 
 select is(
-  (select count(*)::int from public.places),
+  (select count(*)::int from orbit.places),
   0,
   'a free_busy participant sees no places — an address is content');
 
 select is(
-  (select count(*)::int from public.place_visits),
+  (select count(*)::int from orbit.place_visits),
   0,
   'and no visits: when you were somewhere is more than when you were busy');
 
 select is(
-  (select count(*)::int from public.travel_legs),
+  (select count(*)::int from orbit.travel_legs),
   0,
   'and no journeys');
 
 select is(
-  (select count(*)::int from public.travel_sessions),
+  (select count(*)::int from orbit.travel_sessions),
   0,
   'and no trips — that you are away is not the same as that you are busy');
 
@@ -422,21 +420,21 @@ select is(
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 select is(
-  (select count(*)::int from public.rules
+  (select count(*)::int from orbit.rules
    where id in ('a5a5a5a5-0000-0000-0000-000000000001',
                 'a5a5a5a5-0000-0000-0000-000000000002')),
   1,
   'the partner sees the rule in the shared space and not the one in Alice''s own');
 
 select is(
-  (select count(*)::int from public.rule_runs
+  (select count(*)::int from orbit.rule_runs
    where id in ('a6a6a6a6-0000-0000-0000-000000000001',
                 'a6a6a6a6-0000-0000-0000-000000000002')),
   1,
   'and only the run belonging to it — a run names every task it looked at');
 
 select is(
-  (select count(*)::int from public.notification_deliveries
+  (select count(*)::int from orbit.notification_deliveries
    where id in ('a7a7a7a7-0000-0000-0000-000000000001',
                 'a7a7a7a7-0000-0000-0000-000000000002')),
   1,
@@ -445,32 +443,32 @@ select is(
 select tests.act_as('33333333-3333-3333-3333-333333333333');
 
 select is(
-  (select count(*)::int from public.rules),
+  (select count(*)::int from orbit.rules),
   0,
   'a free_busy participant sees no rules — a rule is a program over content');
 
 select is(
-  (select count(*)::int from public.rule_runs),
+  (select count(*)::int from orbit.rule_runs),
   0,
   'and no runs: a run records the titles of everything the rule considered');
 
 select is(
-  (select count(*)::int from public.notification_deliveries),
+  (select count(*)::int from orbit.notification_deliveries),
   0,
   'and no notification deliveries');
 
 select is(
-  (select count(*)::int from public.ai_runs),
+  (select count(*)::int from orbit.ai_runs),
   0,
   'and no AI runs — that a feature ran over somebody''s notes is more than "busy"');
 
 select is(
-  (select count(*)::int from public.sync_cursors),
+  (select count(*)::int from orbit.sync_cursors),
   0,
   'and no sync cursors — how far a device has caught up is more than "busy"');
 
 select is(
-  (select count(*)::int from public.devices),
+  (select count(*)::int from orbit.devices),
   0,
   'and no devices — whose laptop reads this space is not availability');
 
@@ -479,14 +477,14 @@ select is(
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 select is(
-  (select count(*)::int from public.ai_runs
+  (select count(*)::int from orbit.ai_runs
    where id in ('a8a8a8a8-0000-0000-0000-000000000001',
                 'a8a8a8a8-0000-0000-0000-000000000002')),
   1,
   'the partner sees the AI run in the shared space and not the one in Alice''s own');
 
 select is(
-  (select count(*)::int from public.ai_runs
+  (select count(*)::int from orbit.ai_runs
    where id = 'a8a8a8a8-0000-0000-0000-000000000001' and status = 'refused'),
   0,
   'and the run they see is the one that happened, not the refusal from elsewhere');
@@ -494,7 +492,7 @@ select is(
 -- The run is visible in the shared space; the *consent* behind it is not. What
 -- somebody agreed to send is theirs, even to a person they share a space with.
 select is(
-  (select count(*)::int from public.ai_feature_consents
+  (select count(*)::int from orbit.ai_feature_consents
    where id = 'a9a9a9a9-0000-0000-0000-000000000001'),
   0,
   'but not the consent behind it — what somebody agreed to send is personal');
@@ -502,7 +500,7 @@ select is(
 -- Consent is per space, and it is a *grant*: writing one into a space you are
 -- not in would be granting yourself permission to send somebody else's notes.
 select throws_ok(
-  $$insert into public.ai_feature_consents
+  $$insert into orbit.ai_feature_consents
       (space_id, owner_id, feature, is_enabled, data_leaves_device, consented_at)
     values ('aaaaaaaa-0000-0000-0000-000000000001',
             '22222222-2222-2222-2222-222222222222', 'note_summary', true,
@@ -514,7 +512,7 @@ select throws_ok(
 -- The same shape for the run itself: a row claiming a run happened in a space
 -- you cannot read is a claim about content you cannot see.
 select throws_ok(
-  $$insert into public.ai_runs (space_id, owner_id, feature, provider, status)
+  $$insert into orbit.ai_runs (space_id, owner_id, feature, provider, status)
     values ('aaaaaaaa-0000-0000-0000-000000000001',
             '22222222-2222-2222-2222-222222222222', 'note_summary', 'ai:fake', 'ok')$$,
   '42501',
@@ -526,14 +524,14 @@ select throws_ok(
 -- household should be able to answer — but it stops at the space boundary like
 -- everything else.
 select is(
-  (select count(*)::int from public.sync_cursors
+  (select count(*)::int from orbit.sync_cursors
    where id in ('adadadad-0000-0000-0000-000000000001',
                 'adadadad-0000-0000-0000-000000000002')),
   1,
   'the partner sees the sync cursor in the shared space and not the one in Alice''s own');
 
 select is(
-  (select count(*)::int from public.devices
+  (select count(*)::int from orbit.devices
    where id in ('acacacac-0000-0000-0000-000000000001',
                 'acacacac-0000-0000-0000-000000000002')),
   1,
@@ -543,7 +541,7 @@ select is(
 -- There is no elevated path for catching up: a device writing a cursor into a
 -- space it is not in is claiming to have read that space.
 select throws_ok(
-  $$insert into public.sync_cursors (space_id, owner_id, device_id, entity_kind, cursor_at)
+  $$insert into orbit.sync_cursors (space_id, owner_id, device_id, entity_kind, cursor_at)
     values ('aaaaaaaa-0000-0000-0000-000000000001',
             '22222222-2222-2222-2222-222222222222',
             'acacacac-0000-0000-0000-000000000002', 'task', now())$$,
@@ -552,7 +550,7 @@ select throws_ok(
   'the partner cannot record a sync cursor inside a space they are not in');
 
 select throws_ok(
-  $$insert into public.devices (space_id, owner_id, label)
+  $$insert into orbit.devices (space_id, owner_id, label)
     values ('aaaaaaaa-0000-0000-0000-000000000001',
             '22222222-2222-2222-2222-222222222222', 'Bob — phone')$$,
   '42501',
@@ -562,12 +560,12 @@ select throws_ok(
 -- Catching up is a *read* of the space, and it moves the cursor. If the cursor
 -- could be dragged forward from outside, a device could be told it is up to
 -- date on a space it has never read.
-update public.sync_cursors set cursor_at = now()
+update orbit.sync_cursors set cursor_at = now()
  where id = 'adadadad-0000-0000-0000-000000000002';
 
 select tests.as_owner();
 select is(
-  (select cursor_at from public.sync_cursors
+  (select cursor_at from orbit.sync_cursors
    where id = 'adadadad-0000-0000-0000-000000000002'),
   '2026-07-27 08:00+01'::timestamptz,
   'and dragging a cursor forward in a space they cannot see silently affects nothing');
@@ -579,7 +577,7 @@ select tests.act_as('22222222-2222-2222-2222-222222222222');
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 select throws_ok(
-  $$insert into public.rules (space_id, owner_id, name, slug, trigger)
+  $$insert into orbit.rules (space_id, owner_id, name, slug, trigger)
     values ('aaaaaaaa-0000-0000-0000-000000000001',
             '22222222-2222-2222-2222-222222222222', 'Reach', 'reach',
             '{"kind":"task.created"}'::jsonb)$$,
@@ -593,7 +591,7 @@ select throws_ok(
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 select throws_ok(
-  $$insert into public.tasks (space_id, owner_id, title)
+  $$insert into orbit.tasks (space_id, owner_id, title)
     values ('aaaaaaaa-0000-0000-0000-000000000001',
             '22222222-2222-2222-2222-222222222222', 'Sneaky')$$,
   '42501',
@@ -602,7 +600,7 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$insert into public.tasks (space_id, owner_id, title)
+  $$insert into orbit.tasks (space_id, owner_id, title)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '11111111-1111-1111-1111-111111111111', 'Forged owner')$$,
   '42501',
@@ -611,7 +609,7 @@ select throws_ok(
 );
 
 select lives_ok(
-  $$insert into public.tasks (space_id, owner_id, title)
+  $$insert into orbit.tasks (space_id, owner_id, title)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '22222222-2222-2222-2222-222222222222', 'Descale the kettle')$$,
   'bob can insert his own task into a space he belongs to'
@@ -620,7 +618,7 @@ select lives_ok(
 select tests.act_as('33333333-3333-3333-3333-333333333333');
 
 select throws_ok(
-  $$insert into public.tasks (space_id, owner_id, title)
+  $$insert into orbit.tasks (space_id, owner_id, title)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '33333333-3333-3333-3333-333333333333', 'From a free_busy member')$$,
   '42501',
@@ -632,12 +630,12 @@ select throws_ok(
 -- That distinction matters: the client must not be able to tell the row exists.
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
-update public.tasks set title = 'Hijacked'
+update orbit.tasks set title = 'Hijacked'
  where id = 'bbbbbbbb-0000-0000-0000-000000000003';
 
 select tests.as_owner();
 select is(
-  (select title from public.tasks where id = 'bbbbbbbb-0000-0000-0000-000000000003'),
+  (select title from orbit.tasks where id = 'bbbbbbbb-0000-0000-0000-000000000003'),
   'Birthday present for Bob',
   'bob''s update of a private task silently affected nothing'
 );
@@ -648,7 +646,7 @@ select is(
 select tests.act_as('11111111-1111-1111-1111-111111111111');
 
 select throws_ok(
-  $$insert into public.item_shares (space_id, owner_id, entity_kind, entity_id, grantee_id)
+  $$insert into orbit.item_shares (space_id, owner_id, entity_kind, entity_id, grantee_id)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '11111111-1111-1111-1111-111111111111', 'task',
             'bbbbbbbb-0000-0000-0000-000000000002',
@@ -659,7 +657,7 @@ select throws_ok(
 );
 
 select lives_ok(
-  $$insert into public.item_shares (space_id, owner_id, entity_kind, entity_id, grantee_id)
+  $$insert into orbit.item_shares (space_id, owner_id, entity_kind, entity_id, grantee_id)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '11111111-1111-1111-1111-111111111111', 'task',
             'bbbbbbbb-0000-0000-0000-000000000002',
@@ -673,7 +671,7 @@ select lives_ok(
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 select throws_ok(
-  $$insert into public.person_links
+  $$insert into orbit.person_links
       (space_id, owner_id, person_a_id, person_b_id, person_b_space)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '22222222-2222-2222-2222-222222222222',
@@ -688,7 +686,7 @@ select throws_ok(
 select tests.act_as('11111111-1111-1111-1111-111111111111');
 
 select lives_ok(
-  $$insert into public.person_links
+  $$insert into orbit.person_links
       (space_id, owner_id, person_a_id, person_b_id, person_b_space)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '11111111-1111-1111-1111-111111111111',
@@ -699,7 +697,7 @@ select lives_ok(
 );
 
 select is(
-  (select count(*)::int from public.people where display_name = 'Dr Iqbal'),
+  (select count(*)::int from orbit.people where display_name = 'Dr Iqbal'),
   2,
   'linking leaves two records — it never collapses or merges them'
 );
@@ -711,7 +709,7 @@ select tests.act_as('22222222-2222-2222-2222-222222222222');
 -- The link row lives in Home; person_b is the Home record, person_a is the one
 -- in Alice's personal space. Bob is in Home and not in Alice's space.
 select is(
-  (select count(*)::int from public.person_links
+  (select count(*)::int from orbit.person_links
    where person_a_id = 'eeeeeeee-0000-0000-0000-000000000002'
       or person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
   1,
@@ -720,15 +718,15 @@ select is(
 
 select is(
   (select count(*)::int
-   from public.person_links l
-   join public.people far on far.id = l.person_a_id
+   from orbit.person_links l
+   join orbit.people far on far.id = l.person_a_id
    where l.person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
   0,
   'but resolving the far record returns nothing — he is not in that space'
 );
 
 select is(
-  (select count(*)::int from public.person_links
+  (select count(*)::int from orbit.person_links
    where space_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
   0,
   'and a link stored in a space he cannot read is invisible entirely'
@@ -738,8 +736,8 @@ select tests.act_as('11111111-1111-1111-1111-111111111111');
 
 select is(
   (select count(*)::int
-   from public.person_links l
-   join public.people far on far.id = l.person_a_id
+   from orbit.person_links l
+   join orbit.people far on far.id = l.person_a_id
    where l.person_b_id = 'eeeeeeee-0000-0000-0000-000000000002'),
   1,
   'alice, who is in both spaces, resolves the far record from the near side'
@@ -754,7 +752,7 @@ select tests.as_owner();
 -- database, and the seed has its own boiler task. A global count here would
 -- pass or fail depending on the seed, which is not what is being tested.
 select is(
-  (select count(*)::int from public.tasks
+  (select count(*)::int from orbit.tasks
    where space_id = 'aaaaaaaa-0000-0000-0000-000000000002'
      and not is_locked
      and to_tsvector('english', title || ' ' || body_md) @@ plainto_tsquery('english', 'boiler')),
@@ -762,12 +760,12 @@ select is(
   'unlocked tasks are searchable');
 
 select is(
-  (select count(*)::int from public.tasks where is_locked and (title <> '' or body_md <> '')),
+  (select count(*)::int from orbit.tasks where is_locked and (title <> '' or body_md <> '')),
   0,
   'no locked task carries plaintext the search index could reach');
 
 select throws_ok(
-  $$insert into public.tasks (space_id, owner_id, title, is_locked)
+  $$insert into orbit.tasks (space_id, owner_id, title, is_locked)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '11111111-1111-1111-1111-111111111111', 'Leaked title', true)$$,
   '23514',
@@ -779,7 +777,7 @@ select throws_ok(
 -- 8. No "who viewed what", ever
 -- ===========================================================================
 select throws_ok(
-  $$insert into public.activity_log (space_id, owner_id, entity_kind, entity_id, action)
+  $$insert into orbit.activity_log (space_id, owner_id, entity_kind, entity_id, action)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '11111111-1111-1111-1111-111111111111', 'task',
             'bbbbbbbb-0000-0000-0000-000000000002', 'viewed')$$,
@@ -868,7 +866,7 @@ select tests.act_as('11111111-1111-1111-1111-111111111111');
 
 select is(
   (select count(*)::int
-   from public.notes n
+   from orbit.notes n
    where n.id = 'cccccccc-0000-0000-0000-000000000001'
      and exists (select 1 from app.entity_space('task', 'bbbbbbbb-0000-0000-0000-000000000001') es
                  where es.space_id = n.space_id)),
@@ -879,7 +877,7 @@ select is(
 -- 9c. The outsider sees zero — every table, not a chosen few
 --
 -- This is the case that catches a table shipped without a policy. It runs over
--- *every* table in `public` rather than a hand-written list, so a new table is
+-- *every* table in `orbit` rather than a hand-written list, so a new table is
 -- covered the moment it exists. Mallory is a member of nothing; the seeded
 -- data belongs to other people; therefore every count must be zero.
 --
@@ -898,11 +896,11 @@ declare
 begin
   for r in
     select tablename from pg_tables
-    where schemaname = 'public'
-      and tablename not in ('spatial_ref_sys', 'profiles')
+    where schemaname = 'orbit'
+      and tablename <> 'profiles'
     order by tablename
   loop
-    execute format('select count(*) from public.%I', r.tablename) into n;
+    execute format('select count(*) from orbit.%I', r.tablename) into n;
     if n > 0 then bad := bad || format('%s(%s)', r.tablename, n); end if;
   end loop;
   return coalesce(array_to_string(bad, ', '), '');
@@ -920,10 +918,10 @@ declare
 begin
   for r in
     select tablename from pg_tables
-    where schemaname = 'public' and tablename <> 'spatial_ref_sys'
+    where schemaname = 'orbit'
     order by tablename
   loop
-    execute format('select count(*) from public.%I', r.tablename) into n;
+    execute format('select count(*) from orbit.%I', r.tablename) into n;
     if n = 0 then empty := empty || r.tablename; end if;
   end loop;
   return coalesce(array_to_string(empty, ', '), '');
@@ -974,13 +972,13 @@ select tests.as_owner();
 select is(
   (select coalesce(string_agg(t.tablename, ', ' order by t.tablename), '')
    from pg_tables t
-   where t.schemaname = 'public'
+   where t.schemaname = 'orbit'
      -- profiles is not space-scoped; spaces IS the space; space_members is the
      -- membership grant itself and is keyed by (space_id, user_id).
-     and t.tablename not in ('profiles', 'spaces', 'space_members', 'spatial_ref_sys')
+     and t.tablename not in ('profiles', 'spaces', 'space_members')
      and not exists (
        select 1 from information_schema.columns c
-       where c.table_schema = 'public' and c.table_name = t.tablename
+       where c.table_schema = 'orbit' and c.table_name = t.tablename
          and c.column_name = 'space_id')),
   '',
   'every space-scoped table has a space_id column'
@@ -989,11 +987,11 @@ select is(
 select is(
   (select coalesce(string_agg(t.tablename, ', ' order by t.tablename), '')
    from pg_tables t
-   where t.schemaname = 'public'
-     and t.tablename not in ('profiles', 'spaces', 'space_members', 'spatial_ref_sys')
+   where t.schemaname = 'orbit'
+     and t.tablename not in ('profiles', 'spaces', 'space_members')
      and not exists (
        select 1 from information_schema.columns c
-       where c.table_schema = 'public' and c.table_name = t.tablename
+       where c.table_schema = 'orbit' and c.table_name = t.tablename
          and c.column_name = 'owner_id')),
   '',
   'every space-scoped table has an owner_id column'
@@ -1004,7 +1002,7 @@ select is(
    from pg_constraint con
    join pg_class cl on cl.oid = con.conrelid
    join pg_namespace ns on ns.oid = cl.relnamespace
-   where ns.nspname = 'public'
+   where ns.nspname = 'orbit'
      and con.contype = 'u'
      and cl.relname not in ('profiles', 'spaces')
      and (select attname from pg_attribute
@@ -1015,13 +1013,13 @@ select is(
 
 select is(
   (select count(*)::int from information_schema.columns
-   where table_schema = 'public' and column_name ilike '%viewed%'),
+   where table_schema = 'orbit' and column_name ilike '%viewed%'),
   0,
   'no column anywhere records that something was viewed'
 );
 
 -- ===========================================================================
--- 11. auth.users → public.profiles (migration 0012)
+-- 11. auth.users → orbit.profiles (migration 0012)
 --
 -- The delicate one. `profiles.id` must equal the JWT's `sub` or every policy in
 -- this file returns zero rows and says nothing about why. The trigger is what
@@ -1042,18 +1040,18 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('66666666-6666-6666-6666-666666666666', 'quiet.person@example.com', '{}'::jsonb);
 
 select is(
-  (select p.id from public.profiles p where p.id = '55555555-5555-5555-5555-555555555555'),
+  (select p.id from orbit.profiles p where p.id = '55555555-5555-5555-5555-555555555555'),
   '55555555-5555-5555-5555-555555555555'::uuid,
   'a new auth user gets a profile with the same id — which is what auth.uid() will be');
 
 select is(
-  (select p.display_name from public.profiles p
+  (select p.display_name from orbit.profiles p
    where p.id = '55555555-5555-5555-5555-555555555555'),
   'Nadia Ferreira',
   'and the display name comes from the sign-up form, via raw_user_meta_data');
 
 select is(
-  (select p.display_name from public.profiles p
+  (select p.display_name from orbit.profiles p
    where p.id = '66666666-6666-6666-6666-666666666666'),
   'quiet.person',
   'with no metadata it falls back to the email local part, never to an empty name');
@@ -1086,7 +1084,7 @@ grant execute on function tests.invite_hash(text) to authenticated;
 -- Alice is an owner of Home, so the policy lets her create one.
 select tests.act_as('11111111-1111-1111-1111-111111111111');
 
-insert into public.space_invites (space_id, owner_id, token_hash, role, invited_email)
+insert into orbit.space_invites (space_id, owner_id, token_hash, role, invited_email)
 values
   ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
    tests.invite_hash('open-token'), 'member', null),
@@ -1095,11 +1093,11 @@ values
   ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
    tests.invite_hash('stale-token'), 'free_busy', null);
 
-update public.space_invites set expires_at = now() - interval '1 day'
+update orbit.space_invites set expires_at = now() - interval '1 day'
 where token_hash = tests.invite_hash('stale-token');
 
 select is(
-  (select count(*)::int from public.space_invites
+  (select count(*)::int from orbit.space_invites
    where space_id = 'aaaaaaaa-0000-0000-0000-000000000002'),
   3,
   'an admin of a space can create an invite in it, and read it back');
@@ -1109,7 +1107,7 @@ select is(
 select tests.act_as('22222222-2222-2222-2222-222222222222');
 
 select throws_ok(
-  $$insert into public.space_invites (space_id, owner_id, token_hash, role)
+  $$insert into orbit.space_invites (space_id, owner_id, token_hash, role)
     values ('aaaaaaaa-0000-0000-0000-000000000002',
             '22222222-2222-2222-2222-222222222222', 'deadbeef', 'member')$$,
   '42501',
@@ -1120,7 +1118,7 @@ select throws_ok(
 select tests.act_as('44444444-4444-4444-4444-444444444444');
 
 select is(
-  (select count(*)::int from public.space_invites),
+  (select count(*)::int from orbit.space_invites),
   0,
   'the person holding the link cannot read the invite row itself — which is why the function exists');
 
@@ -1150,7 +1148,7 @@ select is(
   'an invite addressed to somebody else cannot be redeemed by whoever holds the link');
 
 select is(
-  (select count(*)::int from public.space_members m
+  (select count(*)::int from orbit.space_members m
    where m.user_id = '44444444-4444-4444-4444-444444444444'),
   0,
   'and trying it made her a member of nothing');
@@ -1163,14 +1161,14 @@ select is(
 select tests.as_owner();
 
 select is(
-  (select m.role::text || ' ' || m.status from public.space_members m
+  (select m.role::text || ' ' || m.status from orbit.space_members m
    where m.user_id = '44444444-4444-4444-4444-444444444444'
      and m.space_id = 'aaaaaaaa-0000-0000-0000-000000000002'),
   'member active',
   'with exactly the role the invite named, and no other');
 
 select is(
-  (select i.accepted_by from public.space_invites i
+  (select i.accepted_by from orbit.space_invites i
    where i.token_hash = tests.invite_hash('open-token')),
   '44444444-4444-4444-4444-444444444444'::uuid,
   'the invite records who accepted it, so an admin can see the link was used');
@@ -1183,19 +1181,19 @@ select is(
   'a second accept is refused rather than being a second join');
 
 select is(
-  (select count(*)::int from public.space_members m
+  (select count(*)::int from orbit.space_members m
    where m.user_id = '44444444-4444-4444-4444-444444444444'),
   1,
   'and there is still exactly one membership');
 
 select is(
-  (select count(*)::int from public.tasks t
+  (select count(*)::int from orbit.tasks t
    where t.id = 'bbbbbbbb-0000-0000-0000-000000000002'),
   1,
   'having joined, she sees the space''s shared content');
 
 select is(
-  (select count(*)::int from public.tasks t
+  (select count(*)::int from orbit.tasks t
    where t.id = 'bbbbbbbb-0000-0000-0000-000000000003'),
   0,
   'and joining is not a way into somebody''s private rows');
@@ -1205,7 +1203,7 @@ select is(
 -- row stays as a record of what was offered.
 select tests.act_as('11111111-1111-1111-1111-111111111111');
 
-update public.space_invites set expires_at = now()
+update orbit.space_invites set expires_at = now()
 where token_hash = tests.invite_hash('for-carol');
 
 select tests.act_as('33333333-3333-3333-3333-333333333333');
@@ -1219,14 +1217,14 @@ select is(
 -- deleted: the row is the record that they were once here.
 select tests.act_as('11111111-1111-1111-1111-111111111111');
 
-update public.space_members set status = 'left'
+update orbit.space_members set status = 'left'
 where space_id = 'aaaaaaaa-0000-0000-0000-000000000002'
   and user_id = '44444444-4444-4444-4444-444444444444';
 
 select tests.act_as('44444444-4444-4444-4444-444444444444');
 
 select is(
-  (select count(*)::int from public.tasks t
+  (select count(*)::int from orbit.tasks t
    where t.space_id = 'aaaaaaaa-0000-0000-0000-000000000002'),
   0,
   'a member set to left sees zero rows again, without the row being deleted');

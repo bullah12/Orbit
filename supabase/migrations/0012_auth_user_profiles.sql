@@ -1,7 +1,7 @@
--- 0012_auth_user_profiles.sql — the join between auth.users and public.profiles.
+-- 0012_auth_user_profiles.sql — the join between auth.users and orbit.profiles.
 --
 -- This is the one genuinely delicate step in making Orbit use real accounts.
--- `public.profiles.id` defaults to gen_random_uuid() and has no foreign key to
+-- `orbit.profiles.id` defaults to gen_random_uuid() and has no foreign key to
 -- auth.users; every policy in the database keys off `auth.uid()`, which is the
 -- JWT's `sub` — that is, `auth.users.id`. If the two ids ever differ, every
 -- policy returns zero rows and says nothing about why. So a profile is created
@@ -52,7 +52,7 @@ end $$;
 -- The trigger.
 --
 -- SECURITY DEFINER because it runs as whoever GoTrue is inserting as, which has
--- no rights on public.profiles. `search_path` is pinned for the same reason
+-- no rights on orbit.profiles. `search_path` is pinned for the same reason
 -- every other definer function in this schema pins it.
 --
 -- The display name order is the same one `displayNameFrom()` implements in
@@ -63,7 +63,7 @@ create or replace function app.profile_for_new_auth_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
 declare
   v_email text;
@@ -87,7 +87,7 @@ begin
   -- Idempotent: a profile with this id already exists, so there is nothing to
   -- do. This is the state a re-run of the migration, or a restored dump, leaves
   -- behind, and it must not be an error.
-  if exists (select 1 from public.profiles p where p.id = new.id) then
+  if exists (select 1 from orbit.profiles p where p.id = new.id) then
     return new;
   end if;
 
@@ -101,7 +101,7 @@ begin
   -- That profile owns spaces, tasks, notes and a calendar; handing it to
   -- whoever signed up with a matching address would be the worst possible
   -- reading of "the same email means the same person".
-  select p.id into v_clash from public.profiles p where p.email = v_email;
+  select p.id into v_clash from orbit.profiles p where p.email = v_email;
   if v_clash is not null then
     raise exception
       using
@@ -114,7 +114,7 @@ begin
           'Either sign up with a different address, or delete the seeded profile that holds this one.';
   end if;
 
-  insert into public.profiles (id, email, display_name)
+  insert into orbit.profiles (id, email, display_name)
   values (new.id, v_email, left(v_name, 120));
 
   return new;
@@ -130,7 +130,7 @@ create trigger on_auth_user_created
 -- ---------------------------------------------------------------------------
 -- Redeeming a space invite.
 --
--- No table is added or altered here: public.space_invites has had every column
+-- No table is added or altered here: orbit.space_invites has had every column
 -- this needs since 0001 and it is finally getting rows. What it needs is a way
 -- to run, which the policies genuinely cannot express — and this is the single
 -- authorised exception to "do not touch the policies", not a licence to widen
@@ -183,15 +183,21 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public, pg_temp
+-- `orbit` first, because that is where every table this touches lives. The
+-- other two are for `digest()`: pgcrypto is installed into `public` by a plain
+-- `create extension`, which is what happens locally, and into `extensions` on
+-- Supabase. Naming both means one function body works in both places, and a
+-- schema in a search_path that does not exist is ignored rather than an error.
+-- Orbit's own names still resolve first, so neither can shadow a table here.
+set search_path = orbit, extensions, public, pg_temp
 as $$
 declare
   v_uid      uuid := auth.uid();
   v_hash     text;
-  v_inv      public.space_invites%rowtype;
-  v_space    public.spaces%rowtype;
+  v_inv      orbit.space_invites%rowtype;
+  v_space    orbit.spaces%rowtype;
   v_email    text;
-  v_member   public.space_members%rowtype;
+  v_member   orbit.space_members%rowtype;
   v_claimed  integer;
 begin
   if p_action not in ('preview', 'accept', 'decline') then
@@ -210,7 +216,7 @@ begin
   -- something that could be replayed.
   v_hash := encode(digest(coalesce(p_token, ''), 'sha256'), 'hex');
 
-  select * into v_inv from public.space_invites i where i.token_hash = v_hash;
+  select * into v_inv from orbit.space_invites i where i.token_hash = v_hash;
   if not found then
     -- Deliberately the same answer for "no such token" and "a token for a space
     -- you were not invited to": telling somebody their guess named a real space
@@ -220,8 +226,8 @@ begin
     return;
   end if;
 
-  select * into v_space from public.spaces s where s.id = v_inv.space_id;
-  select p.email into v_email from public.profiles p where p.id = v_uid;
+  select * into v_space from orbit.spaces s where s.id = v_inv.space_id;
+  select p.email into v_email from orbit.profiles p where p.id = v_uid;
 
   invite_id         := v_inv.id;
   space_id          := v_inv.space_id;
@@ -253,7 +259,7 @@ begin
   end if;
 
   select * into v_member
-  from public.space_members m
+  from orbit.space_members m
   where m.space_id = v_inv.space_id and m.user_id = v_uid;
 
   if found and v_member.status = 'active' then
@@ -277,7 +283,7 @@ begin
   -- Claim the invite before writing the membership, so two people opening the
   -- same bearer link at the same time cannot both join: the second update
   -- matches no row and stops here.
-  update public.space_invites
+  update orbit.space_invites
      set accepted_at = now(), accepted_by = v_uid
    where id = v_inv.id and accepted_at is null;
   get diagnostics v_claimed = row_count;
@@ -291,7 +297,7 @@ begin
   -- Named by constraint rather than by columns: `space_id` is also one of this
   -- function's OUT parameters, and an inference list would be ambiguous between
   -- the two. Rejoining a space you had left is an update, not a second row.
-  insert into public.space_members (space_id, user_id, role, status)
+  insert into orbit.space_members (space_id, user_id, role, status)
   values (v_inv.space_id, v_uid, v_inv.role, 'active')
   on conflict on constraint space_members_space_user_key do update
     set role = excluded.role, status = 'active';

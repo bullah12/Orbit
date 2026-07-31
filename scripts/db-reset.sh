@@ -94,7 +94,7 @@ done
 # to `authenticated`, which orbit_app assumes per request via SET ROLE.
 su postgres -c "psql -q -v ON_ERROR_STOP=1 -d '$DB_NAME'" <<SQL
 grant connect on database "$DB_NAME" to orbit_app;
-grant usage on schema public, app, auth to orbit_app;
+grant usage on schema orbit, app, auth to orbit_app;
 grant authenticated, anon to orbit_app;
 
 -- The identity-provider seam. See supabase/migrations/0008_identity_lookup.sql:
@@ -105,14 +105,15 @@ grant execute on function app.identity_profile(uuid) to orbit_app;
 grant execute on function app.identity_profiles() to orbit_app;
 
 grant connect on database "$DB_NAME" to orbit_seed;
-grant usage on schema public, app, auth to orbit_seed;
-grant all on all tables in schema public to orbit_seed;
+grant usage on schema orbit, app, auth to orbit_seed;
+grant all on all tables in schema orbit to orbit_seed;
 grant execute on all functions in schema app to orbit_seed;
 SQL
 
-# spatial_ref_sys is PostGIS's own read-only reference data (EPSG definitions).
-# It holds no user data and is excluded by name, not by relaxing the check.
-APP_TABLES="from pg_tables where schemaname='public' and tablename <> 'spatial_ref_sys'"
+# Every table Orbit owns lives in the `orbit` schema, so this is the whole
+# inventory with nothing to exclude — PostGIS's own spatial_ref_sys stays in
+# public, where it belongs, and is simply not ours.
+APP_TABLES="from pg_tables where schemaname='orbit'"
 TABLES=$(su postgres -c "psql -tAc \"select count(*) $APP_TABLES\" -d '$DB_NAME'")
 NO_RLS=$(su postgres -c "psql -tAc \"select count(*) $APP_TABLES and not rowsecurity\" -d '$DB_NAME'")
 say "$TABLES tables, $((TABLES - NO_RLS))/$TABLES with RLS enabled"

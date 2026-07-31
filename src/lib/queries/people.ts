@@ -45,21 +45,21 @@ export async function listPeople(
         coalesce(ct.n, 0) as "contactCount",
         coalesce(lk.n, 0) as "linkCount",
         nd.next as "nextDate"
-      from public.people p
-      join public.spaces s on s.id = p.space_id
-      left join public.categories c on c.id = p.category_id
+      from orbit.people p
+      join orbit.spaces s on s.id = p.space_id
+      left join orbit.categories c on c.id = p.category_id
       left join lateral (
-        select count(*)::int as n from public.person_contacts x where x.person_id = p.id
+        select count(*)::int as n from orbit.person_contacts x where x.person_id = p.id
       ) ct on true
       left join lateral (
         -- Links are stored once but read from either side, so both directions
         -- are counted. Two records, linked; never one record.
-        select count(*)::int as n from public.person_links l
+        select count(*)::int as n from orbit.person_links l
         where l.person_a_id = p.id or l.person_b_id = p.id
       ) lk on true
       left join lateral (
         select jsonb_build_object('kind', d.kind, 'label', d.label, 'onDate', d.on_date) as next
-        from public.person_dates d
+        from orbit.person_dates d
         where d.person_id = p.id
         order by
           -- The next anniversary of the date, ignoring the year it started.
@@ -135,9 +135,9 @@ export async function getPerson(
     const rows = await tx<PersonRow[]>`
       select ${tx.unsafe(PERSON_SELECT)},
              0 as "contactCount", 0 as "linkCount", null as "nextDate"
-      from public.people p
-      join public.spaces s on s.id = p.space_id
-      left join public.categories c on c.id = p.category_id
+      from orbit.people p
+      join orbit.spaces s on s.id = p.space_id
+      left join orbit.categories c on c.id = p.category_id
       where p.id = ${id}::uuid
     `;
     const person = rows[0];
@@ -145,14 +145,14 @@ export async function getPerson(
 
     const contacts = await tx<PersonContact[]>`
       select id, kind, label, value, is_primary as "isPrimary"
-      from public.person_contacts
+      from orbit.person_contacts
       where person_id = ${id}::uuid
       order by is_primary desc, kind, label
     `;
 
     const dates = await tx<PersonDate[]>`
       select id, kind, label, on_date as "onDate", year_known as "yearKnown"
-      from public.person_dates
+      from orbit.person_dates
       where person_id = ${id}::uuid
       order by on_date
     `;
@@ -170,25 +170,25 @@ export async function getPerson(
                              'colour', os.colour, 'icon', os.icon) end as "otherSpace",
         l.linked_at as "linkedAt",
         l.confidence
-      from public.person_links l
-      left join public.people other
+      from orbit.person_links l
+      left join orbit.people other
         on other.id = case when l.person_a_id = ${id}::uuid then l.person_b_id
                            else l.person_a_id end
-      left join public.spaces os on os.id = other.space_id
+      left join orbit.spaces os on os.id = other.space_id
       where l.person_a_id = ${id}::uuid or l.person_b_id = ${id}::uuid
       order by l.linked_at
     `;
 
     const mentions = await tx<PersonMention[]>`
       (select 'note'::text as kind, n.id, n.title as label, n.updated_at::text as at
-         from public.note_links nl
-         join public.notes n on n.id = nl.note_id
+         from orbit.note_links nl
+         join orbit.notes n on n.id = nl.note_id
         where nl.entity_kind = 'person' and nl.entity_id = ${id}::uuid
           and n.archived_at is null and not n.is_locked)
       union all
       (select 'event', e.id, e.title, e.starts_at::text
-         from public.event_attendees a
-         join public.events e on e.id = a.event_id
+         from orbit.event_attendees a
+         join orbit.events e on e.id = a.event_id
         where a.person_id = ${id}::uuid and e.status <> 'cancelled'
         order by e.starts_at desc limit 20)
     `;
@@ -241,9 +241,9 @@ export async function upcomingDates(
           ) as occurs_on,
           jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                              'colour', s.colour, 'icon', s.icon) as space
-        from public.person_dates d
-        join public.people p on p.id = d.person_id
-        join public.spaces s on s.id = p.space_id
+        from orbit.person_dates d
+        join orbit.people p on p.id = d.person_id
+        join orbit.spaces s on s.id = p.space_id
         cross join today t
         where p.archived_at is null and not p.is_locked
       )
@@ -281,23 +281,23 @@ export async function listLinkCandidates(
         p.display_name as "displayName",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.people p
-      join public.spaces s on s.id = p.space_id
-      join public.space_members m
+      from orbit.people p
+      join orbit.spaces s on s.id = p.space_id
+      join orbit.space_members m
         on m.space_id = p.space_id and m.user_id = ${userId}::uuid
        and m.status = 'active' and m.role in ('owner','admin','member')
       where p.id <> ${personId}::uuid
         and p.archived_at is null
         and not p.is_locked
         and not exists (
-          select 1 from public.person_links l
+          select 1 from orbit.person_links l
           where (l.person_a_id = ${personId}::uuid and l.person_b_id = p.id)
              or (l.person_b_id = ${personId}::uuid and l.person_a_id = p.id)
         )
       order by
         -- Someone with the same name in another space is almost always what
         -- you are looking for, so float those to the top.
-        (p.display_name = (select display_name from public.people where id = ${personId}::uuid)) desc,
+        (p.display_name = (select display_name from orbit.people where id = ${personId}::uuid)) desc,
         p.display_name
       limit 300
     `;

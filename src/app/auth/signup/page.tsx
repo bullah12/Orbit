@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * Create an account.
  *
  * The display name typed here becomes `user_metadata.display_name`, which the
- * trigger in migration 0012 copies into `public.profiles.display_name` — so the
+ * trigger in migration 0012 copies into `orbit.profiles.display_name` — so the
  * name somebody types on this form is the name that appears on every row they
  * own. If they leave it empty the trigger falls back to the email's local part;
  * a profile with a blank display name would render as a gap.

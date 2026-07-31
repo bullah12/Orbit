@@ -192,11 +192,11 @@ changes nothing about how anything already here works.
       on the same condition, and a second server started with the real provider
       asserts both in smoke
 - [x] Migration 0012 — a trigger on `auth.users` insert creating the matching
-      `public.profiles` row **with the same id**, which is what `auth.uid()`
+      `orbit.profiles` row **with the same id**, which is what `auth.uid()`
       will be. The `profiles_email_key` collision raises naming the address and
       the existing profile rather than hitting the constraint. Seeded data is
       development data and a real deployment starts empty
-- [x] `public.space_invites` gets rows at last, with **no schema change**: an
+- [x] `orbit.space_invites` gets rows at last, with **no schema change**: an
       admin creates an invitation with a role, an expiry and an optional
       address; the raw token is shown once and only its SHA-256 hash is stored
 - [x] Redeeming goes through `app.space_invite(token, action)` — one

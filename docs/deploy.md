@@ -57,21 +57,21 @@ done
 
 | | |
 |---|---|
-| `0000_bootstrap.sql` | extensions, the `auth` shim, roles, the `app` helper schema. Mostly a no-op on Supabase — see gotcha 2. |
+| `0000_bootstrap.sql` | extensions, the `auth` shim, roles, and the two schemas Orbit owns — **`orbit` for every table** and `app` for the policy helpers. Mostly a no-op on Supabase — see gotcha 2. |
 | `0001_identity.sql` | profiles, spaces, `space_members`, `space_invites`, categories, devices |
 | `0002` – `0007` | tasks and notes, people, calendar, places and travel, automation, platform tables |
 | `0008_identity_lookup.sql` | the two narrow identity functions the dev provider uses |
 | `0009_entity_space.sql` | `app.entity_space()`, SECURITY INVOKER on purpose |
 | `0010_recurrence_exdates.sql` | `recurrence_rules.exdates` |
 | `0011_travel_leg_identity.sql` | the partial unique index on a derived journey |
-| `0012_auth_user_profiles.sql` | **the one this all turns on**: the `auth.users` → `public.profiles` trigger, and `app.space_invite()` |
+| `0012_auth_user_profiles.sql` | **the one this all turns on**: the `auth.users` → `orbit.profiles` trigger, and `app.space_invite()` |
 
 ### The three gotchas
 
 These are from §2 of `docs/deployment-and-android.md`. All three are things to
 check rather than assume, and the first is the one that fails silently.
 
-**1. `profiles.id` must equal `auth.uid()`.** `public.profiles.id` defaults to
+**1. `profiles.id` must equal `auth.uid()`.** `orbit.profiles.id` defaults to
 `gen_random_uuid()` and has no foreign key to `auth.users`. Every policy in the
 database keys off `auth.uid()`, which is the JWT's `sub` — that is,
 `auth.users.id`. If they ever differ, **every policy returns zero rows and says
@@ -90,7 +90,7 @@ Then sign up once and check the pair:
 ```sh
 psql "$ADMIN_URL" -c "\
   select u.id = p.id as ids_match, u.email, p.display_name \
-  from auth.users u join public.profiles p on p.id = u.id"
+  from auth.users u join orbit.profiles p on p.id = u.id"
 ```
 
 If `ids_match` is not `t` for your account, stop: nothing else will work, and
@@ -121,7 +121,7 @@ locally, and it is worthless if the deployed role is different.
 psql "$ADMIN_URL" <<'SQL'
 create role orbit_app login password 'PUT A REAL PASSWORD HERE' noinherit;
 grant connect on database postgres to orbit_app;
-grant usage on schema public, app, auth to orbit_app;
+grant usage on schema orbit, app, auth to orbit_app;
 grant authenticated, anon to orbit_app;
 
 -- The identity seam: two narrow functions, no table grants at all.
@@ -138,12 +138,36 @@ psql "$ADMIN_URL" -c "\
 # expect: orbit_app | f | f
 
 psql "$ADMIN_URL" -c "\
-  select count(*) from pg_tables where schemaname = 'public' and tableowner = 'orbit_app'"
+  select count(*) from pg_tables where schemaname = 'orbit' and tableowner = 'orbit_app'"
 # expect: 0
 ```
 
 If `orbit_app` owns a table, RLS does not apply to it for that table and the
 premise of every assertion in `supabase/tests/` is gone.
+
+### A fourth gotcha, and it is ours: PostgREST only exposes `public`
+
+The three above come from §2 of `docs/deployment-and-android.md`. This one is a
+consequence of Orbit's tables living in the **`orbit`** schema rather than
+`public`, and it does not affect the web app at all — that connects with
+`postgres.js` as `orbit_app` and names `orbit.tasks` in the SQL, so it neither
+knows nor cares what PostgREST is configured with.
+
+It affects **anything talking to the Supabase REST API**, which is the whole of
+the Android client in Brief B.
+
+- **Supabase dashboard → Settings → API → Exposed schemas**: add `orbit`. The
+  default is `public, graphql_public`, and a table PostgREST cannot see returns
+  `PGRST106` — *the schema must be added to 'db-schemas'* — rather than an empty
+  list, so at least it fails loudly.
+- Every client then has to ask for it: `supabase.schema('orbit').from('tasks')`
+  in supabase-js, or the equivalent `Postgrest.from(schema = "orbit")` in
+  supabase-kt. Setting it once at client construction is better than per call.
+- **`auth` is untouched by this.** GoTrue is its own API on its own path, so
+  sign-in, sign-up and the magic link work with `orbit` exposed or not.
+
+RLS is what protects those tables either way — exposing a schema does not grant
+anything, it only tells PostgREST the schema exists.
 
 ### The pooler note
 

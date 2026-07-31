@@ -14,6 +14,15 @@ space invites, plus a Dockerfile and a deployment guide. It is Phase 7 in
 `docs/phase-plan.md` and it is complete. It did **not** add a feature to the
 product, and inventing a Phase 8 is not the job.
 
+**Every table Orbit owns moved out of `public` and into a schema called
+`orbit`.** Same 41 tables, same policies, same data; the qualified name in every
+query, migration, test and seed changed and nothing else did. `app` (the policy
+helpers) and `auth` (Supabase's own) are unchanged, and `public` now holds
+nothing but the extensions. The one consequence that reaches outside this
+repository is that **PostgREST exposes `public` by default**, so a Supabase
+project needs `orbit` added to its exposed schemas before the Android client can
+read a row — see `docs/deploy.md`.
+
 **Five commands are the whole truth about this repo.** All five were run at the
 end of session 9 from a database rebuilt with `./scripts/db-reset.sh`, and all
 five were green:
@@ -67,13 +76,22 @@ Everything here was executed and watched.
 - `./scripts/db-reset.sh` rebuilds from zero: apt-installs PostGIS/pgvector/pgTAP
   if missing, starts Postgres, applies `supabase/migrations/*.sql` in order,
   seeds. It **fails the run** if any table lacks RLS.
-- 41 tables, 41 with RLS. `space_id` + `owner_id` on every space-scoped table;
-  every unique constraint leads with `space_id`. Both asserted structurally.
+- **41 tables, 41 with RLS, all of them in the `orbit` schema.** `space_id` +
+  `owner_id` on every space-scoped table; every unique constraint leads with
+  `space_id`. Both asserted structurally, and the structural checks now iterate a
+  schema rather than a schema minus a list of exceptions — PostGIS's
+  `spatial_ref_sys` is in `public`, where it belongs, so there is nothing left to
+  exclude by name.
+- Three schemas, and the split is the point: **`orbit`** holds every table,
+  **`app`** holds the helper functions policies call and nothing else, **`auth`**
+  is Supabase's. `public` holds the extensions and no table of ours. The pool
+  role has USAGE on `orbit` and no table grant at all; grants are issued
+  per-table by `app.apply_standard_rls()`.
 - **One migration this session, `0012_auth_user_profiles.sql`** — the third
   schema extension in nine sessions, and the only one this brief authorised. It
   adds no table and alters none. It contains two things:
   1. a guarded `auth.users` shim (a no-op on Supabase) and a trigger on its
-     insert that creates the matching `public.profiles` row **with the same id**;
+     insert that creates the matching `orbit.profiles` row **with the same id**;
   2. `app.space_invite(token, action)`, the one SECURITY DEFINER function that
      lets somebody redeem an invitation to a space they are not in.
 
@@ -415,10 +433,13 @@ session's work.
    is the list, and §6 of `docs/deployment-and-android.md` says the same. **Until
    that happens the supabase provider stays "written, never run" and no session
    can change that.** The first thing to check on the far side is gotcha 1:
-   `select u.id = p.id from auth.users u join public.profiles p on p.id = u.id`.
+   `select u.id = p.id from auth.users u join orbit.profiles p on p.id = u.id`.
    If that is not `t`, nothing works and nothing says why.
 2. **Brief B, the Android client** — `docs/deployment-and-android.md` §5. It
    depends on a real project existing, so it comes after step 1 and not before.
+   **Add `orbit` to Settings → API → Exposed schemas first**: PostgREST serves
+   `public` by default, so without that step the phone reads nothing and answers
+   `PGRST106`, and the client has to name the schema at construction.
 3. **An offline surface on notes, and `SYNCABLE_FIELDS` widened to match the
    forms** (edge 9). Named first in the last two sessions and still the narrowest
    useful step inside the product itself: a note body is the field somebody is
