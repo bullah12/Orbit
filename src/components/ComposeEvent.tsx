@@ -187,7 +187,7 @@ export function ComposeEvent({
                   <span className="sr-only">{name}</span>
                   <span
                     aria-hidden="true"
-                    className="hairline block rounded border px-1 opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2"
+                    className="hairline flex rounded border px-1 opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2"
                   >
                     {code}
                   </span>
@@ -220,7 +220,7 @@ export function ComposeEvent({
               onChange={() => setSpaceId(s.id)}
               className="peer sr-only"
             />
-            <span className="block rounded opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2">
+            <span className="flex rounded opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2">
               <SpaceIndicator space={s} />
             </span>
           </label>

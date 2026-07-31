@@ -77,7 +77,7 @@ export function ComposePerson({
               onChange={() => setSpaceId(s.id)}
               className="peer sr-only"
             />
-            <span className="block rounded opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2">
+            <span className="flex rounded opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2">
               <SpaceIndicator space={s} />
             </span>
           </label>

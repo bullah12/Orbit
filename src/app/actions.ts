@@ -686,7 +686,7 @@ export async function createEvent(formData: FormData) {
       startOn: onDate,
     });
     if ('error' in built) {
-      redirect(`/calendar/week?error=${encodeURIComponent(built.error)}`);
+      redirect(`/calendar?error=${encodeURIComponent(built.error)}`);
     }
     recurrenceRule = built.rrule;
   }
@@ -985,7 +985,7 @@ export async function deleteEvent(formData: FormData) {
     }
   });
 
-  redirect('/calendar/week');
+  redirect('/calendar');
 }
 
 /**

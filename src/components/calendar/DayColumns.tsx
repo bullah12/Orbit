@@ -64,7 +64,11 @@ export function DayColumns({
         {days.map((day) => {
           const { allDay } = splitDay(items, day);
           return (
-            <div key={`allday-${day}`} className="hairline flex flex-col gap-0.5 border-b border-r p-0.5">
+            <div
+              key={`allday-${day}`}
+              className="hairline flex flex-col gap-0.5 border-b border-r"
+              style={{ padding: '2px', minHeight: 'var(--row-min)' }}
+            >
               {allDay.map((item) => (
                 <div key={item.key} className="min-h-[1.4rem]">
                   <EventBlock item={item} compact={days.length > 1} />
@@ -101,11 +105,16 @@ export function DayColumns({
                 background: day === today ? 'var(--bg-hover)' : undefined,
               }}
             >
+              {/*
+                Hour rules are deliberately lighter than the day dividers:
+                --bg-sunken against the column rather than --line. Vertical
+                structure is what you read a week by, so it has to dominate.
+              */}
               {hourLines(day).map((line, i) => (
                 <div
                   key={`line-${i}`}
-                  className="hairline absolute inset-x-0 border-t"
-                  style={{ top: `${line.top * 100}%` }}
+                  className="absolute inset-x-0 border-t"
+                  style={{ top: `${line.top * 100}%`, borderColor: 'var(--bg-sunken)' }}
                   aria-hidden="true"
                 />
               ))}
@@ -153,13 +162,18 @@ function DayHeading({ day, today, view }: { day: DateOnly; today: DateOnly; view
       className="day-heading flex items-baseline gap-1.5"
       aria-label={`${weekday} ${dayNum} ${month}${isToday ? ', today' : ''}`}
     >
-      <span className={isToday ? 'text-xs font-semibold' : 'muted text-xs font-medium'}>
+      {/*
+        Today is the only day head at full --text and weight 600. Every other
+        day is muted at 500 — the difference is what lets the eye find today
+        without a coloured pill competing with the event blocks below it.
+      */}
+      <span className={isToday ? 'text-2xs font-semibold' : 'muted text-2xs font-medium'}>
         {view === 'day' ? new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long' }).format(d) : weekday}
       </span>
-      <span className={isToday ? 'text-sm font-semibold tabular-nums' : 'text-sm tabular-nums'}>
+      <span className={isToday ? 'tabular text-2xs font-semibold' : 'muted tabular text-2xs font-medium'}>
         {dayNum}
       </span>
-      <span className="faint text-2xs">{month}</span>
+      <span className={isToday ? 'tabular text-2xs font-semibold' : 'faint text-2xs'}>{month}</span>
       {isToday && <span className="sr-only">(today)</span>}
     </a>
   );
@@ -177,8 +191,10 @@ function NowLine({ day, today }: { day: DateOnly; today: DateOnly }) {
   const fraction = Math.max(0, Math.min(1, minutesIntoLondonDay(now) / londonDayMinutes(day)));
   return (
     <div
+      // Accent, not danger: now is a fact, not an alarm. This is the only bare
+      // accent hairline in the app and there is exactly one per view.
       className="pointer-events-none absolute inset-x-0 z-10 border-t"
-      style={{ top: `${fraction * 100}%`, borderColor: 'var(--danger)' }}
+      style={{ top: `${fraction * 100}%`, borderColor: 'var(--accent)' }}
       aria-hidden="true"
     />
   );

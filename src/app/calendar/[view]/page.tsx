@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { categoriesBySpace } from '@/lib/queries/tasks';
@@ -43,6 +43,17 @@ export default async function CalendarPage({
   if (!isCalendarView(view)) notFound();
 
   const { date, error } = await searchParams;
+
+  // The week is the calendar, and it lives at /calendar. This route carries the
+  // two grains that page deliberately does not offer. The date has to survive
+  // the move — an old link to a particular week is still a link to that week.
+  if (view === 'week') {
+    const carried = new URLSearchParams();
+    if (date) carried.set('date', date);
+    if (error) carried.set('error', error);
+    const qs = carried.toString();
+    redirect(qs ? `/calendar?${qs}` : '/calendar');
+  }
   const user = await requireUser();
   const today = todayFor();
   const anchor = normaliseDate(date) ?? today;
@@ -55,7 +66,8 @@ export default async function CalendarPage({
     listCalendarsBySpace(user.id),
   ]);
 
-  const days = view === 'month' ? monthGrid(anchor).flat() : view === 'week' ? weekDays(anchor) : [anchor];
+  // The week redirected away above, so only the two remaining grains are here.
+  const days = view === 'month' ? monthGrid(anchor).flat() : [anchor];
   const opaque = spaces.filter((s) => !s.canRead);
   const busyCount = items.filter((i) => i.isBusy).length;
 
@@ -94,23 +106,17 @@ export default async function CalendarPage({
           />
         </nav>
 
-        <nav className="flex items-center gap-1" aria-label="Calendar view">
-          {(['day', 'week', 'month'] as CalendarView[]).map((v) => (
-            <Link
-              key={v}
-              href={`/calendar/${v}?date=${anchor}`}
-              aria-current={v === view ? 'page' : undefined}
-              className="hairline row-hover rounded border px-2 py-1 text-xs capitalize"
-              style={
-                v === view
-                  ? { background: 'var(--accent)', color: 'var(--accent-text)', borderColor: 'var(--accent)' }
-                  : undefined
-              }
-            >
-              {v}
-            </Link>
-          ))}
-        </nav>
+        {/*
+          No Day/Week/Month switch anywhere in the calendar — that control asks
+          a question and belongs to Now. What is left is one way back to the
+          week, which is navigation rather than a range.
+        */}
+        <Link
+          href="/calendar"
+          className="hairline row-hover rounded-md border px-2 py-1 text-sm"
+        >
+          Back to the week
+        </Link>
 
         <Link
           href="/calendar/import"

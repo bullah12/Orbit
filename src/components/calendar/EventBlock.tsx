@@ -88,7 +88,8 @@ export function EventBlock({
 
   // Past the early return, the union has narrowed to a real event, which is the
   // only shape that has a category to take a colour from.
-  const accent = `var(--c-${item.category?.colour ?? item.space.colour}, var(--c-slate))`;
+  const colour = item.category?.colour ?? item.space.colour;
+  const accent = `var(--c-${colour}, var(--c-slate))`;
 
   // A recurring event's block names which occurrence was clicked, by its own
   // start instant — RFC 5545's RECURRENCE-ID. Every occurrence of a series links
@@ -101,8 +102,15 @@ export function EventBlock({
           ? `/calendar/event/${item.id}?on=${encodeURIComponent(item.startsAt)}`
           : `/calendar/event/${item.id}`
       }
-      className={`hairline row-hover rounded-sm border-y border-l-2 border-r ${className}`}
-      style={{ borderColor: accent, background: 'var(--bg-raised)' }}
+      className={`row-hover rounded border-l-2 ${className}`}
+      // The dense chip form of .block: same tokens, smaller geometry. The fill
+      // is the category's own -bg and the text its foreground, which is the one
+      // pair measured against each other in the contrast test.
+      style={{
+        borderLeftColor: accent,
+        background: `var(--c-${colour}-bg, var(--c-slate-bg))`,
+        color: accent,
+      }}
       aria-label={`${item.title || 'Untitled event'}, ${
         item.allDay ? 'all day' : formatTime(item.startsAt)
       }, ${item.space.name}`}

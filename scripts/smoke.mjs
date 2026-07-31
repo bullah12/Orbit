@@ -117,7 +117,14 @@ try {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/');
-    check('Today renders', (await page.locator('h1').first().innerText()) === 'Today');
+    // `/` is Now: the heading names the day rather than the page, and the
+    // range switch is the control that identifies it.
+    check(
+      'Now renders',
+      (await page.locator('h1').first().innerText()).trim().length > 0 &&
+        (await page.locator('.seg').count()) === 1,
+      await page.locator('h1').first().innerText(),
+    );
 
     await page.goto('/tasks/all');
     const rows = await page.locator('main ul li').count();
@@ -245,7 +252,7 @@ try {
     check('the outsider is in no space', spaceLinks === 0);
 
     for (const [label, url] of [
-      ['Today', '/'],
+      ['Now', '/'],
       ['All open', '/tasks/all'],
       ['Notes', '/notes'],
     ]) {
@@ -269,12 +276,12 @@ try {
   let homeIqbal;
   {
     const { ctx, page } = await pageAs(PRIYA);
-    await page.goto('/people');
+    await page.goto('/people/directory');
     const rows = await page.locator('main ul li').count();
     const indicators = await page.locator('main ul li span[title^="Space:"]').count();
     check('every person row carries a space indicator', indicators >= rows, `${indicators}/${rows}`);
 
-    await page.goto('/people?q=Iqbal');
+    await page.goto('/people/directory?q=Iqbal');
     const linked = page.locator('main ul li', { hasText: 'linked' });
     const linkedCount = await linked.count();
     check(
@@ -304,11 +311,11 @@ try {
     const { ctx, page } = await pageAs(PRIYA);
     const stamp = `Smoke Test ${Date.now()}`;
 
-    await page.goto('/people');
+    await page.goto('/people/directory');
     await page.fill('form[aria-label="Add a person"] input[name=displayName]', stamp);
     await page.click('form[aria-label="Add a person"] button:has-text("Add")');
     await settle(page);
-    await page.goto(`/people?q=${encodeURIComponent(stamp)}`);
+    await page.goto(`/people/directory?q=${encodeURIComponent(stamp)}`);
     const created = await page.locator('main ul li').count();
     check('a person can be created from the compose bar', created === 1, `${created} matches`);
 
@@ -388,7 +395,7 @@ try {
     // Clean up after ourselves.
     await page.click('button:has-text("Archive this person")');
     await settle(page);
-    await page.goto(`/people?q=${encodeURIComponent(stamp)}`);
+    await page.goto(`/people/directory?q=${encodeURIComponent(stamp)}`);
     check(
       'archiving removes them from the list',
       (await page.locator('main ul li').count()) === 0,
@@ -399,7 +406,7 @@ try {
 
   {
     const { ctx, page } = await pageAs(DANNY);
-    await page.goto(`/people?space=${S_WORK}`);
+    await page.goto(`/people/directory?space=${S_WORK}`);
     check('the partner sees no people in Work', (await page.locator('main ul li').count()) === 0);
 
     await page.goto(homeIqbal);
@@ -502,10 +509,17 @@ try {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/calendar/week');
+    // The heading is the week number now and the date range sits under it as
+    // secondary text, so the two are checked separately.
     check(
       'the week view renders',
-      (await page.locator('h1').first().innerText()).includes('–'),
+      /Week \d+/.test(await page.locator('h1').first().innerText()),
       await page.locator('h1').first().innerText(),
+    );
+    check(
+      'and names the dates it covers',
+      (await page.locator('header').first().innerText()).includes('–'),
+      await page.locator('header').first().innerText(),
     );
 
     const blocks = await page.locator('main a[href^="/calendar/event/"]').count();
@@ -2686,6 +2700,103 @@ try {
     check(
       'and the repeating event it created is deleted again',
       !(await page.locator('main').innerText()).includes(repeatTitle),
+    );
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------------- the three-surface IA
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    // Now: one page, three grains, range in the URL so it survives a reload.
+    for (const [range, expected] of [['today', 'Today'], ['week', 'Week'], ['month', 'Month']]) {
+      await page.goto(range === 'today' ? '/' : `/?range=${range}`);
+      const selected = page.locator('.seg [aria-current="true"]');
+      check(
+        `Now renders at the ${range} range with the switch reflecting it`,
+        (await selected.count()) === 1 && (await selected.innerText()).trim() === expected,
+        await selected.innerText(),
+      );
+      const stats = await page.locator('.stat-num').count();
+      check(`the ${range} summary strip carries its three stats`, stats === 3, `${stats} stats`);
+    }
+
+    // The summary number and the list under it come from one payload, so they
+    // are not allowed to disagree. This is the check that would catch a
+    // per-widget refetch creeping back in.
+    await page.goto('/');
+    const eventsStat = Number((await page.locator('.stat-num').first().innerText()).trim());
+    const blocks = await page.locator('.block, .busy').count();
+    check(
+      'the events count matches the agenda beneath it',
+      eventsStat === blocks,
+      `stat ${eventsStat} vs ${blocks} blocks`,
+    );
+
+    // Selection must not depend on hue. Reading it back through aria is the
+    // same thing a screen reader and the stylesheet both rely on.
+    await page.goto('/?range=month');
+    check(
+      'the range switch carries selection in aria, not only in colour',
+      (await page.locator('.seg [aria-current="true"]').innerText()).trim() === 'Month',
+    );
+
+    // The switch is ~162px intrinsic. Clipping "Month" was a real review
+    // finding, so it is pinned at the three widths that matter.
+    for (const width of [320, 375, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/?range=month');
+      const clipped = await page.locator('.seg').evaluate((el) => {
+        const seg = el.getBoundingClientRect();
+        const last = el.lastElementChild.getBoundingClientRect();
+        return {
+          overflow: el.scrollWidth > el.clientWidth + 1,
+          outside: last.right > seg.right + 1,
+          text: el.lastElementChild.scrollWidth > el.lastElementChild.clientWidth + 1,
+        };
+      });
+      check(
+        `the range switch is not clipped at ${width}px`,
+        !clipped.overflow && !clipped.outside && !clipped.text,
+        JSON.stringify(clipped),
+      );
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    // Calendar: the grid, and no range switch on it.
+    await page.goto('/calendar');
+    const calText = await page.locator('main').innerText();
+    check('the calendar renders a week grid', /Week \d+/.test(calText), calText.slice(0, 40));
+    check(
+      'and the calendar no longer carries the range switch',
+      (await page.locator('main .seg').count()) === 0,
+    );
+
+    // People: real geography, named pins, and nobody dropped from the list.
+    await page.goto('/people');
+    const paths = await page.locator('.map svg path').count();
+    check('People draws a real basemap, not a placeholder', paths > 50, `${paths} paths`);
+
+    const pins = await page.locator('.pin').count();
+    if (pins > 0) {
+      const named = await page.locator('.pin').evaluateAll((els) =>
+        els.every((el) => el.innerText.trim().length > 0),
+      );
+      check('every map pin carries a name, not just a colour', named, `${pins} pins`);
+      const haloed = await page.locator('.pin').evaluateAll((els) =>
+        els.every((el) => getComputedStyle(el).boxShadow !== 'none'),
+      );
+      check('and every pin keeps its halo', haloed);
+    }
+
+    const peopleRows = await page.locator('main ul li').count();
+    check('People lists everyone it can see', peopleRows > 0, `${peopleRows} rows`);
+    check(
+      'every interactive control on People has an accessible name',
+      await page.locator('main a, main button').evaluateAll((els) =>
+        els.every((el) => (el.innerText || el.getAttribute('aria-label') || '').trim().length > 0),
+      ),
     );
 
     await ctx.close();

@@ -20,6 +20,31 @@ import { todayISO, type DateOnly } from './format';
 
 export type TaskStatus = 'todo' | 'doing' | 'blocked' | 'done' | 'dropped';
 
+/**
+ * Smart lists.
+ *
+ * Derived from columns, never stored. Each one is a `where` fragment in
+ * queries/tasks.ts plus the order that makes it readable; what lives here is
+ * the name and the icon, which the nav needs and which must not drag a
+ * server-only module into the client bundle to get.
+ */
+export const SMART_LISTS = {
+  today:    { label: 'Today',    icon: 'check',  blurb: 'Due today, or overdue and still open' },
+  overdue:  { label: 'Overdue',  icon: 'clock',  blurb: 'Past their date and still open' },
+  upcoming: { label: 'Upcoming', icon: 'calendar', blurb: 'The next fortnight' },
+  inbox:    { label: 'Inbox',    icon: 'inbox',  blurb: 'No date, no decision yet' },
+  waiting:  { label: 'Waiting',  icon: 'pause',  blurb: 'Blocked on somebody else' },
+  someday:  { label: 'Someday',  icon: 'moon',   blurb: 'Deliberately deferred' },
+  done:     { label: 'Done',     icon: 'check',  blurb: 'Completed recently' },
+  all:      { label: 'All open', icon: 'circle', blurb: 'Everything still open' },
+} as const;
+
+export type SmartListKey = keyof typeof SMART_LISTS;
+
+export function isSmartListKey(v: string): v is SmartListKey {
+  return Object.prototype.hasOwnProperty.call(SMART_LISTS, v);
+}
+
 /** The subset of a task the smart lists actually read. */
 export type SmartListTask = {
   status: TaskStatus;

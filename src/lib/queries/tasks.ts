@@ -3,28 +3,14 @@ import { asUser, type Tx } from '@/lib/db';
 import type { SpaceRef } from '@/components/SpaceIndicator';
 
 /**
- * Smart lists.
- *
- * Derived from columns, never stored. Each one is a `where` fragment plus the
- * order that makes it readable. Adding a list means adding a row here and
- * nothing else.
+ * The smart lists themselves are labels and keys, not queries, so they live in
+ * src/lib/smartlists.ts alongside the membership rules — this module is
+ * server-only, and the nav that renders them runs on the client. Re-exported
+ * here because the query layer is where callers already look for them.
  */
-export const SMART_LISTS = {
-  today:    { label: 'Today',    icon: 'check',  blurb: 'Due today, or overdue and still open' },
-  overdue:  { label: 'Overdue',  icon: 'clock',  blurb: 'Past their date and still open' },
-  upcoming: { label: 'Upcoming', icon: 'calendar', blurb: 'The next fortnight' },
-  inbox:    { label: 'Inbox',    icon: 'inbox',  blurb: 'No date, no decision yet' },
-  waiting:  { label: 'Waiting',  icon: 'pause',  blurb: 'Blocked on somebody else' },
-  someday:  { label: 'Someday',  icon: 'moon',   blurb: 'Deliberately deferred' },
-  done:     { label: 'Done',     icon: 'check',  blurb: 'Completed recently' },
-  all:      { label: 'All open', icon: 'circle', blurb: 'Everything still open' },
-} as const;
+import { SMART_LISTS, isSmartListKey, type SmartListKey } from '@/lib/smartlists';
 
-export type SmartListKey = keyof typeof SMART_LISTS;
-
-export function isSmartListKey(v: string): v is SmartListKey {
-  return Object.prototype.hasOwnProperty.call(SMART_LISTS, v);
-}
+export { SMART_LISTS, isSmartListKey, type SmartListKey };
 
 export type TaskRow = {
   id: string;

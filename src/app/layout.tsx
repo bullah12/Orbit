@@ -3,7 +3,7 @@ import './globals.css';
 import { requireUser, listSelectableUsers } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
-import { Sidebar } from '@/components/Sidebar';
+import { TopNav } from '@/components/TopNav';
 
 export const metadata: Metadata = {
   title: 'Orbit',
@@ -23,11 +23,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       listSelectableUsers(),
     ]);
     body = (
-      <div className="flex min-h-screen">
+      // A column, not a row: with three destinations the nav is a top row and
+      // the width it used to occupy goes back to the content.
+      <div className="flex min-h-screen flex-col">
         <a href="#main" className="skip-link">
           Skip to content
         </a>
-        <Sidebar user={user} users={users} spaces={spaces} counts={counts} />
+        <TopNav user={user} users={users} spaces={spaces} counts={counts} />
         <main id="main" tabIndex={-1} className="min-w-0 flex-1">
           {children}
         </main>

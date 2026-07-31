@@ -108,7 +108,7 @@ export function RepeatEditor({
                     <span className="sr-only">{WEEKDAY_NAME[code]}</span>
                     <span
                       aria-hidden="true"
-                      className="hairline block rounded border px-1.5 py-1 text-2xs opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2"
+                      className="hairline flex rounded border px-1.5 py-1 text-2xs opacity-45 peer-checked:opacity-100 peer-focus-visible:outline peer-focus-visible:outline-2"
                     >
                       {code}
                     </span>

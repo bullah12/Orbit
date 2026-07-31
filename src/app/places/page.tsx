@@ -96,7 +96,7 @@ export default async function PlacesPage({
         <ul>
           {places.map((p) => (
             <li key={p.id} className="hairline row-hover border-b px-3 py-2">
-              <Link href={`/places/${p.id}` as never} className="block">
+              <Link href={`/places/${p.id}` as never} className="[display:block]">
                 <div className="flex flex-wrap items-baseline gap-2">
                   <span className="min-w-0 flex-1 truncate text-sm">
                     {p.isLocked ? <em className="muted">Locked place</em> : p.name}

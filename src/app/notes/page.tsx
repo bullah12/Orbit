@@ -68,7 +68,7 @@ export default async function NotesPage({
                 defaultChecked={i === 0}
                 className="peer sr-only"
               />
-              <span className="block rounded opacity-45 peer-checked:opacity-100">
+              <span className="flex rounded opacity-45 peer-checked:opacity-100">
                 <SpaceIndicator space={s} />
               </span>
             </label>
@@ -92,7 +92,7 @@ export default async function NotesPage({
         <ul>
           {notes.map((n) => (
             <li key={n.id} className="hairline row-hover border-b px-3 py-2">
-              <Link href={`/notes/${n.id}` as never} className="block">
+              <Link href={`/notes/${n.id}` as never} className="[display:block]">
                 <div className="flex items-baseline gap-2">
                   {n.pinnedAt && <Icon name="pin" size={11} className="faint shrink-0" />}
                   <span className="min-w-0 flex-1 truncate text-sm">

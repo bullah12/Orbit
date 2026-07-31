@@ -1,124 +1,116 @@
 import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
-import { listSpaces } from '@/lib/queries/spaces';
-import { listPeople } from '@/lib/queries/people';
-import { categoriesBySpace } from '@/lib/queries/tasks';
-import { ComposePerson } from '@/components/ComposePerson';
-import { SpaceIndicator, CategoryChip } from '@/components/SpaceIndicator';
+import { listWhereabouts, type Whereabouts } from '@/lib/queries/whereabouts';
+import { PeopleMap } from '@/components/PeopleMap';
+import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
-import { formatDueDate, plural } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PeoplePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ space?: string; q?: string }>;
-}) {
-  const { space: spaceId, q } = await searchParams;
+/**
+ * People — where everyone is.
+ *
+ * Read-only and one nav step away from Now, on purpose: location is glanceable
+ * but rarely actionable, and a map on the landing page would make the first
+ * thing this app does every morning a location question.
+ *
+ * What it shows is *last known*, from check-ins and the calendar. Orbit does
+ * not track anyone in the background and never asks for the permission — see
+ * decision 5. A person whose position is not readable stays in the list and
+ * renders `.locked`; the absence has to read as deliberate rather than as
+ * somebody who dropped off the map.
+ */
+export default async function PeoplePage() {
   const user = await requireUser();
-  const [spaces, categories, people] = await Promise.all([
-    listSpaces(user.id),
-    categoriesBySpace(user.id),
-    listPeople(user.id, { spaceId: spaceId ?? null, query: q ?? '' }),
-  ]);
-
-  const activeSpace = spaces.find((s) => s.id === spaceId);
+  const people = await listWhereabouts(user.id);
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="hairline border-b px-5 py-4">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-lg font-semibold">People</h1>
-          {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
-          <span className="faint text-xs">{plural(people.length, 'person', 'people')}</span>
-        </div>
-        <p className="muted mt-0.5 text-xs">
-          The same person can appear in more than one space. Those records stay separate
-          and are linked, never merged.
-        </p>
-      </header>
-
-      <ComposePerson spaces={spaces} categories={categories} defaultSpaceId={spaceId} />
-
-      {/* GET, not a server action: a search you can bookmark and go back to. */}
-      <form
-        method="get"
-        className="hairline flex flex-wrap items-center gap-2 border-b px-3 py-2"
-        style={{ background: 'var(--bg-raised)' }}
-      >
-        {spaceId && <input type="hidden" name="space" value={spaceId} />}
-        <label htmlFor="people-q" className="sr-only">
-          Search people by name or nickname
-        </label>
-        <Icon name="users" size={14} className="faint" />
-        <input
-          id="people-q"
-          name="q"
-          defaultValue={q ?? ''}
-          placeholder="Search by name or nickname…"
-          autoComplete="off"
-          className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
-        />
-        <button type="submit" className="hairline rounded border px-2 py-1 text-xs">
-          Search
-        </button>
-        {q && (
-          <Link href="/people" className="faint text-xs">
-            Clear
+    <div className="mx-auto w-full max-w-[52rem] px-3 py-4">
+      <div className="surface overflow-hidden">
+        <header className="hairline flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-2.5 py-2">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold" style={{ letterSpacing: '-0.01em' }}>
+              People
+            </h1>
+            <p className="muted text-xs">Last known, from check-ins and the calendar</p>
+          </div>
+          <Link
+            href="/people/directory"
+            className="hairline row-hover ml-auto shrink-0 rounded-md border px-2 py-1 text-sm"
+          >
+            Directory
           </Link>
-        )}
-      </form>
+        </header>
 
-      {people.length === 0 ? (
-        <p className="faint px-5 py-10 text-sm">
-          {q ? `Nobody matches “${q}”.` : 'No people here.'}
-        </p>
-      ) : (
-        <ul>
-          {people.map((p) => (
-            <li key={p.id} className="hairline row-hover border-b px-3 py-2">
-              <Link href={`/people/${p.id}` as never} className="block">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    {p.isLocked ? <em className="muted">Locked person</em> : p.displayName}
-                    {p.nickname && !p.isLocked && (
-                      <span className="faint ml-1.5 text-2xs">“{p.nickname}”</span>
-                    )}
-                  </span>
-                  {p.linkCount > 0 && (
-                    <span
-                      className="faint inline-flex shrink-0 items-center gap-1 text-2xs"
-                      title="Also has a record in another space"
-                    >
-                      <Icon name="link" size={10} />
-                      linked
-                    </span>
-                  )}
-                  {p.nextDate && (
-                    <span className="faint inline-flex shrink-0 items-center gap-1 text-2xs">
-                      <Icon name="cake" size={10} />
-                      {formatDueDate(nextOccurrence(p.nextDate.onDate))}
-                    </span>
-                  )}
-                  <CategoryChip category={p.category} />
-                  <SpaceIndicator space={p.space} />
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+        <PeopleMap people={people} />
+
+        {people.length === 0 ? (
+          <p className="faint px-2.5 py-8 text-sm">
+            Nobody shares a space with you yet, so there is nothing to place.
+          </p>
+        ) : (
+          <ul>
+            {people.map((p) => (
+              <PersonRow key={p.personId} person={p} />
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
 
-/** The next time this day-of-year comes round, as an ISO date. */
-function nextOccurrence(onDate: string): string {
-  const today = new Date();
-  const [, m, d] = onDate.slice(0, 10).split('-');
-  const year = today.getUTCFullYear();
-  const thisYear = `${year}-${m}-${d}`;
-  const todayIso = today.toISOString().slice(0, 10);
-  return thisYear >= todayIso ? thisYear : `${year + 1}-${m}-${d}`;
+function PersonRow({ person }: { person: Whereabouts }) {
+  return (
+    <li className="row row-hover">
+      <span
+        className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ background: `var(--c-${person.space.colour}, var(--c-slate))` }}
+        aria-hidden="true"
+      />
+      <span className="min-w-0 shrink-0 text-sm">{person.name}</span>
+
+      {person.locked ? (
+        // Sharing is off. Mono and dashed, because the absence is a decision
+        // somebody made and has to read as one — not as a missing row.
+        <span className="locked min-w-0 flex-1">Location not shared</span>
+      ) : (
+        <>
+          <span className="muted min-w-0 flex-1 truncate text-xs">
+            {person.placeName == null ? (
+              <span className="faint">No recent check-in</span>
+            ) : (
+              <>
+                {person.present && (
+                  <Icon name="map_pin" size={10} className="mr-1 inline-block align-baseline" />
+                )}
+                {person.placeName}
+              </>
+            )}
+          </span>
+          <span className="faint tabular shrink-0 text-xs">{lastSeen(person)}</span>
+        </>
+      )}
+
+      <SpaceIndicator space={person.space} />
+    </li>
+  );
+}
+
+/**
+ * How long ago, in words a household actually uses. "Now" is reserved for a
+ * visit with no departure — somebody who is still there, rather than somebody
+ * who arrived a minute ago and left.
+ */
+function lastSeen(person: Whereabouts): string {
+  if (person.lastSeen == null) return '';
+  if (person.present) return 'now';
+
+  const mins = Math.round((Date.now() - new Date(person.lastSeen).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? 'yesterday' : `${days}d ago`;
 }
