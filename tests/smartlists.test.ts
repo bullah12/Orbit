@@ -209,8 +209,68 @@ describe('countByList', () => {
       clock,
     );
     expect(counts).toEqual({
-      today: 2, overdue: 1, upcoming: 0, inbox: 1,
+      mine: 0, today: 2, overdue: 1, upcoming: 0, inbox: 1,
       waiting: 0, someday: 0, done: 1, all: 3,
     });
+  });
+});
+
+/**
+ * `mine` is the only list that depends on who is asking, which is the whole
+ * reason `Clock` carries a `viewerId`. The SQL it mirrors is:
+ *
+ *   t.status in ('todo','doing','blocked') and t.assignee_id = <viewer>
+ *
+ * — in `clause()` in src/lib/queries/tasks.ts, running against
+ * `tasks_assignee_idx`, the partial index that has existed since migration 0002
+ * and had no query until now.
+ */
+describe('mine', () => {
+  const VIEWER = '00000000-0000-0000-0000-000000000001';
+  const OTHER = '00000000-0000-0000-0000-000000000002';
+  const mineClock: Clock = { ...clock, viewerId: VIEWER };
+
+  it('holds an open task assigned to the viewer', () => {
+    expect(inSmartList('mine', task({ assigneeId: VIEWER }), mineClock)).toBe(true);
+  });
+
+  it('holds a blocked task, because blocked is still open and still yours', () => {
+    expect(inSmartList('mine', task({ status: 'blocked', assigneeId: VIEWER }), mineClock))
+      .toBe(true);
+  });
+
+  it('does not hold a task assigned to somebody else', () => {
+    expect(inSmartList('mine', task({ assigneeId: OTHER }), mineClock)).toBe(false);
+  });
+
+  it('does not hold an unassigned task', () => {
+    expect(inSmartList('mine', task({ assigneeId: null }), mineClock)).toBe(false);
+    expect(inSmartList('mine', task(), mineClock)).toBe(false);
+  });
+
+  it('does not hold a task the viewer has finished', () => {
+    expect(
+      inSmartList(
+        'mine',
+        task({ status: 'done', completedAt: '2026-07-14T10:00:00Z', assigneeId: VIEWER }),
+        mineClock,
+      ),
+    ).toBe(false);
+  });
+
+  /**
+   * The case that matters most: with no viewer, "assigned to me" has no answer.
+   * Returning false is the safe reading — the alternative is a list that
+   * quietly means "assigned to nobody", which would show one household member
+   * another's tasks under the heading "Mine".
+   */
+  it('holds nothing at all when there is no viewer, rather than matching null', () => {
+    expect(inSmartList('mine', task({ assigneeId: VIEWER }), clock)).toBe(false);
+    expect(inSmartList('mine', task({ assigneeId: null }), clock)).toBe(false);
+  });
+
+  it('is independent of the due date, unlike every other open list', () => {
+    expect(inSmartList('mine', task({ assigneeId: VIEWER, dueOn: '2029-01-01' }), mineClock))
+      .toBe(true);
   });
 });

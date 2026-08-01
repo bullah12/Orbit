@@ -1,4 +1,4 @@
-import { hourLines, layoutDay, splitDay, type CalendarView } from '@/lib/calendar';
+import { hourLines, layoutDay, scrollToMinute, splitDay, type CalendarView } from '@/lib/calendar';
 import {
   formatDate,
   londonDayISO,
@@ -8,6 +8,7 @@ import {
 } from '@/lib/format';
 import type { CalendarItem } from '@/lib/queries/events';
 import { EventBlock } from './EventBlock';
+import { ScrollToFocus } from './ScrollToFocus';
 
 /**
  * The day and week grids. One component: a week is seven day columns, and
@@ -35,9 +36,23 @@ export function DayColumns({
   // A fixed pixel height per day rather than a fraction of the viewport: a
   // dense calendar that rescales as the window changes is unreadable.
   const gridHeight = 960;
+  const focusDay = days.includes(today) ? today : (days[0] ?? today);
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto" data-calendar-scroll>
+      {/* Which day decides where the grid opens: today if it is on screen,
+          otherwise the first one. `scrollToMinute` is the rule and it lives in
+          the pure module with the rest of the calendar's arithmetic. */}
+      <ScrollToFocus
+        fraction={
+          scrollToMinute(
+            items.filter((i) => !i.allDay),
+            focusDay,
+            new Date(),
+          ) / londonDayMinutes(focusDay)
+        }
+        gridHeight={gridHeight}
+      />
       <div
         className="grid min-w-max"
         style={{ gridTemplateColumns: `3.25rem repeat(${days.length}, minmax(9rem, 1fr))` }}
@@ -169,6 +184,12 @@ function DayHeading({ day, today, view }: { day: DateOnly; today: DateOnly; view
  * The current-time line. Rendered on the server, so it is correct at page load
  * and does not move afterwards — a ticking line would mean a client component
  * and a re-render every minute for a line nobody is watching.
+ *
+ * It wears `.now-line` and is therefore `--accent`, not `--danger`. Status is
+ * not category and it is not chrome either: red means "careful" everywhere else
+ * in the app, and the current time is not a warning. globals.css names this the
+ * only bare accent hairline in the app, on the grounds that it is not
+ * interactive and means exactly one thing — this is that one thing.
  */
 function NowLine({ day, today }: { day: DateOnly; today: DateOnly }) {
   if (day !== today) return null;
@@ -177,8 +198,8 @@ function NowLine({ day, today }: { day: DateOnly; today: DateOnly }) {
   const fraction = Math.max(0, Math.min(1, minutesIntoLondonDay(now) / londonDayMinutes(day)));
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 z-10 border-t"
-      style={{ top: `${fraction * 100}%`, borderColor: 'var(--danger)' }}
+      className="now-line pointer-events-none absolute inset-x-0 z-10"
+      style={{ top: `${fraction * 100}%` }}
       aria-hidden="true"
     />
   );

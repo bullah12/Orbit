@@ -27,7 +27,38 @@ export type SmartListTask = {
   deferredUntil: string | null;
   completedAt: string | null;
   parentTaskId?: string | null;
+  /** Only `mine` reads this, and only against `Clock.viewerId`. */
+  assigneeId?: string | null;
 };
+
+/**
+ * The lists themselves — label, icon and the sentence under the heading.
+ *
+ * This lives here rather than in `queries/tasks.ts` because the navigation
+ * needs it in the browser, and that module imports `server-only`. The SQL is
+ * still the source of truth for *listing*; this is the source of truth for what
+ * each list is called.
+ */
+export const SMART_LISTS = {
+  // First, because in a shared space "is this mine?" is asked before "is it
+  // due?". `tasks_assignee_idx` — a partial index on open tasks by assignee —
+  // has existed since migration 0002 and this is the query it was built for.
+  mine:     { label: 'Mine',     icon: 'user',   blurb: 'Assigned to you, and still open' },
+  today:    { label: 'Today',    icon: 'check',  blurb: 'Due today, or overdue and still open' },
+  overdue:  { label: 'Overdue',  icon: 'clock',  blurb: 'Past their date and still open' },
+  upcoming: { label: 'Upcoming', icon: 'calendar', blurb: 'The next fortnight' },
+  inbox:    { label: 'Inbox',    icon: 'inbox',  blurb: 'No date, no decision yet' },
+  waiting:  { label: 'Waiting',  icon: 'pause',  blurb: 'Blocked on somebody else' },
+  someday:  { label: 'Someday',  icon: 'moon',   blurb: 'Deliberately deferred' },
+  done:     { label: 'Done',     icon: 'check',  blurb: 'Completed recently' },
+  all:      { label: 'All open', icon: 'circle', blurb: 'Everything still open' },
+} as const;
+
+export type SmartListKey = keyof typeof SMART_LISTS;
+
+export function isSmartListKey(v: string): v is SmartListKey {
+  return Object.prototype.hasOwnProperty.call(SMART_LISTS, v);
+}
 
 export const OPEN_STATUSES: TaskStatus[] = ['todo', 'doing', 'blocked'];
 
@@ -35,7 +66,13 @@ export function isOpen(status: TaskStatus): boolean {
   return OPEN_STATUSES.includes(status);
 }
 
-export type Clock = { today: DateOnly; now: Date };
+/**
+ * `viewerId` is optional because only one list reads it. A `mine` question
+ * asked without a viewer has no answer, so it returns false rather than
+ * guessing — the alternative is a list that quietly means "assigned to
+ * nobody".
+ */
+export type Clock = { today: DateOnly; now: Date; viewerId?: string | null };
 
 export function clockNow(now: Date = new Date()): Clock {
   return { today: todayISO(now), now };
@@ -48,6 +85,10 @@ type Predicate = (t: SmartListTask, c: Clock) => boolean;
  * Deliberately verbose: each line should be readable next to its SQL.
  */
 export const SMART_LIST_PREDICATES: Record<string, Predicate> = {
+  // status in (todo,doing,blocked) and assignee_id = <viewer>
+  mine: (t, c) =>
+    isOpen(t.status) && c.viewerId != null && t.assigneeId != null && t.assigneeId === c.viewerId,
+
   // status in (todo,doing,blocked) and due_on is not null and due_on <= current_date
   today: (t, c) => isOpen(t.status) && t.dueOn != null && t.dueOn <= c.today,
 

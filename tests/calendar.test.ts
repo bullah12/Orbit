@@ -393,4 +393,64 @@ describe('scrollToMinute', () => {
       scrollToMinute([ev('2026-07-15', '00:00', '00:00', true)], '2026-07-15'),
     ).toBe(390);
   });
+
+  /**
+   * Now wins over the first event whenever the day being shown is today. This
+   * is what stops the grid opening on seven empty night hours, which on a phone
+   * was the whole screen. Half an hour of headroom is kept above it, because
+   * arriving at 14:05 you nearly always want to see what 13:30 was.
+   */
+  describe('when today is the day on screen', () => {
+    it('opens half an hour before now, not at the first event', () => {
+      const now = londonInstant('2026-07-15', '14:05');
+      expect(scrollToMinute([ev('2026-07-15', '09:00', '10:00')], '2026-07-15', now))
+        .toBe(13 * 60 + 35);
+    });
+
+    it('does not scroll above the top of the day in the small hours', () => {
+      expect(
+        scrollToMinute(
+          [ev('2026-07-15', '09:00', '10:00')],
+          '2026-07-15',
+          londonInstant('2026-07-15', '00:10'),
+        ),
+      ).toBe(0);
+    });
+
+    it('opens at now even when nothing is on that day at all', () => {
+      expect(scrollToMinute([], '2026-07-15', londonInstant('2026-07-15', '16:00')))
+        .toBe(15 * 60 + 30);
+    });
+
+    it('ignores a `now` belonging to a different day, and falls back to the events', () => {
+      expect(
+        scrollToMinute(
+          [ev('2026-07-15', '09:00', '10:00')],
+          '2026-07-15',
+          londonInstant('2026-07-16', '14:00'),
+        ),
+      ).toBe(390);
+    });
+
+    it('falls back to the events when no clock is given at all', () => {
+      expect(scrollToMinute([ev('2026-07-15', '09:00', '10:00')], '2026-07-15', null))
+        .toBe(390);
+    });
+
+    /**
+     * Minutes are measured from London midnight, so on the 25-hour day in
+     * October 14:00 is 900 minutes in rather than 840 — the repeated hour is
+     * counted. Getting this wrong would put the grid an hour off on exactly
+     * one day a year, which is the kind of bug nobody finds until October.
+     */
+    it('counts the repeated hour on the 25-hour day', () => {
+      expect(scrollToMinute([], '2026-10-25', londonInstant('2026-10-25', '14:00')))
+        .toBe(15 * 60 - 30);
+    });
+
+    it('counts the missing hour on the 23-hour day', () => {
+      expect(scrollToMinute([], '2026-03-29', londonInstant('2026-03-29', '14:00')))
+        .toBe(13 * 60 - 30);
+    });
+  });
 });
