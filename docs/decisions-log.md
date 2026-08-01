@@ -1108,3 +1108,126 @@ options were weighed.
 - **Nothing was deployed, no hosting account was created and nothing was bought.**
   `docs/deploy.md` is commands somebody can follow and says at the top that none
   of them has been run here.
+
+---
+
+## Session 10 — the design and functionality review, and the phone
+
+The brief was to suggest improvements to looks, design and functionality;
+compare Orbit to similar apps; and build. `docs/design-review.md` is the review
+and holds the evidence for every claim; these are the decisions taken while
+acting on it.
+
+### About the review itself
+
+- **Every finding was checked against the running app or counted in `src`,
+  and three of the first draft's claims were wrong.** The calendar *does* have a
+  now-line (an ad-hoc `border-t` in `--danger`, not the `.now-line` the
+  stylesheet defines); `scrollToMinute` *already existed* and was already tested;
+  and the US-format date inputs are the browser's locale doing its job, not a bug
+  to fix by replacing a native control. The review was corrected in place rather
+  than quietly tidied, because a later session reading it needs to know which
+  parts were checked and which were assumed.
+- **The comparison table is not flattering by construction.** Orbit is ahead of
+  Cozi, Todoist, Things and Apple Reminders on the hard things — on-device
+  parsing, free/busy sharing, conflicts that are named rather than resolved,
+  E2E-modelled items — and was behind them all on being reachable from a phone.
+  The expensive half was already done.
+
+### The phone
+
+- **The rail is hidden below `md` rather than made narrow.** 240px of a 390px
+  screen is 62%, and there is no width at which a rail and a dense list both fit.
+  A bottom bar plus a drawer is two shapes of one component (`SidebarNav`), not
+  two components — the same argument as `DayColumns` rendering both the day and
+  the week.
+- **The bar is along the bottom because that is where a thumb is**, and it is
+  `env(safe-area-inset-bottom)` above the home indicator. `--tabbar` is one token
+  carrying both the bar's height and the padding that clears it, because those
+  were about to be two numbers in two files.
+- **`maximum-scale` is deliberately not set.** Pinching to zoom is somebody's
+  accessibility, not a layout bug to suppress.
+- **The manifest declares no icons.** An icon pointing at a file that does not
+  exist is a broken image on somebody's home screen, and there is no artwork in
+  this repository to point at. The platform's letter is better than a broken
+  image.
+- **Making the app installable made the missing service worker a real gap.**
+  It was a nicety while Orbit was a tab; an installed app that shows a network
+  error when the connection drops is worse than a bookmark. Recorded as edge 33
+  and promoted to the third of the next three things.
+
+### Today, and the stylesheet that had been waiting for it
+
+- **The summary strip counts the arrays it is about to render.** The handoff
+  argued for one `summary(range)` query so the number and the list cannot
+  disagree; deriving both from the same arrays gets the same guarantee without a
+  new query module, and the guarantee was the point.
+- **Building it found the bug it was meant to prevent.** The `today` smart list
+  is "due today **or** overdue", so counting all of it as due and the remainder as
+  overdue reported 35 due and 0 overdue on a day when 34 of the 35 were weeks
+  past their date. Split into two disjoint lists.
+- **The range lives in the URL, and the switch is links rather than buttons**,
+  so it survives a reload, can be sent to somebody, and the back button means
+  what it says.
+- **Six dead utilities were spent rather than deleted.** `.seg`, `.stat`,
+  `.stat-num`, `.block-time`, `.block-now` and `.now-line` were adopted in
+  `74789ce` and never used. Deleting them would have been the smaller change and
+  the wrong one: they were designed and contrast-checked for a page worth
+  building.
+- **`.now-line::before` moved to the line's own left edge.** As the default, the
+  gutter offset put the dot in the previous day's column; the agenda keeps the
+  old position via `.now-line-gutter`, which is the one place the line starts
+  after a gutter.
+
+### Assignment
+
+- **Somebody else's name is louder than your own.** In your own lists nearly
+  every row is yours, so "You" on all of them is noise and the two rows that are
+  *not* yours are the signal. `/tasks/mine` renders no assignee at all.
+- **It is still not settable from the compose bar, on purpose.** That bar
+  already carries a title, a date, a category and one chip per writable space,
+  and on a phone that was three rows before anything was added. Recorded as edge
+  32 with the two better homes named: a picker on the row, or a `to:` phrase in
+  capture.
+- **The compose bar collapses on a phone and opens on focus, and this does not
+  weaken the space safeguard.** The chips are visible before anything can be
+  typed, because focusing the title is what opens them. What is hidden is a row
+  not yet reached, not a decision.
+
+### Shortcuts
+
+- **The three rules live in a pure module so they can be tested without a DOM.**
+  The one that matters is "never take a key from somebody who is typing": `c` is
+  Capture, and typing "citrus" into a task title must not navigate away. It fails
+  silently and confusingly when it is wrong, which is exactly the kind of rule
+  this codebase puts in `src/lib/` with tests.
+- **No shortcut is the only way to do anything**, and `?` lists them all.
+  Anything carrying ⌘, Ctrl or Alt is given back to the browser.
+- **`g` is a prefix that forgets itself after 1.2 seconds**, so a stray `g` does
+  not silently change what the next keystroke does minutes later.
+
+### The light/dark override was not built, and that is the decision
+
+- **A manual theme toggle needs a decision about `globals.css` that should be
+  made deliberately.** `tests/contrast.test.ts` finds the dark palette by
+  brace-matching `@media (prefers-color-scheme: dark)` and treats every `oklch()`
+  outside it as a light value, so a `:root[data-theme='dark']` block would either
+  duplicate sixty declarations that then drift, or be read by the test as a
+  redefinition of the light theme. The two real options — `light-dark()`, or
+  duplicate-and-pin-with-a-test — are set out in the review with what each costs.
+  Guessing between them halfway through a session is how a carefully looked-after
+  file gets damaged.
+
+### Tests
+
+- **Ten smoke checks now run at 390×844, and every one fails on the previous
+  commit.** The bug that started this session — task titles pushed off the screen
+  — was invisible to a suite that only ever opened a desktop-sized window, so the
+  suite now measures a title's bounding box against the viewport.
+- **Three existing smoke checks were adjusted and one was already broken.**
+  Reading a calendar block's time moved to its accessible name, because a compact
+  block no longer repeats the time it is positioned against; two sidebar checks
+  say `nav:visible`, because the navigation is rendered twice and CSS shows one.
+  The fourth was pre-existing: a check looked for an event the fixture places at
+  `today + 2` in the week containing *today*, so it passed Monday to Friday and
+  failed at the weekend. This session ran on a Saturday.

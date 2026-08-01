@@ -256,6 +256,58 @@ That is a good problem. The expensive half is done.
 
 ---
 
+## What was built, and what was not
+
+Session 10 did items 1–6 and part of 8. The state of each is below; the plan
+that argued for them is kept underneath, unedited, because the reasoning is
+what a later session needs rather than the tick.
+
+| # | Item | State |
+|---|---|---|
+| 1 | Phone | **Done.** Viewport, manifest, bottom bar + drawer, rows that keep the title, `--tabbar`. |
+| 2 | Now page | **Done.** Range switch, summary strip, agenda of real events, now-line, `--measure`. |
+| 3 | Active nav | **Done.** `aria-current` on rail, drawer and bar; Rules/Sync/AI moved under More. |
+| 4 | Assignment | **Mostly.** On the row, and the `mine` list exists. **Not** settable from the compose bar — see below. |
+| 5 | Calendar | **Done.** Opens at now, `.now-line` in accent, left-edge colour only, no repeated time. |
+| 6 | Shortcuts | **Done.** `g`-sequences, `/`, `c`, `?`, all in a pure module with tests. |
+| 7 | Settings | **Not started.** Blocked on a real decision — see below. |
+| 8 | Dates | **Partly.** Page titles spell the date out. The inputs were left native, deliberately. |
+
+**Item 4, the missing half.** Assignment can be read on a row and filtered by,
+but still cannot be *set* except on the detail page. The compose bar was the
+obvious home and is the wrong one: it already carries a title, a date, a
+category and a space chip per writable space, and on a phone that was three
+rows before anything was added. The honest next step is a picker on the row
+itself, or a `to:` phrase in capture — `src/lib/capture/` already parses far
+harder things locally.
+
+**Item 7, and why it is not a small job.** A manual light/dark override needs
+somewhere to put a second set of token values. `globals.css` declares the dark
+palette inside `@media (prefers-color-scheme: dark)`, and
+`tests/contrast.test.ts` finds it by brace-matching that exact string and
+treats every `oklch()` outside it as a light value. So adding
+`:root[data-theme='dark'] { … }` would either duplicate about sixty
+declarations — which then drift — or be silently read by the test as a
+redefinition of the *light* theme, which is worse.
+
+There are two real options and they should be chosen deliberately rather than
+discovered halfway through:
+
+- **`light-dark()`** — one declaration per token holding both values, and the
+  override becomes a single `color-scheme` line. No duplication at all, and the
+  contrast test gets *simpler* (the brace-matching goes away). It means
+  rewriting every token pair and merging the two blocks, which loses the
+  comments that currently explain the dark values on their own.
+- **Duplicate and pin** — keep the file exactly as it reads today, add the
+  override block, and add a test asserting the two dark blocks declare
+  identical values. Preserves every comment; costs sixty lines that only a test
+  keeps honest.
+
+Neither is hard. Both are a decision about a file that has been carefully
+looked after, which is why this session stopped rather than guessing.
+
+---
+
 ## Plan
 
 Ordered by (value × fit with the standing rules) ÷ cost. Every item respects:
