@@ -3066,6 +3066,55 @@ try {
     }
   }
 
+  // ------------------------------------------------------- keyboard shortcuts
+  //
+  // globals.css justifies the focus ring with "a dense interface is a keyboard
+  // interface", and until now the app had one addEventListener in src/ and it
+  // was listening for `online`. The two checks that matter most here are the
+  // ones about what a shortcut must *not* do.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/');
+
+    await page.keyboard.press('g');
+    await page.keyboard.press('c');
+    await page.waitForURL('**/calendar/week');
+    check(
+      'g then c goes to the calendar',
+      new URL(page.url()).pathname === '/calendar/week',
+      page.url(),
+    );
+
+    await page.keyboard.press('/');
+    await page.waitForURL('**/search');
+    check('slash goes to search', new URL(page.url()).pathname === '/search', page.url());
+
+    // The guard that makes single-letter shortcuts safe at all: `c` is Capture,
+    // and somebody typing "citrus" into a task title must stay where they are.
+    await page.goto('/');
+    const title = page.locator('form[aria-label="Add a task"] input[name="title"]');
+    await title.click();
+    await title.type('citrus');
+    check(
+      'a shortcut does not fire while somebody is typing',
+      new URL(page.url()).pathname === '/' && (await title.inputValue()) === 'citrus',
+      `${page.url()} value=${await title.inputValue()}`,
+    );
+
+    await page.goto('/');
+    await page.keyboard.press('?');
+    const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    check('? opens the list of them', await help.isVisible());
+    check(
+      'and the list names the sequences rather than hiding them',
+      (await help.innerText()).includes('Calendar') && (await help.innerText()).includes('g'),
+    );
+    await page.keyboard.press('Escape');
+    check('Escape closes the shortcut list', !(await help.isVisible()));
+
+    await ctx.close();
+  }
+
   // ------------------------------------------------------------ on a phone
   //
   // Orbit is a household organiser and a household organiser is consulted
@@ -3132,7 +3181,7 @@ try {
         (await drawer.locator('a[href="/notes"]').count()) === 1,
     );
     await page.keyboard.press('Escape');
-    check('Escape closes it', !(await drawer.isVisible()));
+    check('Escape closes the drawer', !(await drawer.isVisible()));
 
     await ctx.close();
   }

@@ -4,6 +4,7 @@ import { getCurrentUser, listSelectableUsers, usesDevAuth } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
 import { Sidebar } from '@/components/Sidebar';
+import { Shortcuts } from '@/components/Shortcuts';
 
 export const metadata: Metadata = {
   title: 'Orbit',
@@ -72,6 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <main id="main" tabIndex={-1} className="min-w-0 flex-1 pb-[var(--tabbar)]">
             {children}
           </main>
+          <Shortcuts />
         </div>
       );
     }
