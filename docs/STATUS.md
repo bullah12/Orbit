@@ -26,7 +26,7 @@ end of session 10, and all five were green:
 pnpm build             clean
 pnpm typecheck         clean (needs the build first on a fresh clone)
 pnpm test              735 Vitest tests in 17 files   (was 692)
-pnpm smoke             398/398 against the running app   (was 382; needs pnpm start)
+pnpm smoke             402/402 against the running app   (was 382; needs pnpm start)
 ```
 
 No migration was written this session, which is why pgTAP is unchanged at 106.
@@ -115,7 +115,9 @@ nothing rendered either.
 - **`/tasks/mine`** is the ninth smart list and the query that index was for. It
   does not render the assignee at all — a column saying "You" on every row of a
   list called Mine is a column saying nothing.
-- **It still cannot be *set* from the compose bar.** See "Known bugs" 32.
+- **It can be set by typing `@danny` into capture**, which has worked since
+  Phase 5 and had never been driven end to end by a check. It still cannot be
+  set from the compose bar, deliberately. See "Known bugs" 32.
 
 **The calendar opens where the day is.** It opened at 00:00 with roughly seven
 empty night hours filling the viewport. `scrollToMinute` **already existed** in
@@ -219,13 +221,22 @@ is now installable, which makes that a real gap rather than a nicety (see
 
 ### New in session 10
 
-32. **Assignment can be read and filtered but not set, except on the detail
-    page.** The row shows it and `/tasks/mine` filters by it, but `ComposeTask`
-    has no assignee control. This was a decision, not an oversight: the compose
-    bar already carries a title, a date, a category and one chip per writable
-    space, and on a phone that was three rows before anything was added. The
-    better homes are a picker on the row itself, or a `to:` phrase in capture —
-    `src/lib/capture/` already parses much harder things locally.
+32. **Assignment cannot be set from the compose bar.** *(Corrected before the
+    session ended: an earlier draft of this entry said it could not be set
+    anywhere but the detail page. That was wrong — see below.)* `ComposeTask`
+    has no assignee control, and it is not getting one: that bar already carries
+    a title, a date, a category and one chip per writable space, and on a phone
+    that was three rows before anything was added. A picker on the row itself is
+    the remaining gap worth filling.
+
+    **`@person` in capture has worked end to end since Phase 5.**
+    `parseCapture` produces `assigneeHint`, `resolveAssignee` in
+    `src/lib/queries/capture.ts` matches it against active members of the target
+    space by display name or first name, and `createFromCapture` writes it.
+    Typing `bins out tomorrow @danny #home` reads back "assign to danny" as a
+    chip *before* anything is created, and the row lands with Danny on it. It
+    had **no end-to-end check** until session 10 added four; the capability was
+    there and nothing was watching it.
 33. **Orbit is installable and has no service worker.** `src/app/manifest.ts`
     means it can be added to a home screen, and an installed app that shows a
     network error when the connection drops is a worse impression than a
@@ -303,7 +314,7 @@ pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
 pnpm test                      # 735 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm smoke                     # 398 checks; also starts a second server on :3101
+pnpm smoke                     # 402 checks; also starts a second server on :3101
 ```
 
 If Postgres has stopped but the data is still there, start it rather than
@@ -359,6 +370,11 @@ Press **`g`** then **`m`** for **Mine** — the ninth smart list, and the first
 query ever written against `tasks_assignee_idx`. Then click into any other list
 and note the names on the rows: somebody else's is legible, your own is a quiet
 "You".
+
+Finally, go to **Capture** and type `bins out tomorrow at half seven @danny
+#home`. It reads the line back as chips — `@danny → assign to "danny"` — before
+creating anything, and the task lands in Home with Danny's name on the row. That
+has worked since Phase 5; until session 10 nothing checked it.
 
 ---
 

@@ -130,6 +130,11 @@ The seeded account has 14 events this week and Today shows none of them.
 - There is no "Mine" smart list.
 - The only place it surfaces is a `<select>` on `/tasks/item/[id]`.
 
+**Corrected while acting on this:** capture *can* set it — `@person` has
+resolved against real space members since Phase 5. See "Item 4, and a
+correction to this document" below. The row, the list and the smoke check were
+genuinely missing; the write path was not.
+
 In a two-person household, *"whose job is this?"* is the question the product
 exists to settle. The row does not answer it, and the database has been ready to
 since Phase 0.
@@ -273,13 +278,19 @@ what a later session needs rather than the tick.
 | 7 | Settings | **Not started.** Blocked on a real decision — see below. |
 | 8 | Dates | **Partly.** Page titles spell the date out. The inputs were left native, deliberately. |
 
-**Item 4, the missing half.** Assignment can be read on a row and filtered by,
-but still cannot be *set* except on the detail page. The compose bar was the
-obvious home and is the wrong one: it already carries a title, a date, a
-category and a space chip per writable space, and on a phone that was three
-rows before anything was added. The honest next step is a picker on the row
-itself, or a `to:` phrase in capture — `src/lib/capture/` already parses far
-harder things locally.
+**Item 4, and a correction to this document.** Finding D said assignment was
+"modelled, indexed, queried — and invisible". The first three are right and the
+fourth was too strong: **`@person` in capture has set it end to end since Phase
+5.** `parseCapture` produces `assigneeHint`, `resolveAssignee` matches it
+against active members of the target space, `createFromCapture` writes it, and
+the preview shows `assign to "danny"` as a chip before anything is created. It
+was invisible on the *row* and had no smoke check — which is why it looked
+absent from the outside — but the capability was there.
+
+What remains is narrower: assignment cannot be set from the **compose bar**, and
+should not be. That bar already carries a title, a date, a category and a chip
+per writable space, and on a phone that was three rows before anything was
+added. A picker on the row itself is the gap worth filling.
 
 **Item 7, and why it is not a small job.** A manual light/dark override needs
 somewhere to put a second set of token values. `globals.css` declares the dark

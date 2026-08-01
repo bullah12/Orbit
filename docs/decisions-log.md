@@ -1231,3 +1231,15 @@ acting on it.
   The fourth was pre-existing: a check looked for an event the fixture places at
   `today + 2` in the week containing *today*, so it passed Monday to Friday and
   failed at the weekend. This session ran on a Saturday.
+
+### A correction made before the session ended
+
+- **Finding D said assignment was "invisible"; capture had been setting it since
+  Phase 5.** `@person` produces an `assigneeHint`, `resolveAssignee` matches it
+  against active members of the target space by display name or first name, and
+  `createFromCapture` writes it — verified by creating one and reading the row
+  back out of Postgres. What was genuinely missing was the row rendering it, a
+  list filtering by it, and **any end-to-end check at all**: a working feature
+  that nothing was watching, which is how it came to look absent from the
+  outside. Four smoke checks now drive it, and the wrong claim was corrected in
+  STATUS, in the review and here rather than quietly dropped.

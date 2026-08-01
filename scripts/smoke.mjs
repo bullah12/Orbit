@@ -1667,6 +1667,52 @@ try {
     const due = await page.locator('#task-due').inputValue();
     check('and the date it resolved', /^\d{4}-\d{2}-\d{2}$/.test(due), due);
 
+    // `@person` has resolved against real space members since Phase 5, and
+    // nothing had ever driven it end to end — so the one part of assignment
+    // that *can* be set outside the detail page was also the one part with no
+    // check on it. Danny is a member of Home; Sam is a member of nothing.
+    const forDanny = `${stamp} for danny`;
+    await page.goto(`/capture?text=${encodeURIComponent(`${forDanny} tomorrow @danny #home`)}`);
+    const assignPreview = await page.locator('#capture-matches').innerText();
+    check(
+      'capture reads @person back as an assignment before creating anything',
+      assignPreview.includes('assign to') && assignPreview.toLowerCase().includes('danny'),
+      assignPreview.replace(/\n/g, ' | '),
+    );
+
+    await page.getByRole('button', { name: 'Create it' }).click();
+    await settle(page);
+    check(
+      'and the created task really is assigned to them',
+      (await page.locator('#task-assignee').inputValue()) !== '',
+      await page.locator('#task-assignee').inputValue(),
+    );
+    const assigneeLabel = await page
+      .locator('#task-assignee option:checked')
+      .innerText()
+      .catch(() => '');
+    check(
+      'to the person named, not merely to somebody',
+      assigneeLabel.toLowerCase().includes('danny'),
+      assigneeLabel,
+    );
+
+    // The row is where the household actually reads it, and it was rendering
+    // none of this until session 10.
+    await page.goto('/tasks/all');
+    const dannyRow = page.locator('main ul li', { hasText: forDanny }).first();
+    check(
+      'and the row says whose job it is',
+      (await dannyRow.innerText()).includes('Danny'),
+      await dannyRow.innerText(),
+    );
+
+    // ---- leave nothing behind: the assigned one ----
+    await dannyRow.locator('a[href^="/tasks/item/"]').click();
+    await settle(page);
+    await page.getByRole('button', { name: 'Delete this task' }).click();
+    await settle(page);
+
     // A line with nothing but a date creates nothing.
     await page.goto('/capture?text=tomorrow');
     check(
