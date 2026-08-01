@@ -216,6 +216,33 @@ changes nothing about how anything already here works.
       the `prepare: false` pooler note. **Nothing was deployed and no account
       was created**
 
+## Session 10 — the review, and the phone
+
+Not a phase, and it does not become one. Phases 0–6 built Orbit, Phase 7 made it
+usable by somebody who is not a seeded row, and this made it usable on the device
+a household organiser is actually held in. It added no table and no migration.
+
+`docs/design-review.md` is the review, its evidence, and the plan; items 1–6 and
+part of 8 were built. What was deliberately not built, and why, is in that file
+under "What was built, and what was not" and in `docs/STATUS.md` under edges 32
+and 33.
+
+- [x] A `viewport` export, a manifest, a bottom tab bar and a drawer below `md`,
+      and rows that keep the title on screen. Ten smoke checks at 390×844
+- [x] `aria-current` on every navigation surface, carried by weight and a raised
+      surface rather than by hue
+- [x] Today queries events at last, with a range switch, a summary strip whose
+      numbers are the lists beneath them, and an agenda with the now-line
+- [x] The six stylesheet utilities adopted in `74789ce` and never used are spent
+- [x] Assignment on the row, and `/tasks/mine` — the first query ever written
+      against `tasks_assignee_idx`
+- [x] The calendar opens at now, the now-line is `--accent`, and category colour
+      is on the left edge only
+- [x] Keyboard shortcuts, with the rules in a pure module and tested
+- [ ] A manual light/dark override and a settings page — **blocked on a
+      deliberate decision about `globals.css`**, not on effort
+- [ ] A service worker, which the manifest turned from a nicety into a gap
+
 ---
 
 ## Standing rules

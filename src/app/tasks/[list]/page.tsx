@@ -48,7 +48,7 @@ export default async function TaskListPage({
       ) : (
         <ul>
           {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} />
+            <TaskRow key={t.id} task={t} showAssignee={list !== 'mine'} />
           ))}
         </ul>
       )}

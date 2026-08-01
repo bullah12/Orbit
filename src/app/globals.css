@@ -75,6 +75,18 @@
      the same left edge, so a 24-hour time reads down one straight line. */
   --gutter:        3.25rem;
 
+  /* How much room the fixed bottom bar needs from the page beneath it. One
+     token so the bar's height and the padding that clears it cannot disagree —
+     they were two numbers in two files, which is how a list ends with its last
+     row permanently hidden. Zero from `md` up, where there is no bar. */
+  --tabbar:        calc(3.25rem + env(safe-area-inset-bottom));
+
+  /* The readable measure. A dense row stops helping when its title and its date
+     are 1500px apart, which is what a full-bleed list does on a wide monitor.
+     Reading surfaces cap here; grids and calendars, which earn their width, do
+     not. */
+  --measure:       64rem;
+
   /* Map surfaces. Land and water are chrome, not category colour: they are
      greyscale plus the smallest amount of blue that still says "sea", because
      ten category pins have to sit on top of them and stay legible. */
@@ -156,7 +168,16 @@
   }
 }
 
+/* From `md` up the bottom bar is not rendered, so nothing has to be cleared. */
+@media (min-width: 48rem) {
+  :root { --tabbar: 0px; }
+}
+
 html, body { height: 100%; }
+
+/* A phone rotated to landscape, or a text-size preference, must not make a
+   dense row unreadable — but nor should iOS silently inflate it. */
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   background: var(--bg);
@@ -272,6 +293,37 @@ select.input { appearance: auto; }
     text-underline-offset: 2px;
   }
 
+  /* Where you are standing. Selection is weight, a raised surface and a
+     stronger edge — the same three non-hue signals `.seg` uses, and for the
+     same reason: the nav sits directly above ten coloured space chips and must
+     not compete with them. `aria-current` is the hook, so the screen reader and
+     the eye are told by one attribute and cannot disagree. */
+  .nav-link[aria-current='page'] {
+    background: var(--bg-raised);
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* The bottom bar. A tab is a touch target before it is a label: 44px is the
+     smallest thing a thumb hits reliably, and it is a floor rather than a
+     height so a long label may still wrap. */
+  .tab { min-height: 2.75rem; }
+  .tab[aria-current='page'] { color: var(--text); }
+  .tab[aria-current='page']::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 1.5rem;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    background: var(--accent);
+  }
+  .tab { position: relative; }
+
+  /* Reading surfaces cap at the measure; grids opt out by not using it. */
+  .measure { max-width: var(--measure); }
+
   /* Range switch — Today / Week / Month. Selection is carried by a raised
      surface, a stronger edge and weight 600: three signals, none of them hue,
      because this control sits directly above ten coloured chips. */
@@ -287,9 +339,16 @@ select.input { appearance: auto; }
   .block-now { border-left-color: var(--accent); }
 
   /* Now-line. One per day view, and the only element in the app allowed to be
-     a bare accent hairline — it is not interactive and it means one thing. */
+     a bare accent hairline — it is not interactive and it means one thing.
+
+     The dot marks where the line starts, so it sits at the line's own left
+     edge — which in a calendar column is the column edge. The agenda is the
+     exception: there the line starts after the time gutter, so the dot has to
+     be pulled back across it, and `.now-line-gutter` is that one case. It was
+     the default once, which put the dot in the previous day's column. */
   .now-line { position: relative; height: 0; border-top: 1px solid var(--accent); }
-  .now-line::before { content: ''; position: absolute; left: calc(var(--gutter) * -1 + 0.25rem); top: -0.1875rem; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--accent); }
+  .now-line::before { content: ''; position: absolute; left: -0.1875rem; top: -0.1875rem; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--accent); }
+  .now-line-gutter::before { left: calc(var(--gutter) * -1 + 0.25rem); }
 
   /* Summary numbers. Tabular, quiet label, no card — a stat that needs a box
      around it is a stat nobody trusted. */

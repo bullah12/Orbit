@@ -40,7 +40,16 @@ export function EventBlock({
           a glance is the thing this requirement exists to prevent.
         */}
         {compact && <SpaceIndicator space={item.space} />}
-        <span className="faint shrink-0 tabular-nums">{time}</span>
+        {/*
+          The time is dropped from a compact block and kept everywhere else.
+          A block in a week column is already positioned against the hour
+          gutter, so the time was being said twice — and it was costing about a
+          third of the width, which is why five identical standups all read
+          "10:30 Team st…" and could not be told apart. The title is the only
+          thing that distinguishes them, so the title is what gets the room.
+          The exact time is still on the block's `title` and its `aria-label`.
+        */}
+        {!compact && <span className="faint shrink-0 tabular-nums">{time}</span>}
         <span className="truncate font-medium">
           {item.isBusy ? 'Busy' : item.title || 'Untitled'}
         </span>
@@ -101,8 +110,17 @@ export function EventBlock({
           ? `/calendar/event/${item.id}?on=${encodeURIComponent(item.startsAt)}`
           : `/calendar/event/${item.id}`
       }
-      className={`hairline row-hover rounded-sm border-y border-l-2 border-r ${className}`}
-      style={{ borderColor: accent, background: 'var(--bg-raised)' }}
+      className={`row-hover rounded-sm border-y border-l-2 border-r ${className}`}
+      // Category colour on the left edge only, hairline on the other three.
+      // globals.css specifies exactly this next to `.block`, with the reason
+      // written beside it: filling the block turns a stack of them into a
+      // colour chart. Every border was taking the accent, so a week of events
+      // read as a grid of coloured rectangles rather than as a list of things.
+      style={{
+        borderColor: 'var(--line)',
+        borderLeftColor: accent,
+        background: 'var(--bg-raised)',
+      }}
       aria-label={`${item.title || 'Untitled event'}, ${
         item.allDay ? 'all day' : formatTime(item.startsAt)
       }, ${item.space.name}`}

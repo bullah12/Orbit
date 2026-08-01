@@ -20,6 +20,7 @@ import {
   londonDayISO,
   londonDayMinutes,
   londonMidnight,
+  minutesIntoLondonDay,
   startOfWeekISO,
   type DateOnly,
 } from '@/lib/format';
@@ -278,8 +279,28 @@ export function hourLines(day: DateOnly): { label: string; top: number }[] {
   return out;
 }
 
-/** The day to scroll to when a view opens: 07:00, or the first event if earlier. */
-export function scrollToMinute(items: TimedItem[], day: DateOnly): number {
+/**
+ * The minute a view should open at: 07:00, or the first event if earlier, or
+ * **now** when the day being shown is today.
+ *
+ * Now wins because it is what somebody opening a calendar at two in the
+ * afternoon is looking for. Without it the grid opened at 00:00 and roughly
+ * seven empty night hours filled the viewport before the first real event —
+ * on a phone, the entire screen.
+ *
+ * `now` is a parameter rather than a `new Date()` inside, so the behaviour on
+ * either side of a clock change is a test rather than a thing you have to wait
+ * until October to find out about.
+ */
+export function scrollToMinute(
+  items: TimedItem[],
+  day: DateOnly,
+  now?: Date | null,
+): number {
+  if (now && londonDayISO(now) === day) {
+    return Math.max(0, minutesIntoLondonDay(now) - 30);
+  }
+
   let earliest = 7 * 60;
   for (const item of items) {
     const span = daySpan(item, day);

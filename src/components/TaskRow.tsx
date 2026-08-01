@@ -11,13 +11,16 @@ import type { TaskRow as Task } from '@/lib/queries/tasks';
  *
  * The space indicator is never optional here — see SpaceIndicator.tsx.
  */
-export function TaskRow({ task }: { task: Task }) {
+export function TaskRow({ task, showAssignee = true }: { task: Task; showAssignee?: boolean }) {
   const done = task.status === 'done';
   const overdue = !done && task.dueOn != null && daysFromToday(task.dueOn) < 0;
 
   return (
     <li className="hairline row-hover group flex items-baseline gap-2.5 border-b px-3 py-1.5">
-      <form action={toggleTaskDone} className="flex shrink-0 self-center">
+      {/* Aligned to the title's line, not to the middle of the row: once the
+          metadata wraps below the title on a narrow screen the row is two lines
+          tall, and a centred box floats down beside the wrong one. */}
+      <form action={toggleTaskDone} className="mt-px flex shrink-0 self-start sm:mt-0 sm:self-center">
         <input type="hidden" name="taskId" value={task.id} />
         <input type="hidden" name="done" value={String(!done)} />
         <button
@@ -34,6 +37,12 @@ export function TaskRow({ task }: { task: Task }) {
         </button>
       </form>
 
+      {/* Two lines on a phone, one on a desktop. The split matters: when this
+          was a single row with a `shrink-0` block of metadata on the right, the
+          metadata won and the title — the only part worth reading — was pushed
+          off a 390px screen entirely. Whatever else wraps, the title does not
+          move. */}
+      <div className="min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-2.5">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           {task.isLocked ? (
@@ -82,7 +91,10 @@ export function TaskRow({ task }: { task: Task }) {
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2.5">
+      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 sm:mt-0 sm:shrink-0 sm:flex-nowrap sm:justify-end">
+        {showAssignee && task.assigneeName && (
+          <Assignee name={task.assigneeName} isMine={task.isMine} />
+        )}
         {task.estimateMinutes != null && (
           <span className="faint hidden text-2xs sm:inline">
             {formatDuration(task.estimateMinutes)}
@@ -99,6 +111,38 @@ export function TaskRow({ task }: { task: Task }) {
         )}
         <SpaceIndicator space={task.space} />
       </div>
+      </div>
     </li>
+  );
+}
+
+/**
+ * Who the task is for.
+ *
+ * `assignee_id` has been on the table since migration 0002 and `listTasks` has
+ * selected it on every row since Phase 0, but nothing ever rendered it — so in
+ * a shared household the row could not answer the question the household
+ * actually asks, which is whose job this is.
+ *
+ * Somebody else's name is the signal and is set at `--text-muted`; your own is
+ * "You" and is set at `--text-faint`. That way round because in your own lists
+ * nearly every row is yours, and what the eye is hunting for is the two that
+ * are not. On `/tasks/mine` it is not rendered at all — a column that says
+ * "You" on every row of a list called Mine is a column saying nothing.
+ *
+ * No colour and no avatar: this sits beside a category chip and a space chip,
+ * and a third coloured thing on one row is a colour chart. The icon plus the
+ * name is the whole treatment.
+ */
+function Assignee({ name, isMine }: { name: string; isMine: boolean }) {
+  const first = name.split(' ')[0];
+  return (
+    <span
+      className={`chip chip-plain shrink-0 ${isMine ? 'faint' : 'muted'}`}
+      title={`Assigned to ${name}`}
+    >
+      <Icon name="user" size={11} strokeWidth={2} />
+      {isMine ? 'You' : first}
+    </span>
   );
 }

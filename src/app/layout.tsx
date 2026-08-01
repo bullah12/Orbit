@@ -1,13 +1,34 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { getCurrentUser, listSelectableUsers, usesDevAuth } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
 import { Sidebar } from '@/components/Sidebar';
+import { Shortcuts } from '@/components/Shortcuts';
 
 export const metadata: Metadata = {
   title: 'Orbit',
   description: 'Tasks, notes, people and calendar, in spaces you control.',
+  appleWebApp: { capable: true, title: 'Orbit', statusBarStyle: 'default' },
+};
+
+/**
+ * Without this a phone assumes a ~980px layout viewport and scales the whole
+ * page down, which is why Orbit was unreadable on one. `maximum-scale` is
+ * deliberately not set: pinching to zoom is somebody's accessibility, not a
+ * layout bug to be suppressed.
+ *
+ * The two theme colours match `--bg` in each scheme so the browser chrome does
+ * not sit as a bright band above a dark app.
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f9fafb' },
+    { media: '(prefers-color-scheme: dark)', color: '#14161a' },
+  ],
 };
 
 export const dynamic = 'force-dynamic';
@@ -46,9 +67,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             Skip to content
           </a>
           <Sidebar user={user} users={users} spaces={spaces} counts={counts} />
-          <main id="main" tabIndex={-1} className="min-w-0 flex-1">
+          {/* The bottom tab bar is fixed, so the last row of a list would sit
+              underneath it. `--tabbar` is that height plus the home indicator,
+              and it is zero from `md` up where the bar is not rendered. */}
+          <main id="main" tabIndex={-1} className="min-w-0 flex-1 pb-[var(--tabbar)]">
             {children}
           </main>
+          <Shortcuts />
         </div>
       );
     }

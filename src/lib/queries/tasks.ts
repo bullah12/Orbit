@@ -6,25 +6,22 @@ import type { SpaceRef } from '@/components/SpaceIndicator';
  * Smart lists.
  *
  * Derived from columns, never stored. Each one is a `where` fragment plus the
- * order that makes it readable. Adding a list means adding a row here and
- * nothing else.
+ * order that makes it readable. Adding a list means adding a row in
+ * `src/lib/smartlists.ts`, a `clause()` here, and a count below.
+ *
+ * The list *metadata* moved to `src/lib/smartlists.ts` when the navigation
+ * became a Client Component: this module imports `server-only`, so a browser
+ * bundle cannot reach it. Re-exported here because a dozen callers already
+ * import the names from this path, and the SQL below is still what defines
+ * what each list actually contains.
  */
-export const SMART_LISTS = {
-  today:    { label: 'Today',    icon: 'check',  blurb: 'Due today, or overdue and still open' },
-  overdue:  { label: 'Overdue',  icon: 'clock',  blurb: 'Past their date and still open' },
-  upcoming: { label: 'Upcoming', icon: 'calendar', blurb: 'The next fortnight' },
-  inbox:    { label: 'Inbox',    icon: 'inbox',  blurb: 'No date, no decision yet' },
-  waiting:  { label: 'Waiting',  icon: 'pause',  blurb: 'Blocked on somebody else' },
-  someday:  { label: 'Someday',  icon: 'moon',   blurb: 'Deliberately deferred' },
-  done:     { label: 'Done',     icon: 'check',  blurb: 'Completed recently' },
-  all:      { label: 'All open', icon: 'circle', blurb: 'Everything still open' },
-} as const;
+export {
+  SMART_LISTS,
+  isSmartListKey,
+  type SmartListKey,
+} from '@/lib/smartlists';
 
-export type SmartListKey = keyof typeof SMART_LISTS;
-
-export function isSmartListKey(v: string): v is SmartListKey {
-  return Object.prototype.hasOwnProperty.call(SMART_LISTS, v);
-}
+import { SMART_LISTS, isSmartListKey, type SmartListKey } from '@/lib/smartlists';
 
 export type TaskRow = {
   id: string;
@@ -54,8 +51,10 @@ export type TaskRow = {
 
 const OPEN = ['todo', 'doing', 'blocked'];
 
-function clause(tx: Tx, list: SmartListKey) {
+function clause(tx: Tx, list: SmartListKey, userId: string) {
   switch (list) {
+    case 'mine':
+      return tx`t.status in ('todo','doing','blocked') and t.assignee_id = ${userId}::uuid`;
     case 'today':
       return tx`t.status in ('todo','doing','blocked')
                 and t.due_on is not null and t.due_on <= current_date`;
@@ -140,7 +139,7 @@ export async function listTasks(
         select count(*)::int as n from public.note_links l
         where l.entity_kind = 'task' and l.entity_id = t.id
       ) nl on true
-      where ${clause(tx, list)}
+      where ${clause(tx, list, userId)}
         and t.parent_task_id is null
         ${spaceId ? tx`and t.space_id = ${spaceId}::uuid` : tx``}
       order by ${ordering(tx, list)}
@@ -161,7 +160,9 @@ export async function smartListCounts(
         where parent_task_id is null
           ${spaceId ? tx`and space_id = ${spaceId}::uuid` : tx``}
       )
-      select 'today' as list, count(*)::int as n from t
+      select 'mine' as list, count(*)::int as n from t
+        where status = any(${OPEN}::app.task_status[]) and assignee_id = ${userId}::uuid
+      union all select 'today', count(*)::int from t
         where status = any(${OPEN}::app.task_status[]) and due_on is not null and due_on <= current_date
       union all select 'overdue', count(*)::int from t
         where status = any(${OPEN}::app.task_status[]) and due_on is not null and due_on < current_date

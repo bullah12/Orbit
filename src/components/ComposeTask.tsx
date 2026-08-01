@@ -33,9 +33,26 @@ export function ComposeTask({
   const initial = writable.find((s) => s.id === defaultSpaceId) ?? writable[0];
   const [spaceId, setSpaceId] = useState(initial?.id ?? '');
 
+  /**
+   * On a phone the bar was three rows — roughly a quarter of the first screen
+   * of every list — for a control that is used occasionally. Collapsed, it is
+   * one row; touching the title opens the rest.
+   *
+   * This does **not** weaken the space safeguard. The chips are still chips and
+   * still visible before anything can be typed, because focusing the title is
+   * what opens them: there is no state in which somebody types a task without
+   * the space being on screen. What is hidden is the row you have not reached
+   * yet, not the decision.
+   *
+   * From `sm` up nothing is ever collapsed — the room is there, so the whole
+   * bar stays visible and this state is not consulted.
+   */
+  const [expanded, setExpanded] = useState(false);
+
   if (writable.length === 0 || !initial) return null;
 
   const options = categories[spaceId] ?? [];
+  const extras = expanded ? 'flex' : 'hidden sm:flex';
 
   return (
     <form
@@ -50,11 +67,12 @@ export function ComposeTask({
         placeholder="Add a task…"
         aria-label="Task title"
         autoComplete="off"
+        onFocus={() => setExpanded(true)}
         required
         className="min-w-40 flex-1 bg-transparent text-sm outline-none placeholder:text-[color:var(--text-faint)]"
       />
 
-      <label className="flex items-center gap-1.5">
+      <label className={`${extras} items-center gap-1.5`}>
         <span className="sr-only">Due date</span>
         <input
           type="date"
@@ -63,7 +81,7 @@ export function ComposeTask({
         />
       </label>
 
-      <label className="flex items-center gap-1.5">
+      <label className={`${extras} items-center gap-1.5`}>
         <span className="sr-only">Category</span>
         <select
           name="categoryId"
@@ -84,7 +102,7 @@ export function ComposeTask({
 
       {/* Radio group, not a select: the chips have to be visible to be a
           safeguard. A collapsed dropdown hides the very decision this is for. */}
-      <fieldset className="flex items-center gap-1">
+      <fieldset className={`${extras} items-center gap-1`}>
         <legend className="sr-only">Space</legend>
         {writable.map((s) => (
           <label key={s.id} className="cursor-pointer">

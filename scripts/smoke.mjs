@@ -66,12 +66,15 @@ function check(name, ok, detail = '') {
 
 const browser = await chromium.launch({ executablePath: CHROMIUM });
 
-async function pageAs(userId) {
-  const ctx = await browser.newContext({ baseURL: BASE });
+async function pageAs(userId, viewport) {
+  const ctx = await browser.newContext(viewport ? { baseURL: BASE, viewport } : { baseURL: BASE });
   await ctx.addCookies([{ name: 'orbit_user', value: userId, url: BASE }]);
   const page = await ctx.newPage();
   return { ctx, page };
 }
+
+/** An iPhone-sized window. Everything in the phone section is checked here. */
+const PHONE = { width: 390, height: 844 };
 
 /**
  * Every control on a page that has no accessible name.
@@ -656,7 +659,10 @@ try {
     check('the imported event appears in the week it belongs to', await assembly.isVisible());
     check(
       'at 09:00 London, before the clocks change',
-      (await assembly.innerText()).includes('09:00'),
+      // The accessible name, not the visible text: a week block no longer
+      // repeats the time it is already positioned against, and the name is
+      // where the time has to be correct regardless.
+      (await assembly.getAttribute('aria-label')).includes('09:00'),
     );
 
     await page.goto('/calendar/week?date=2026-03-30');
@@ -665,7 +671,7 @@ try {
       .first();
     check(
       'and still at 09:00 the week after they change — the wall clock is what repeats',
-      (await after.innerText()).includes('09:00'),
+      (await after.getAttribute('aria-label')).includes('09:00'),
     );
 
     // The EXDATE in the fixture removes 6 April.
@@ -759,6 +765,12 @@ try {
       .count();
     check('a deletion from the provider cancels the event rather than deleting it', budget === 0);
 
+    // The fixture places this one at `today + 2`, so on a Saturday or a Sunday
+    // it belongs to *next* week and the current week is the wrong place to look.
+    // Ask for the week that contains it rather than the week that contains now,
+    // or this check passes Monday to Friday and fails at the weekend.
+    const swimmingDay = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+    await page.goto(`/calendar/week?date=${swimmingDay}`);
     const swimming = await page
       .locator('main a[href^="/calendar/event/"]', { hasText: 'Swimming lesson' })
       .count();
@@ -1604,7 +1616,9 @@ try {
     await page.goto('/');
     check(
       'capture is reachable from the sidebar',
-      (await page.locator('nav a[href="/capture"]').count()) === 1,
+      // `nav:visible`, because the navigation is rendered twice — the rail and
+      // the bottom bar — and CSS shows exactly one of them at any width.
+      (await page.locator('nav:visible a[href="/capture"]').count()) === 1,
     );
 
     await page.goto('/capture');
@@ -1652,6 +1666,52 @@ try {
     );
     const due = await page.locator('#task-due').inputValue();
     check('and the date it resolved', /^\d{4}-\d{2}-\d{2}$/.test(due), due);
+
+    // `@person` has resolved against real space members since Phase 5, and
+    // nothing had ever driven it end to end — so the one part of assignment
+    // that *can* be set outside the detail page was also the one part with no
+    // check on it. Danny is a member of Home; Sam is a member of nothing.
+    const forDanny = `${stamp} for danny`;
+    await page.goto(`/capture?text=${encodeURIComponent(`${forDanny} tomorrow @danny #home`)}`);
+    const assignPreview = await page.locator('#capture-matches').innerText();
+    check(
+      'capture reads @person back as an assignment before creating anything',
+      assignPreview.includes('assign to') && assignPreview.toLowerCase().includes('danny'),
+      assignPreview.replace(/\n/g, ' | '),
+    );
+
+    await page.getByRole('button', { name: 'Create it' }).click();
+    await settle(page);
+    check(
+      'and the created task really is assigned to them',
+      (await page.locator('#task-assignee').inputValue()) !== '',
+      await page.locator('#task-assignee').inputValue(),
+    );
+    const assigneeLabel = await page
+      .locator('#task-assignee option:checked')
+      .innerText()
+      .catch(() => '');
+    check(
+      'to the person named, not merely to somebody',
+      assigneeLabel.toLowerCase().includes('danny'),
+      assigneeLabel,
+    );
+
+    // The row is where the household actually reads it, and it was rendering
+    // none of this until session 10.
+    await page.goto('/tasks/all');
+    const dannyRow = page.locator('main ul li', { hasText: forDanny }).first();
+    check(
+      'and the row says whose job it is',
+      (await dannyRow.innerText()).includes('Danny'),
+      await dannyRow.innerText(),
+    );
+
+    // ---- leave nothing behind: the assigned one ----
+    await dannyRow.locator('a[href^="/tasks/item/"]').click();
+    await settle(page);
+    await page.getByRole('button', { name: 'Delete this task' }).click();
+    await settle(page);
 
     // A line with nothing but a date creates nothing.
     await page.goto('/capture?text=tomorrow');
@@ -1703,7 +1763,7 @@ try {
     await page.goto('/');
     check(
       'search is reachable from the sidebar',
-      (await page.locator('nav a[href="/search"]').count()) === 1,
+      (await page.locator('nav:visible a[href="/search"]').count()) === 1,
     );
 
     await page.goto('/search?q=bins');
@@ -2832,7 +2892,7 @@ try {
       await sam.goto('/calendar/week');
       check(
         'and a free/busy member sees the space in the sidebar, marked as free/busy',
-        (await sam.locator('nav[aria-label="Primary"]').innerText()).includes('free/busy'),
+        (await sam.locator('nav[aria-label="Primary"]:visible').innerText()).includes('free/busy'),
       );
       check(
         'no event of somebody else’s is readable to him',
@@ -2917,7 +2977,7 @@ try {
       await sam.goto('/calendar/week');
       check(
         'and the removed member sees nothing again, in a sidebar with no spaces in it',
-        !(await sam.locator('nav[aria-label="Primary"]').innerText()).includes('free/busy'),
+        !(await sam.locator('nav[aria-label="Primary"]:visible').innerText()).includes('free/busy'),
       );
       await samCtx.close();
     }
@@ -3050,6 +3110,126 @@ try {
     } catch {
       server.kill('SIGTERM');
     }
+  }
+
+  // ------------------------------------------------------- keyboard shortcuts
+  //
+  // globals.css justifies the focus ring with "a dense interface is a keyboard
+  // interface", and until now the app had one addEventListener in src/ and it
+  // was listening for `online`. The two checks that matter most here are the
+  // ones about what a shortcut must *not* do.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/');
+
+    await page.keyboard.press('g');
+    await page.keyboard.press('c');
+    await page.waitForURL('**/calendar/week');
+    check(
+      'g then c goes to the calendar',
+      new URL(page.url()).pathname === '/calendar/week',
+      page.url(),
+    );
+
+    await page.keyboard.press('/');
+    await page.waitForURL('**/search');
+    check('slash goes to search', new URL(page.url()).pathname === '/search', page.url());
+
+    // The guard that makes single-letter shortcuts safe at all: `c` is Capture,
+    // and somebody typing "citrus" into a task title must stay where they are.
+    await page.goto('/');
+    const title = page.locator('form[aria-label="Add a task"] input[name="title"]');
+    await title.click();
+    await title.type('citrus');
+    check(
+      'a shortcut does not fire while somebody is typing',
+      new URL(page.url()).pathname === '/' && (await title.inputValue()) === 'citrus',
+      `${page.url()} value=${await title.inputValue()}`,
+    );
+
+    await page.goto('/');
+    await page.keyboard.press('?');
+    const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    check('? opens the list of them', await help.isVisible());
+    check(
+      'and the list names the sequences rather than hiding them',
+      (await help.innerText()).includes('Calendar') && (await help.innerText()).includes('g'),
+    );
+    await page.keyboard.press('Escape');
+    check('Escape closes the shortcut list', !(await help.isVisible()));
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------ on a phone
+  //
+  // Orbit is a household organiser and a household organiser is consulted
+  // standing in a kitchen holding a phone. Every check here failed before the
+  // responsive work, and none of them was visible to a suite that only ever
+  // opened a desktop-sized window — which is why they are here now.
+  {
+    const { ctx, page } = await pageAs(PRIYA, PHONE);
+    await page.goto('/');
+
+    check(
+      'the 240px rail is not rendered on a 390px screen',
+      !(await page.locator('nav[aria-label="Primary"].md\\:flex').isVisible()),
+    );
+
+    const bar = page.locator('nav[aria-label="Primary"]:visible');
+    check('a bottom bar takes its place', await bar.isVisible());
+    check(
+      'and it carries the surfaces somebody actually opens',
+      (await bar.locator('a[href="/"]').count()) === 1 &&
+        (await bar.locator('a[href="/calendar/week"]').count()) === 1 &&
+        (await bar.locator('a[href="/search"]').count()) === 1,
+    );
+    check(
+      'the tab you are standing on says so',
+      (await bar.locator('a[href="/"]').getAttribute('aria-current')) === 'page',
+    );
+
+    // The bug this whole section exists for: the metadata block was `shrink-0`
+    // and won, so the title — the only part worth reading — was pushed off a
+    // 390px screen entirely.
+    const firstTitle = page.locator('main li a[href^="/tasks/item/"]').first();
+    const box = await firstTitle.boundingBox();
+    const width = page.viewportSize().width;
+    check(
+      'a task title is on the screen rather than pushed off the right of it',
+      box !== null && box.x >= 0 && box.x + box.width <= width,
+      box ? `x=${Math.round(box.x)} w=${Math.round(box.width)} viewport=${width}` : 'no title found',
+    );
+
+    check(
+      'nothing makes the page scroll sideways',
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      await page.evaluate(() => `${document.documentElement.scrollWidth} > ${window.innerWidth}`),
+    );
+
+    // The bar is fixed, so without matching padding the last row of every list
+    // in the app sits underneath it permanently.
+    check(
+      'the fixed bar does not cover the end of the page',
+      await page.evaluate(() => {
+        const main = document.querySelector('main');
+        return parseFloat(getComputedStyle(main).paddingBottom) >= 40;
+      }),
+    );
+
+    // The drawer covers the page, and a cover with one exit is a trap.
+    await page.getByRole('button', { name: 'More of Orbit' }).click();
+    const drawer = page.locator('nav[aria-label="All of Orbit"]');
+    check('More opens a drawer holding the whole of the rail', await drawer.isVisible());
+    check(
+      'and the drawer reaches what the bar leaves out',
+      (await drawer.locator('a[href="/rules"]').count()) === 1 &&
+        (await drawer.locator('a[href="/notes"]').count()) === 1,
+    );
+    await page.keyboard.press('Escape');
+    check('Escape closes the drawer', !(await drawer.isVisible()));
+
+    await ctx.close();
   }
 
   // ------------------------------------------------------------- dark mode
