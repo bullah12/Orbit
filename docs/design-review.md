@@ -138,11 +138,20 @@ since Phase 0.
 
 Verified from a week-view screenshot:
 
-1. **It opens at 01:00.** Roughly seven empty night hours occupy the top of the
-   grid before the first real event. Nothing scrolls to now, or to the working
-   day. Google Calendar, Fantastical and Apple Calendar all scroll to now.
-2. **There is no now-line**, on a view where today is one of the seven columns.
-   `.now-line` exists in the stylesheet (finding B).
+1. **It opens at 00:00.** Roughly seven empty night hours occupy the top of the
+   grid before the first real event. Google Calendar, Fantastical and Apple
+   Calendar all scroll to now.
+
+   The sharper version of this: `scrollToMinute` **already exists** in
+   `src/lib/calendar.ts`, already has tests, and is called from nowhere —
+   `grep -rn "scrollToMinute" src --include=*.tsx` returns nothing. The same
+   pattern as finding B: the intent was there and the wiring never happened.
+2. **The now-line does not wear `.now-line`.** *(Corrected: there is one — an
+   ad-hoc `border-t` in `DayColumns`, drawn in `--danger`.)* The stylesheet
+   defines `.now-line` in `--accent` and says beside it that this is the only
+   bare accent hairline in the app because it is not interactive and means one
+   thing. Red means "careful" everywhere else, and the current time is not a
+   warning.
 3. **The space chip crowds out the title.** A block reads `[Work] 10:30 Team st…`
    — the chip takes ~40% of the width, the time is repeated from the gutter the
    block is already positioned against, and the actual title truncates to two
@@ -182,14 +191,21 @@ a promise the app does not keep.
 - see or revoke devices. `devices.revoked_at` exists and **nothing sets it**
   (STATUS edge 4), so device rows accumulate with no way to remove one.
 
-### I. Dates render US-style, against a standing rule
+### I. Dates render US-style — but this one is mostly not a bug
 
-The phase plan's standing rules say "UK conventions throughout" and Phase 5
-says "DD/MM never MM/DD". Native `<input type="date">` renders in the *browser*
-locale, not the document's `lang="en-GB"` — so the compose bars show
-`mm/dd/yyyy` and `07/31/2026`. The app's own formatted output is correctly
-DD/MM; only the inputs disagree, which is the worst case, because the two
-appear on the same screen.
+*(Revised after checking.)* The compose bars show `mm/dd/yyyy` and `07/31/2026`
+in this container, against a standing rule that says "DD/MM never MM/DD".
+
+But a native `<input type="date">` renders in the **browser's** locale, not the
+document's `lang="en-GB"`, and that is correct behaviour: a user whose machine
+is set to en-GB sees DD/MM. What the screenshots show is the headless
+Chromium's en-US default, not what a UK household would see. Replacing the
+native control to force the format would cost the platform date picker, which
+on a phone is much better than anything hand-rolled.
+
+The part that *is* worth fixing is smaller and real: a page title reading
+`01/08/2026` is genuinely ambiguous, and unlike an input it has no locale
+excuse. Spell those out.
 
 ### J. Row metadata is stranded at the far right
 

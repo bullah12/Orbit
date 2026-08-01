@@ -226,6 +226,26 @@ export function formatDate(iso: DateOnly | Date): string {
   return dmy.format(d);
 }
 
+const longDateFmt = new Intl.DateTimeFormat(LOCALE, {
+  timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long',
+});
+
+/**
+ * "Saturday 1 August" — a date to be read rather than scanned.
+ *
+ * Page titles and agenda headings use this; anything in a column keeps
+ * `formatDate`, which is DD/MM/YYYY and tabular. Spelling the month out is also
+ * the one reliable way past the DD/MM–MM/DD ambiguity, which `formatDate`
+ * cannot escape and which matters most at the top of a page.
+ *
+ * No year: every caller is showing a date within a few weeks of today, and a
+ * year on "Saturday 1 August" reads as a document rather than as a day.
+ */
+export function formatLongDate(iso: DateOnly | Date): string {
+  const d = typeof iso === 'string' ? new Date(`${iso.slice(0, 10)}T00:00:00Z`) : iso;
+  return longDateFmt.format(d);
+}
+
 const timeFmt = new Intl.DateTimeFormat(LOCALE, {
   timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false,
 });
