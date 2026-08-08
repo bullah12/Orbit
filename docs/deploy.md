@@ -222,16 +222,40 @@ If you must use 6543, set **`DATABASE_PREPARE=false`**, which turns
 rather than a code edit because "remember to change this line before deploying"
 is an instruction somebody eventually does not follow.
 
-### Optionally, run the pgTAP suite against the real project
+### Run the pgTAP suite against the real project
+
+Not optional in spirit: 106 assertions have only ever run against a local shim
+of `auth.uid()`, and this is the first evidence that the security model holds
+against the real one. It creates its own fixtures inside the transaction and
+rolls back, so it leaves nothing behind and does not touch your data.
+
+**`ON_ERROR_STOP=1` does not judge this suite.** pgTAP reports a failure as a
+`not ok` *row*, not as an error, so psql exits 0 on a run where every assertion
+failed. You have to read the output — which is why `scripts/db-test.sh` greps
+for two things rather than trusting an exit code. Do the same by hand:
 
 ```sh
-psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_isolation_test.sql
+psql "$ADMIN_URL" -c 'create extension if not exists pgtap'
+
+# -P pager=off, or psql pipes it through less and quitting takes the whole
+# run off the screen with it.
+psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -P pager=off \
+  -f supabase/tests/rls_isolation_test.sql > /tmp/pgtap.log 2>&1
+echo "psql exit: $?"
+
+grep -c '^ok' /tmp/pgtap.log                    # expect: 106
+grep '^not ok' /tmp/pgtap.log                   # expect: nothing
+grep 'Looks like you' /tmp/pgtap.log            # expect: nothing
 ```
 
-It runs in a transaction and rolls back, so it leaves nothing behind. Three of
-its 106 assertions are about the local `auth.users` shim and the trigger; those
-are the ones worth watching on a real project, because they are the ones this
-container could only test against a shim.
+The third grep is not redundant. A wrong plan count means assertions were added
+or lost, pgTAP reports it as `Looks like you planned 106 but ran 104`, and that
+line is not a `not ok` — a suite that quietly stopped running halfway looks
+clean to the second grep alone.
+
+Three of the 106 are about the `auth.users` trigger and the shim. Those are the
+ones worth watching here, because they are the ones a local container could only
+ever test against a stand-in.
 
 ---
 
