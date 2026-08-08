@@ -78,33 +78,71 @@ grant usage on schema orbit to anon, authenticated, service_role;
 -- ---------------------------------------------------------------------------
 -- auth shim
 -- ---------------------------------------------------------------------------
+-- On a bare Postgres cluster this creates what Supabase would have provided.
+-- On Supabase it must do nothing at all, and *not being allowed to* is the
+-- normal case: the `auth` schema and `auth.uid()` belong to
+-- `supabase_auth_admin`, so replacing the function or granting on the schema
+-- raises `permission denied for schema auth` even as the `postgres` user.
+--
+-- That used to abort the whole migration — the file stopped at auth.uid() and
+-- nothing after it ran — and `docs/deploy.md` carried a workaround telling you
+-- to re-run with ON_ERROR_STOP=0 and read the errors. A migration that only
+-- applies if you already know which of its failures are expected is not a
+-- migration, so each step is guarded twice instead: skipped when the platform
+-- already provides it, and caught if the grant is refused anyway.
+--
+-- Never `create or replace`: Supabase's own auth.uid() reads exactly the same
+-- GUCs, so if one exists it is already correct and overwriting it would be
+-- replacing a working platform function with a copy.
 create schema if not exists auth;
 
--- auth.uid() reads the same GUC Supabase's PostgREST sets. Our own connection
--- pool sets it per request; see src/lib/db/index.ts.
-create or replace function auth.uid()
-returns uuid
-language sql
-stable
-as $$
-  select nullif(
-    coalesce(
-      current_setting('request.jwt.claim.sub', true),
-      (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
-    ),
-    ''
-  )::uuid
-$$;
+do $shim$
+begin
+  if exists (
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'auth' and p.proname = 'uid'
+  ) then
+    raise notice 'auth.uid() already exists — leaving the platform''s own in place';
+  else
+    -- Reads the same GUC Supabase's PostgREST sets. Our own connection pool
+    -- sets it per request; see src/lib/db/index.ts.
+    execute $ddl$
+      create function auth.uid() returns uuid language sql stable as $body$
+        select nullif(
+          coalesce(
+            current_setting('request.jwt.claim.sub', true),
+            (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
+          ),
+          ''
+        )::uuid
+      $body$
+    $ddl$;
+  end if;
 
-create or replace function auth.role()
-returns text
-language sql
-stable
-as $$
-  select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon')
-$$;
+  if exists (
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'auth' and p.proname = 'role'
+  ) then
+    raise notice 'auth.role() already exists — leaving the platform''s own in place';
+  else
+    execute $ddl$
+      create function auth.role() returns text language sql stable as $body$
+        select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon')
+      $body$
+    $ddl$;
+  end if;
 
-grant usage on schema auth to anon, authenticated, service_role;
+  -- Already granted on Supabase, and not ours to grant there.
+  begin
+    grant usage on schema auth to anon, authenticated, service_role;
+  exception when insufficient_privilege then
+    raise notice 'no privilege to grant on schema auth — the platform owns it, which is expected';
+  end;
+exception when insufficient_privilege then
+  raise notice 'no privilege to create the auth shim — the platform provides it, which is expected';
+end $shim$;
 
 -- ---------------------------------------------------------------------------
 -- Enums and the helper functions every policy calls

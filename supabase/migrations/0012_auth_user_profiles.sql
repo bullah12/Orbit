@@ -34,12 +34,29 @@
 -- Supabase uses `extensions`, a local cluster uses `public`.
 set search_path = orbit, public, extensions, pg_catalog;
 
-create table if not exists auth.users (
-  id                 uuid primary key default gen_random_uuid(),
-  email              text,
-  raw_user_meta_data jsonb not null default '{}'::jsonb,
-  created_at         timestamptz not null default now()
-);
+-- Created only where it does not exist, and only if we are allowed to. On
+-- Supabase this table is real and belongs to `supabase_auth_admin`; the guard
+-- is what keeps a permission error on a table we did not want to create from
+-- aborting the one migration everything turns on.
+do $$
+begin
+  if not exists (
+    select 1 from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'auth' and c.relname = 'users'
+  ) then
+    execute $ddl$
+      create table auth.users (
+        id                 uuid primary key default gen_random_uuid(),
+        email              text,
+        raw_user_meta_data jsonb not null default '{}'::jsonb,
+        created_at         timestamptz not null default now()
+      )
+    $ddl$;
+  end if;
+exception when insufficient_privilege then
+  raise notice 'auth.users belongs to the platform — using it as it is, which is expected';
+end $$;
 
 -- The local shim holds identities. Nobody may read it through the app: the pool
 -- role has no grant on it and RLS with no policy refuses everything.

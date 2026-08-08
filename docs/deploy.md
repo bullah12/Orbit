@@ -117,21 +117,35 @@ psql "$ADMIN_URL" -c "\
 If `ids_match` is not `t` for your account, stop: nothing else will work, and
 it will not tell you.
 
-**2. `0000_bootstrap.sql` does `create or replace function auth.uid()`,
-unguarded.** On Supabase that function belongs to `supabase_auth_admin` and the
-replace will probably fail on permissions. **That is fine and the fix is to skip
-it, not to force it** — the shim reads exactly the same GUCs as Supabase's own
-`auth.uid()`, so Supabase's version is already correct. If 0000 stops there:
+**2. The `auth` shim is not yours on Supabase, and 0000 no longer pretends
+otherwise.** The `auth` schema and `auth.uid()` belong to
+`supabase_auth_admin`, so replacing the function or granting on the schema
+raises `permission denied for schema auth` — **even as the `postgres` user**.
 
-```sh
-# Apply everything else, then come back to the rest of 0000 by hand if needed.
-# Nothing after this line in 0000 depends on replacing auth.uid().
-psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -f supabase/migrations/0000_bootstrap.sql
+This used to abort the migration at line 53 and this document told you to
+re-run with `ON_ERROR_STOP=0` and judge for yourself which failures were
+expected. That was a bad instruction: a migration you can only apply if you
+already know which of its errors to ignore is not a migration. 0000 now guards
+each step twice — skipped where the platform already provides it, and caught if
+a grant is refused anyway — so **it applies in one pass with `ON_ERROR_STOP=1`
+on both Supabase and a bare cluster.**
+
+What you should see on Supabase, and all of it is fine:
+
+```
+NOTICE:  extension "pgcrypto" already exists, skipping
+NOTICE:  schema "auth" already exists, skipping
+NOTICE:  auth.uid() already exists — leaving the platform's own in place
+NOTICE:  auth.role() already exists — leaving the platform's own in place
+NOTICE:  no privilege to grant on schema auth — the platform owns it, which is expected
 ```
 
-Read the errors rather than suppressing them: `create schema if not exists auth`,
-`create role`, and `create extension` are all expected to be no-ops there. Only
-the `auth.uid()`/`auth.role()` replacements may legitimately fail.
+Orbit never replaces `auth.uid()` where one exists. Supabase's reads exactly
+the same GUCs, so overwriting it would be replacing a working platform function
+with a copy of itself.
+
+**An error here is now a real error.** If 0000 stops, do not reach for
+`ON_ERROR_STOP=0` — read what it says.
 
 **3. `orbit_app` must exist, be able to log in, own nothing, and hold no
 BYPASSRLS.** The whole security model is that the application connects as a role
