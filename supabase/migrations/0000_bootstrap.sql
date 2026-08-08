@@ -4,7 +4,7 @@
 -- On a real Supabase project the `auth` schema and the three roles already exist;
 -- every statement here is guarded so this migration is a no-op there.
 
--- The membership helpers below reference public.space_members, which is created
+-- The membership helpers below reference orbit.space_members, which is created
 -- in 0001. Postgres validates `language sql` bodies at CREATE time, so turn that
 -- off for this file. Every referenced object exists by the end of 0001.
 set check_function_bodies = off;
@@ -65,6 +65,21 @@ grant usage on schema auth to anon, authenticated, service_role;
 -- ---------------------------------------------------------------------------
 -- app schema — helper functions used by every policy
 -- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- orbit — where every application table lives.
+--
+-- Not `public`, deliberately. Orbit shares its Postgres instance with another
+-- application whose tables are in `public`, and two applications in one schema
+-- is a namespace collision waiting to happen — `profiles` alone exists in both.
+-- A schema per application keeps each one's migrations, grants and RLS its own.
+--
+-- Every reference in this repository is schema-qualified (`orbit.tasks`, never
+-- a bare `tasks`), so this is not a `search_path` trick that a different
+-- connection could resolve differently. It is the name of the objects.
+-- ---------------------------------------------------------------------------
+create schema if not exists orbit;
+grant usage on schema orbit to anon, authenticated, service_role;
+
 create schema if not exists app;
 grant usage on schema app to anon, authenticated, service_role;
 
@@ -103,11 +118,11 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, public, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -119,10 +134,10 @@ returns app.member_role
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, public, pg_temp
 as $$
   select m.role
-  from public.space_members m
+  from orbit.space_members m
   where m.space_id = p_space_id
     and m.user_id = auth.uid()
     and m.status = 'active'
@@ -136,11 +151,11 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, public, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -154,11 +169,11 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, public, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -171,11 +186,11 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, public, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -236,30 +251,30 @@ begin
   -- bypass RLS so migrations, seeds, and pgTAP setup can write. The application
   -- never connects as the owner — it connects as `authenticated`, which is not
   -- the owner and is therefore fully subject to these policies.
-  execute format('alter table public.%I enable row level security', p_table);
+  execute format('alter table orbit.%I enable row level security', p_table);
 
-  execute format('drop policy if exists %I on public.%I', p_table || '_select', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_insert', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_update', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_delete', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_select', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_insert', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_update', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_delete', p_table);
 
   execute format(
-    'create policy %I on public.%I for select to authenticated using (app.can_read_space(space_id)%s)',
+    'create policy %I on orbit.%I for select to authenticated using (app.can_read_space(space_id)%s)',
     p_table || '_select', p_table, v_read_extra);
 
   execute format(
-    'create policy %I on public.%I for insert to authenticated with check (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for insert to authenticated with check (app.can_write_space(space_id)%s)',
     p_table || '_insert', p_table, v_owner_ins);
 
   execute format(
-    'create policy %I on public.%I for update to authenticated using (app.can_write_space(space_id)%s) with check (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for update to authenticated using (app.can_write_space(space_id)%s) with check (app.can_write_space(space_id)%s)',
     p_table || '_update', p_table, v_owner_mod, v_owner_mod);
 
   execute format(
-    'create policy %I on public.%I for delete to authenticated using (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for delete to authenticated using (app.can_write_space(space_id)%s)',
     p_table || '_delete', p_table, v_owner_mod);
 
-  execute format('grant select, insert, update, delete on public.%I to authenticated', p_table);
+  execute format('grant select, insert, update, delete on orbit.%I to authenticated', p_table);
 end $$;
 
 -- Convenience: standard columns every space-scoped table carries.

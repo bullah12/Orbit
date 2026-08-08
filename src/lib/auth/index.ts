@@ -36,7 +36,7 @@ const devProvider: AuthProvider = {
     const wanted = jar.get(COOKIE)?.value;
 
     // These go through app.identity_profile/app.identity_profiles rather than
-    // reading public.profiles: the pool role has no table grants at all, by
+    // reading orbit.profiles: the pool role has no table grants at all, by
     // design. See supabase/migrations/0008_identity_lookup.sql.
     //
     // No cookie yet: fall back to the first seeded profile so a fresh clone is

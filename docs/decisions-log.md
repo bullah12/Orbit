@@ -1574,3 +1574,74 @@ worth closing before anything is public.
 - **`docs/deploy.md` §4 was stale.** It still said there was no service worker
   and described offline as a switch somebody flicks. It now describes the shell,
   its secure-origin requirement, the dev-auth guard, and edge 35 while it stood.
+
+## Session 12, third pass — Orbit's tables move to an `orbit` schema
+
+### The decision, and who made it
+
+- **Orbit's tables live in `orbit`, not `public`.** Asked for by the product
+  owner, because Orbit shares a Postgres instance with another application whose
+  tables are in `public`. Two applications in one schema is a namespace
+  collision waiting to happen: `profiles` alone exists in both, and Orbit's
+  `0001` would have failed on it.
+- **The helper schema stays `app`.** It was never the thing in question — the
+  earlier exchange about "orbit instead of app" was about the *table* schema.
+  `app` holds the RLS generator, the membership predicates and the identity
+  seam, and renaming it would buy nothing.
+
+### How it was done, and why not with a `sed`
+
+- **899 references**: 357 in `src/`, 346 in the migrations, 111 in the pgTAP
+  suite, 85 in the seed. Every one is schema-qualified — `from public.tasks`,
+  never a bare `tasks` — which is also why `search_path` could not have been
+  used as a shortcut. Postgres resolves a qualified name literally.
+- **Three things that say `public` and are not the schema**, each checked by
+  hand before anything was replaced:
+  - `revoke execute on function … from public` — the PUBLIC *role*, in six
+    places. Renaming it would have made every SECURITY DEFINER function callable
+    by anybody who could find its name.
+  - `public/` — the Next.js directory, in a comment.
+  - `public_key`, `publicKey` — column and variable names.
+  The transformation therefore matched `public.` only when followed by an
+  identifier, a `%I` placeholder or a `${` template expression, which excludes
+  all three.
+- **Comments were renamed too.** They describe the same objects; a comment
+  saying `public.profiles` about a table now called `orbit.profiles` is simply
+  wrong.
+- **`set search_path = public, pg_temp` became `orbit, public, pg_temp`.**
+  `public` stays in the list so PostGIS and pgcrypto still resolve.
+- **The catalogue sweeps moved with it.** The pgTAP known-empty ledger, the
+  seed's truncate and the RLS check all enumerate "every application table" by
+  querying `pg_tables where schemaname = …`. Left at `public` they would have
+  found nothing and passed vacuously — the worst outcome available, because a
+  sweep that checks zero tables reports success.
+- **`app.apply_standard_rls` generates policy DDL with `format()`**, and its
+  `public.%I` strings had to move or every policy would have been attached to a
+  table in the wrong schema. This is the one piece that would have failed
+  silently rather than loudly.
+
+### What it was verified against
+
+Not a diff read-through: the local database was rebuilt from the repository's
+own migrations and all five commands re-run against the new shape.
+
+- `./scripts/db-reset.sh` — **41 tables, 41/41 with RLS enabled**, and one table
+  left in `public` (PostGIS's `spatial_ref_sys`, which is not Orbit's).
+- pgTAP **112/112**, build clean, typecheck clean, **816** Vitest tests,
+  **455/455** smoke against the running app, which then served real rows.
+
+`scripts/db-reset.sh` grants `usage on schema orbit` and seeds through
+`all tables in schema orbit`, so the local database now has the same shape as
+the deployed one — which is the point. A test suite that ran against `public`
+while production ran against `orbit` would have proved nothing about production.
+
+### A mistake worth recording
+
+- **I concluded the migrations had not run, because I looked in `public`.** They
+  had run, into `orbit`, and the database also held a second application's
+  tables — so the evidence looked exactly like a wrong-project connection. The
+  fix in the runbook is not "look harder": it is a first step that prints
+  `current_database()` and which of `orbit`/`app` already exist, *before*
+  anything is applied. The general lesson is that "the migrations are done" and
+  "the tables are where I expect" are two claims, and only one of them was being
+  checked.

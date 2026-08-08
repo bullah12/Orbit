@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 /**
  * Space invites — the decisions, none of the I/O.
  *
- * `public.space_invites` has existed since session 1 and held no rows: session 5
+ * `orbit.space_invites` has existed since session 1 and held no rows: session 5
  * recorded that an invite needs an auth system that can invite a stranger, and
  * a cookie naming a seeded profile is not one. That is now settled, so the table
  * is being filled in rather than changed — every column this needs was already

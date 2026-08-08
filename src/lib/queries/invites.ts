@@ -43,8 +43,8 @@ export async function listInvites(userId: string, spaceId: string): Promise<Invi
         i.accepted_at                as "acceptedAt",
         p.display_name               as "acceptedByName",
         i.created_at                 as "createdAt"
-      from public.space_invites i
-      left join public.profiles p on p.id = i.accepted_by
+      from orbit.space_invites i
+      left join orbit.profiles p on p.id = i.accepted_by
       where i.space_id = ${spaceId}::uuid
       order by i.created_at desc
     `;
@@ -79,9 +79,9 @@ export async function listMembers(userId: string, spaceId: string): Promise<Memb
         m.status             as status,
         m.joined_at          as "joinedAt",
         (s.owner_id = m.user_id) as "isSpaceOwner"
-      from public.space_members m
-      join public.profiles p on p.id = m.user_id
-      join public.spaces s on s.id = m.space_id
+      from orbit.space_members m
+      join orbit.profiles p on p.id = m.user_id
+      join orbit.spaces s on s.id = m.space_id
       where m.space_id = ${spaceId}::uuid
       order by (m.status = 'active') desc, p.display_name
     `;
@@ -105,7 +105,7 @@ export async function createInvite(
 ): Promise<{ id: string } | { error: string }> {
   const rows = await asUser(userId, async (tx) => {
     return tx<{ id: string }[]>`
-      insert into public.space_invites
+      insert into orbit.space_invites
         (space_id, owner_id, token_hash, role, invited_email, expires_at)
       values (
         ${spaceId}::uuid, ${userId}::uuid, ${hashInviteToken(token)},
@@ -132,7 +132,7 @@ export async function revokeInvite(
 ): Promise<{ ok: true } | { error: string }> {
   const rows = await asUser(userId, async (tx) => {
     return tx<{ id: string }[]>`
-      update public.space_invites
+      update orbit.space_invites
       set expires_at = now()
       where id = ${inviteId}::uuid and accepted_at is null
       returning id
@@ -161,13 +161,13 @@ export async function removeMember(
 ): Promise<{ ok: true } | { error: string }> {
   const rows = await asUser(userId, async (tx) => {
     return tx<{ user_id: string }[]>`
-      update public.space_members m
+      update orbit.space_members m
       set status = 'left'
       where m.space_id = ${spaceId}::uuid
         and m.user_id = ${memberId}::uuid
         and m.status = 'active'
         and not exists (
-          select 1 from public.spaces s
+          select 1 from orbit.spaces s
           where s.id = m.space_id and s.owner_id = m.user_id
         )
       returning m.user_id

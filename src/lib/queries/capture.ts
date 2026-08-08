@@ -41,8 +41,8 @@ export async function resolveSpaceHint(
   return asUser(userId, async (tx) => {
     const [row] = await tx<{ id: string }[]>`
       select s.id
-      from public.spaces s
-      join public.space_members m on m.space_id = s.id and m.user_id = ${userId}::uuid
+      from orbit.spaces s
+      join orbit.space_members m on m.space_id = s.id and m.user_id = ${userId}::uuid
       where m.status = 'active'
         and m.role in ('owner','admin','member')
         and (lower(s.short_label) = ${hint} or lower(s.name) = ${hint})
@@ -62,8 +62,8 @@ async function resolveAssignee(
   return asUser(userId, async (tx) => {
     const [row] = await tx<{ id: string }[]>`
       select p.id
-      from public.space_members m
-      join public.profiles p on p.id = m.user_id
+      from orbit.space_members m
+      join orbit.profiles p on p.id = m.user_id
       where m.space_id = ${spaceId}::uuid
         and m.status = 'active'
         and m.role in ('owner','admin','member')
@@ -103,7 +103,7 @@ export async function createFromCapture(
   if (kind === 'note') {
     return asUser(userId, async (tx) => {
       const [row] = await tx<{ id: string }[]>`
-        insert into public.notes (space_id, owner_id, title, body_md)
+        insert into orbit.notes (space_id, owner_id, title, body_md)
         values (${target.spaceId}::uuid, ${userId}::uuid, ${capture.title}, '')
         returning id
       `;
@@ -118,11 +118,11 @@ export async function createFromCapture(
     if (instants) {
       return asUser(userId, async (tx) => {
         const [row] = await tx<{ id: string }[]>`
-          insert into public.events
+          insert into orbit.events
             (space_id, owner_id, calendar_id, title, starts_at, ends_at, all_day)
           values (
             ${target.spaceId}::uuid, ${userId}::uuid,
-            (select c.id from public.calendars c
+            (select c.id from orbit.calendars c
               where c.space_id = ${target.spaceId}::uuid and c.is_writable
               order by c.sort_order, c.name limit 1),
             ${capture.title}, ${instants.startsAt}, ${instants.endsAt}, ${instants.allDay})
@@ -135,7 +135,7 @@ export async function createFromCapture(
 
   return asUser(userId, async (tx) => {
     const [row] = await tx<{ id: string }[]>`
-      insert into public.tasks
+      insert into orbit.tasks
         (space_id, owner_id, title, due_on, priority, assignee_id)
       values (
         ${target.spaceId}::uuid, ${userId}::uuid, ${capture.title},

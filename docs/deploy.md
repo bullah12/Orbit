@@ -31,7 +31,15 @@ Railway for the second, because those are what §3 of
 
 ## 1. The database
 
-Create a project at supabase.com, then, from a clone of this repository:
+**Orbit's tables live in a schema called `orbit`, not `public`.** That is what
+makes it safe to share a Postgres instance with another application — `profiles`
+alone exists in both, and two applications in one schema is a collision waiting
+to happen. Every reference in this repository is schema-qualified, so this is
+the name of the objects and not a `search_path` a different connection could
+resolve differently. The helper functions and the RLS generator live in `app`.
+
+Create a project at supabase.com — or reuse one, since the schema is Orbit's own
+— then, from a clone of this repository:
 
 ```sh
 # The connection string from Settings → Database → Connection string → URI.
@@ -46,10 +54,23 @@ psql "$ADMIN_URL" -c 'create extension if not exists postgis'
 psql "$ADMIN_URL" -c 'create extension if not exists vector'
 psql "$ADMIN_URL" -c 'create extension if not exists pgtap'   # optional
 
-# The migrations, in order. Filename order is the order — they are numbered.
-for f in supabase/migrations/*.sql; do
-  echo "▸ $f"
-  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f "$f" || break
+# 0000 runs SEPARATELY and is EXPECTED to fail partway — see gotcha 2 below.
+# Its `create or replace function auth.uid()` belongs to supabase_auth_admin on
+# Supabase and will be refused, which is fine; everything after it must succeed.
+# Running it under ON_ERROR_STOP=1 aborts before `create schema orbit` at line
+# 68, and then every later migration fails with `schema "orbit" does not exist`.
+psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -f supabase/migrations/0000_bootstrap.sql
+
+# Prove the shim landed before going on.
+psql "$ADMIN_URL" -c "select nspname from pg_namespace where nspname in ('orbit','app') order by 1"
+# expect two rows: app, orbit
+
+# The rest, in order, stopping at the first real error. 0001-0007 use plain
+# `create table`, so they are NOT re-runnable — if one fails halfway, fix the
+# cause and rebuild the schema rather than running it again.
+for f in supabase/migrations/000[1-9]_*.sql supabase/migrations/001[0-9]_*.sql; do
+  echo "▸ $(basename "$f")"
+  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f "$f" || { echo "STOPPED at $f"; break; }
 done
 ```
 
@@ -121,7 +142,7 @@ locally, and it is worthless if the deployed role is different.
 psql "$ADMIN_URL" <<'SQL'
 create role orbit_app login password 'PUT A REAL PASSWORD HERE' noinherit;
 grant connect on database postgres to orbit_app;
-grant usage on schema public, app, auth to orbit_app;
+grant usage on schema orbit, app, auth to orbit_app;
 grant authenticated, anon to orbit_app;
 
 -- The identity seam: two narrow functions, no table grants at all.
@@ -138,7 +159,7 @@ psql "$ADMIN_URL" -c "\
 # expect: orbit_app | f | f
 
 psql "$ADMIN_URL" -c "\
-  select count(*) from pg_tables where schemaname = 'public' and tableowner = 'orbit_app'"
+  select count(*) from pg_tables where schemaname = 'orbit' and tableowner = 'orbit_app'"
 # expect: 0
 ```
 

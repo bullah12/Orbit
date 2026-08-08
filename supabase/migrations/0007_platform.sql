@@ -1,10 +1,10 @@
 -- 0007_platform.sql — tags, item-level sharing, activity, AI consent, E2EE
 -- envelopes, sync cursors, and app.space_move_preview().
 
-create table public.tags (
+create table orbit.tags (
   id          uuid primary key default gen_random_uuid(),
-  space_id    uuid not null references public.spaces(id) on delete cascade,
-  owner_id    uuid not null references public.profiles(id) on delete cascade,
+  space_id    uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id    uuid not null references orbit.profiles(id) on delete cascade,
   name        text not null,
   slug        text not null,
   created_at  timestamptz not null default now(),
@@ -12,14 +12,14 @@ create table public.tags (
   constraint tags_space_slug_key unique (space_id, slug)
 );
 
-create trigger tags_touch before update on public.tags
+create trigger tags_touch before update on orbit.tags
   for each row execute function app.touch_updated_at();
 
-create table public.taggings (
+create table orbit.taggings (
   id          uuid primary key default gen_random_uuid(),
-  space_id    uuid not null references public.spaces(id) on delete cascade,
-  owner_id    uuid not null references public.profiles(id) on delete cascade,
-  tag_id      uuid not null references public.tags(id) on delete cascade,
+  space_id    uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id    uuid not null references orbit.profiles(id) on delete cascade,
+  tag_id      uuid not null references orbit.tags(id) on delete cascade,
   entity_kind app.entity_kind not null,
   entity_id   uuid not null,
   created_at  timestamptz not null default now(),
@@ -27,9 +27,9 @@ create table public.taggings (
   constraint taggings_space_tag_entity_key unique (space_id, tag_id, entity_kind, entity_id)
 );
 
-create index taggings_entity_idx on public.taggings (space_id, entity_kind, entity_id);
+create index taggings_entity_idx on orbit.taggings (space_id, entity_kind, entity_id);
 
-create trigger taggings_touch before update on public.taggings
+create trigger taggings_touch before update on orbit.taggings
   for each row execute function app.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
@@ -40,13 +40,13 @@ create trigger taggings_touch before update on public.taggings
 -- of the item's space. Cross-space sharing is a move, and a move goes through
 -- app.space_move_preview().
 -- ---------------------------------------------------------------------------
-create table public.item_shares (
+create table orbit.item_shares (
   id           uuid primary key default gen_random_uuid(),
-  space_id     uuid not null references public.spaces(id) on delete cascade,
-  owner_id     uuid not null references public.profiles(id) on delete cascade,
+  space_id     uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id     uuid not null references orbit.profiles(id) on delete cascade,
   entity_kind  app.entity_kind not null,
   entity_id    uuid not null,
-  grantee_id   uuid not null references public.profiles(id) on delete cascade,
+  grantee_id   uuid not null references orbit.profiles(id) on delete cascade,
   access       text not null default 'read' check (access in ('read', 'write')),
   revoked_at   timestamptz,
   created_at   timestamptz not null default now(),
@@ -55,9 +55,9 @@ create table public.item_shares (
     unique (space_id, entity_kind, entity_id, grantee_id)
 );
 
-create index item_shares_grantee_idx on public.item_shares (grantee_id) where revoked_at is null;
+create index item_shares_grantee_idx on orbit.item_shares (grantee_id) where revoked_at is null;
 
-create trigger item_shares_touch before update on public.item_shares
+create trigger item_shares_touch before update on orbit.item_shares
   for each row execute function app.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
@@ -67,11 +67,11 @@ create trigger item_shares_touch before update on public.item_shares
 -- standing rules: no "who viewed what" tracking, ever. The check constraint is
 -- there so a future session has to delete a line of SQL to break the promise.
 -- ---------------------------------------------------------------------------
-create table public.activity_log (
+create table orbit.activity_log (
   id           uuid primary key default gen_random_uuid(),
-  space_id     uuid not null references public.spaces(id) on delete cascade,
-  owner_id     uuid not null references public.profiles(id) on delete cascade,
-  actor_id     uuid references public.profiles(id) on delete set null,
+  space_id     uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id     uuid not null references orbit.profiles(id) on delete cascade,
+  actor_id     uuid references orbit.profiles(id) on delete set null,
   entity_kind  app.entity_kind not null,
   entity_id    uuid not null,
   action       text not null,
@@ -85,18 +85,18 @@ create table public.activity_log (
                       'locked', 'unlocked', 'imported', 'synced'))
 );
 
-create index activity_log_entity_idx on public.activity_log (space_id, entity_kind, entity_id, created_at desc);
+create index activity_log_entity_idx on orbit.activity_log (space_id, entity_kind, entity_id, created_at desc);
 
-create trigger activity_log_touch before update on public.activity_log
+create trigger activity_log_touch before update on orbit.activity_log
   for each row execute function app.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- AI — off by default, per-feature opt-in (decision 8).
 -- ---------------------------------------------------------------------------
-create table public.ai_feature_consents (
+create table orbit.ai_feature_consents (
   id           uuid primary key default gen_random_uuid(),
-  space_id     uuid not null references public.spaces(id) on delete cascade,
-  owner_id     uuid not null references public.profiles(id) on delete cascade,
+  space_id     uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id     uuid not null references orbit.profiles(id) on delete cascade,
   feature      text not null,
   -- Default false, and the column default matters: a row appearing by accident
   -- must not turn a feature on.
@@ -114,13 +114,13 @@ create table public.ai_feature_consents (
     check (not is_enabled or consented_at is not null)
 );
 
-create trigger ai_feature_consents_touch before update on public.ai_feature_consents
+create trigger ai_feature_consents_touch before update on orbit.ai_feature_consents
   for each row execute function app.touch_updated_at();
 
-create table public.ai_runs (
+create table orbit.ai_runs (
   id            uuid primary key default gen_random_uuid(),
-  space_id      uuid not null references public.spaces(id) on delete cascade,
-  owner_id      uuid not null references public.profiles(id) on delete cascade,
+  space_id      uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id      uuid not null references orbit.profiles(id) on delete cascade,
   feature       text not null,
   provider      text not null default 'fake',
   model         text,
@@ -135,9 +135,9 @@ create table public.ai_runs (
   updated_at    timestamptz not null default now()
 );
 
-create index ai_runs_feature_idx on public.ai_runs (space_id, feature, ran_at desc);
+create index ai_runs_feature_idx on orbit.ai_runs (space_id, feature, ran_at desc);
 
-create trigger ai_runs_touch before update on public.ai_runs
+create trigger ai_runs_touch before update on orbit.ai_runs
   for each row execute function app.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
@@ -147,10 +147,10 @@ create trigger ai_runs_touch before update on public.ai_runs
 -- and there must never be one. Locked content is excluded from every search
 -- index and every AI path by construction: nothing here is indexable.
 -- ---------------------------------------------------------------------------
-create table public.encrypted_blobs (
+create table orbit.encrypted_blobs (
   id            uuid primary key default gen_random_uuid(),
-  space_id      uuid not null references public.spaces(id) on delete cascade,
-  owner_id      uuid not null references public.profiles(id) on delete cascade,
+  space_id      uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id      uuid not null references orbit.profiles(id) on delete cascade,
   entity_kind   app.entity_kind not null,
   entity_id     uuid not null,
   -- Opaque. Base64 of the client's sealed box.
@@ -166,17 +166,17 @@ create table public.encrypted_blobs (
   constraint encrypted_blobs_space_entity_key unique (space_id, entity_kind, entity_id)
 );
 
-create trigger encrypted_blobs_touch before update on public.encrypted_blobs
+create trigger encrypted_blobs_touch before update on orbit.encrypted_blobs
   for each row execute function app.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- sync_cursors — per device, per entity kind. Phase 6 lives off this.
 -- ---------------------------------------------------------------------------
-create table public.sync_cursors (
+create table orbit.sync_cursors (
   id           uuid primary key default gen_random_uuid(),
-  space_id     uuid not null references public.spaces(id) on delete cascade,
-  owner_id     uuid not null references public.profiles(id) on delete cascade,
-  device_id    uuid not null references public.devices(id) on delete cascade,
+  space_id     uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id     uuid not null references orbit.profiles(id) on delete cascade,
+  device_id    uuid not null references orbit.devices(id) on delete cascade,
   entity_kind  app.entity_kind not null,
   cursor_at    timestamptz not null default 'epoch',
   last_sync_at timestamptz,
@@ -185,7 +185,7 @@ create table public.sync_cursors (
   constraint sync_cursors_space_device_kind_key unique (space_id, device_id, entity_kind)
 );
 
-create trigger sync_cursors_touch before update on public.sync_cursors
+create trigger sync_cursors_touch before update on orbit.sync_cursors
   for each row execute function app.touch_updated_at();
 
 -- ===========================================================================
@@ -199,47 +199,47 @@ select app.apply_standard_rls('encrypted_blobs');
 select app.apply_standard_rls('sync_cursors');
 
 -- item_shares: space members see them; the grantee sees their own grants.
-alter table public.item_shares enable row level security;
-grant select, insert, update, delete on public.item_shares to authenticated;
+alter table orbit.item_shares enable row level security;
+grant select, insert, update, delete on orbit.item_shares to authenticated;
 
-create policy item_shares_select on public.item_shares for select to authenticated
+create policy item_shares_select on orbit.item_shares for select to authenticated
 using (app.can_read_space(space_id) or grantee_id = auth.uid());
 
 -- The grantee must already be a member of this space. This is the constraint
 -- that stops item_shares becoming a back door around space membership.
-create policy item_shares_insert on public.item_shares for insert to authenticated
+create policy item_shares_insert on orbit.item_shares for insert to authenticated
 with check (
   app.can_write_space(space_id)
   and owner_id = auth.uid()
   and exists (
-    select 1 from public.space_members m
+    select 1 from orbit.space_members m
     where m.space_id = item_shares.space_id
       and m.user_id = item_shares.grantee_id
       and m.status = 'active'
   )
 );
 
-create policy item_shares_update on public.item_shares for update to authenticated
+create policy item_shares_update on orbit.item_shares for update to authenticated
 using (app.can_write_space(space_id) and (owner_id = auth.uid() or app.is_space_admin(space_id)))
 with check (app.can_write_space(space_id) and (owner_id = auth.uid() or app.is_space_admin(space_id)));
 
-create policy item_shares_delete on public.item_shares for delete to authenticated
+create policy item_shares_delete on orbit.item_shares for delete to authenticated
 using (app.can_write_space(space_id) and (owner_id = auth.uid() or app.is_space_admin(space_id)));
 
 -- ai_feature_consents: yours alone. An admin cannot consent on your behalf.
-alter table public.ai_feature_consents enable row level security;
-grant select, insert, update, delete on public.ai_feature_consents to authenticated;
+alter table orbit.ai_feature_consents enable row level security;
+grant select, insert, update, delete on orbit.ai_feature_consents to authenticated;
 
-create policy ai_feature_consents_select on public.ai_feature_consents for select to authenticated
+create policy ai_feature_consents_select on orbit.ai_feature_consents for select to authenticated
 using (owner_id = auth.uid() and app.can_read_space(space_id));
 
-create policy ai_feature_consents_insert on public.ai_feature_consents for insert to authenticated
+create policy ai_feature_consents_insert on orbit.ai_feature_consents for insert to authenticated
 with check (owner_id = auth.uid() and app.can_write_space(space_id));
 
-create policy ai_feature_consents_update on public.ai_feature_consents for update to authenticated
+create policy ai_feature_consents_update on orbit.ai_feature_consents for update to authenticated
 using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
-create policy ai_feature_consents_delete on public.ai_feature_consents for delete to authenticated
+create policy ai_feature_consents_delete on orbit.ai_feature_consents for delete to authenticated
 using (owner_id = auth.uid());
 
 -- ===========================================================================
@@ -264,7 +264,7 @@ returns table (
 language plpgsql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, public, pg_temp
 as $$
 declare
   v_source_space uuid;
@@ -272,7 +272,7 @@ begin
   -- Resolve the item's current space, honouring RLS: if the caller cannot read
   -- the item, they get nothing rather than a membership listing.
   execute format(
-    'select space_id from public.%I where id = $1',
+    'select space_id from orbit.%I where id = $1',
     case p_entity_kind
       when 'task'  then 'tasks'
       when 'note'  then 'notes'
@@ -304,11 +304,11 @@ begin
 
   return query
   with src as (
-    select m.user_id, m.role from public.space_members m
+    select m.user_id, m.role from orbit.space_members m
     where m.space_id = v_source_space and m.status = 'active' and m.role <> 'free_busy'
   ),
   tgt as (
-    select m.user_id, m.role from public.space_members m
+    select m.user_id, m.role from orbit.space_members m
     where m.space_id = p_target_space_id and m.status = 'active' and m.role <> 'free_busy'
   )
   select
@@ -327,7 +327,7 @@ begin
     end                                             as reason
   from src
   full outer join tgt on tgt.user_id = src.user_id
-  join public.profiles p on p.id = coalesce(tgt.user_id, src.user_id)
+  join orbit.profiles p on p.id = coalesce(tgt.user_id, src.user_id)
   order by 1, 3;
 end $$;
 

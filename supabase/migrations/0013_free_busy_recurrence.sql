@@ -64,10 +64,10 @@ returns table (starts_at timestamptz, ends_at timestamptz, all_day boolean)
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, public, pg_temp
 as $$
   select e.starts_at, e.ends_at, e.all_day
-  from public.events e
+  from orbit.events e
   where e.space_id = p_space_id
     and e.status <> 'cancelled'
     and e.recurrence_rule_id is null
@@ -76,7 +76,7 @@ as $$
     and (
       app.can_read_space(p_space_id)
       or exists (
-        select 1 from public.free_busy_shares s
+        select 1 from orbit.free_busy_shares s
         where s.space_id = p_space_id
           and s.grantee_id = auth.uid()
           and s.revoked_at is null
@@ -114,7 +114,7 @@ returns table (
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, public, pg_temp
 as $$
   select
     e.starts_at,
@@ -123,8 +123,8 @@ as $$
     r.rrule,
     r.until,
     coalesce(r.exdates, '{}')::text[]
-  from public.events e
-  join public.recurrence_rules r on r.id = e.recurrence_rule_id
+  from orbit.events e
+  join orbit.recurrence_rules r on r.id = e.recurrence_rule_id
   where e.space_id = p_space_id
     and e.status <> 'cancelled'
     and e.starts_at < p_to
@@ -132,7 +132,7 @@ as $$
     and (
       app.can_read_space(p_space_id)
       or exists (
-        select 1 from public.free_busy_shares s
+        select 1 from orbit.free_busy_shares s
         where s.space_id = p_space_id
           and s.grantee_id = auth.uid()
           and s.revoked_at is null

@@ -44,6 +44,24 @@ pass — the first schema change since 0012. Brief C itself needed none.
 
 ---
 
+## Where the tables are
+
+**Orbit's tables live in the `orbit` schema, not `public`**, and its helper
+functions and RLS generator in `app`. That is what lets Orbit share a Postgres
+instance with another application: `profiles` alone exists in both, and two
+applications in one schema is a collision waiting to happen.
+
+Every reference in the repository is schema-qualified — `orbit.tasks`, never a
+bare `tasks` — so this is the name of the objects and not a `search_path` a
+different connection could resolve differently. `scripts/db-reset.sh` builds the
+local database the same way, so the tested shape and the deployed shape are the
+same shape.
+
+Moved in session 12's third pass; the decisions log records the three things
+that say `public` and are *not* the schema, each of which had to be left alone.
+
+---
+
 ## The one thing to understand before you touch anything
 
 **`AUTH_PROVIDER=supabase` has never run.** Unchanged from session 9 and still

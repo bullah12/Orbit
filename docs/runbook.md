@@ -10,6 +10,23 @@ be verified from a session, it says so.
 
 Two conventions throughout:
 
+**Before anything else, prove you are pointed at the right database and that
+Orbit's schema is not already there.** This is the check that would have saved
+an hour: `$ADMIN_URL` pointing at another project looks exactly like a fresh one
+until a migration fails on a table you did not create.
+
+```sh
+psql "$ADMIN_URL" -c "select current_database(), current_user"
+psql "$ADMIN_URL" -c "\
+  select coalesce(string_agg(nspname, ', ' order by nspname), '(none)') as orbit_schemas \
+  from pg_namespace where nspname in ('orbit','app')"
+```
+
+`(none)` means a clean start. If it lists `orbit`, the migrations have already
+run here — do not run them again; `0001`–`0007` use plain `create table` and are
+not re-runnable. Tables in `public` belonging to some other application are
+fine and expected: Orbit keeps to its own schema.
+
 ```sh
 # The admin connection: Settings → Database → Connection string → URI.
 # Session mode, port 5432, as `postgres`. Migrations create roles and a trigger
@@ -22,44 +39,99 @@ scrolling past.
 
 ---
 
-## 0. Apply migration 0013 — new since you ran the others
+## 0. Build the schema, from this repository's migrations
 
-**Do this first.** You applied `0000`–`0012` before `0013_free_busy_recurrence.sql`
-existed. Without it, a `free_busy` participant sees none of anybody's recurring
-events — edge 35 — and `app.free_busy_recurring()` does not exist, so the
-calendar will error for anyone with a free/busy-only space.
+Orbit's tables live in **`orbit`**, its helper functions and RLS generator in
+**`app`**, and nothing of Orbit's goes in `public`. That is what lets it share a
+Postgres instance with another application — `profiles` alone exists in both.
+
+If an earlier attempt already created an `orbit` schema by transforming the
+migration files by hand, **rebuild rather than patch**. The repository is now
+the source of that naming, and a schema built from an ad-hoc transformation can
+differ in ways that do not show up until a policy misbehaves — a `search_path`
+left at `public`, or `app.apply_standard_rls` still generating policies against
+the wrong schema. There is no data yet, so this costs nothing:
 
 ```sh
-psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0013_free_busy_recurrence.sql
+psql "$ADMIN_URL" -c "drop schema if exists orbit cascade"
+psql "$ADMIN_URL" -c "drop schema if exists app cascade"
 ```
 
-**Check both functions exist and neither is executable by PUBLIC:**
+Extensions first. `pgtap` only if you want to run the suite here too:
 
 ```sh
+psql "$ADMIN_URL" -c 'create extension if not exists pgcrypto'
+psql "$ADMIN_URL" -c 'create extension if not exists postgis'
+psql "$ADMIN_URL" -c 'create extension if not exists vector'
+psql "$ADMIN_URL" -c 'create extension if not exists pgtap'   # optional
+```
+
+**`0000` runs on its own and is expected to fail partway.** Its
+`create or replace function auth.uid()` belongs to `supabase_auth_admin` on
+Supabase and will be refused — which is fine, because Supabase's own version
+reads exactly the same GUCs. Under `ON_ERROR_STOP=1` that refusal aborts the
+file *before* it creates the schemas, and every later migration then fails with
+`schema "orbit" does not exist`:
+
+```sh
+psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -f supabase/migrations/0000_bootstrap.sql
+```
+
+Expected failures, all harmless: `auth.uid()` / `auth.role()` (permission),
+`create role anon|authenticated|service_role` (already exist), `create schema
+auth` (already exists). **Anything else is real** — read it rather than pressing
+on.
+
+```sh
+psql "$ADMIN_URL" -c "\
+  select nspname from pg_namespace where nspname in ('orbit','app') order by 1"
+# expect two rows: app, orbit
+```
+
+Then the rest, in order. `0001`–`0007` use plain `create table` and are **not
+re-runnable**, so this stops at the first real error rather than continuing into
+a half-built schema:
+
+```sh
+for f in supabase/migrations/000[1-9]_*.sql supabase/migrations/001[0-9]_*.sql; do
+  echo "▸ $(basename "$f")"
+  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f "$f" || { echo "STOPPED at $f"; break; }
+done
+```
+
+**Check it landed:**
+
+```sh
+# 41 tables, every one with RLS enabled. The second number is the one that
+# matters — a table without RLS is a table anybody can read.
+psql "$ADMIN_URL" -c "\
+  select count(*) as tables, count(*) filter (where c.relrowsecurity) as with_rls \
+  from pg_tables t join pg_class c on c.relname = t.tablename \
+  join pg_namespace n on n.oid = c.relnamespace and n.nspname = t.schemaname \
+  where t.schemaname = 'orbit'"
+# expect: 41 | 41
+
+# Migration 0013's two functions. Neither may be executable by PUBLIC: they
+# return times the caller cannot otherwise select, so who may call them is the
+# whole control.
 psql "$ADMIN_URL" -c "\
   select p.proname, p.prosecdef as security_definer, \
          has_function_privilege('public', p.oid, 'execute') as public_can_execute \
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace \
   where n.nspname = 'app' and p.proname like 'free_busy%' order by 1"
+# expect: two rows, t, f
 ```
 
-Expect two rows, `security_definer = t`, `public_can_execute = f` for both.
-
-> If `public_can_execute` is `t` for `free_busy_recurring`, the `revoke` did not
-> apply — re-run the file. `f` is the point: these functions return times the
-> caller cannot otherwise select, so who may call them is the whole control.
-
-**If you want the pgTAP suite against the real project** (optional, and it
-rolls back so it leaves nothing behind):
+**Optionally run the pgTAP suite against the real project.** It runs in a
+transaction and rolls back, so it leaves nothing behind:
 
 ```sh
-psql "$ADMIN_URL" -c 'create extension if not exists pgtap'
 psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_isolation_test.sql
 ```
 
-Expect `112/112`. Three of the assertions are about the local `auth.users` shim
-and the trigger — those are the ones worth watching here, because they are the
-ones a container with no Supabase could only ever test against a shim.
+Expect `112/112`. Three of those assertions are about the `auth.users` shim and
+the trigger — the ones worth watching here, because a container with no Supabase
+could only ever test them against a shim.
 
 ---
 
@@ -80,7 +152,7 @@ psql "$ADMIN_URL" -v ON_ERROR_STOP=1 <<'SQL'
 create role orbit_app login password 'PASTE THE GENERATED PASSWORD' noinherit;
 
 grant connect on database postgres to orbit_app;
-grant usage on schema public, app, auth to orbit_app;
+grant usage on schema orbit, app, auth to orbit_app;
 grant authenticated, anon to orbit_app;
 
 -- The identity seam: two narrow functions, and no table grants at all.
@@ -101,18 +173,18 @@ psql "$ADMIN_URL" -c "\
 # 2. Owns nothing. A table's owner is exempt from its own RLS by default.
 psql "$ADMIN_URL" -c "\
   select count(*) from pg_tables \
-  where schemaname in ('public','app') and tableowner = 'orbit_app'"
+  where schemaname in ('orbit','app') and tableowner = 'orbit_app'"
 # expect: 0
 
 # 3. It can actually connect and RLS bites. Zero rows is correct here —
 #    there is no JWT on this connection, so auth.uid() is null and every
 #    policy declines. A number greater than zero means RLS is not applying.
 psql "postgresql://orbit_app:PASSWORD@db.YOUR-REF.supabase.co:5432/postgres" \
-  -c "select count(*) from public.tasks"
+  -c "select count(*) from orbit.tasks"
 # expect: 0
 ```
 
-> **If check 3 errors with "permission denied for schema public"**, the `grant
+> **If check 3 errors with "permission denied for schema orbit"**, the `grant
 > usage` did not take — re-run step 1. **If it returns a non-zero count**, stop:
 > the role is reading rows without a session, which means RLS is not applying to
 > it and nothing below is safe.
@@ -121,7 +193,7 @@ psql "postgresql://orbit_app:PASSWORD@db.YOUR-REF.supabase.co:5432/postgres" \
 
 ## 2. Verify the `auth.users` → `profiles` trigger
 
-This is the one that fails **silently**. `public.profiles.id` defaults to
+This is the one that fails **silently**. `orbit.profiles.id` defaults to
 `gen_random_uuid()` and has no foreign key to `auth.users`; every policy keys
 off `auth.uid()`, which is `auth.users.id`. If the two ever differ, every policy
 returns zero rows and says nothing — **the app looks empty rather than broken**,
