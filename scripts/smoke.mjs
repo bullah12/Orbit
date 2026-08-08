@@ -570,14 +570,41 @@ try {
       html.includes('Availability only'),
     );
 
-    // The real check: no Work event title reaches the page. The seeded Work
-    // titles are the ones to look for, and a busy block has no link at all.
-    const workTitles = ['stand-up', 'Funding', 'Invoice', 'Workshop'];
-    const leaked = workTitles.filter((t) => html.toLowerCase().includes(t.toLowerCase()));
+    // A busy block carries a time, a space and the word "Busy" — nothing else.
+    // Asserted on the blocks themselves rather than by scanning the page for
+    // words, because the partner's *own* events are on this page too and they
+    // are entitled to their titles.
+    //
+    // This check used to scan the whole of `main` for a fixed list of words
+    // ['stand-up', 'Funding', 'Invoice', 'Workshop'] said to be "the seeded Work
+    // titles". Three of the four are not seeded titles at all, and 'Stand-up' is
+    // in the seed's generic EVENT_TITLES filler, so it lands in *any* space —
+    // including Danny's own. The check went red the moment the shuffle put one
+    // in his week, reporting a leak that was his own row. What is asserted here
+    // instead is the property the name claims, plus a leak scan whose forbidden
+    // set is derived from the app rather than guessed at (below).
+    const blocks = await page.$$eval('main .busy', (els) =>
+      els.map((el) => ({
+        text: el.innerText.replace(/\s+/g, ' ').trim(),
+        title: el.getAttribute('title') ?? '',
+        hasLink: !!el.querySelector('a'),
+        // A category renders as an inline colour swatch; a busy block spends
+        // none of the ten category colours on somebody else's time.
+        hasCategoryColour: /var\(--c-/.test(el.getAttribute('style') ?? ''),
+      })),
+    );
+    const wrong = blocks.filter(
+      (b) =>
+        b.hasLink ||
+        b.hasCategoryColour ||
+        // "Work Busy" — the space label and the word, and nothing more.
+        !/^[^|]*\bBusy$/.test(b.text) ||
+        !/^\S.* — busy, /.test(b.title),
+    );
     check(
       'a busy block carries no title, no category and no link',
-      leaked.length === 0,
-      leaked.join(', '),
+      blocks.length > 0 && wrong.length === 0,
+      wrong.length ? JSON.stringify(wrong[0]) : `${blocks.length} blocks, all anonymous`,
     );
 
     const busyLinks = await page.evaluate(() =>
@@ -587,7 +614,43 @@ try {
     );
     check('and no busy block is a link to an event', busyLinks === 0);
 
+    // The leak scan, with the forbidden set derived rather than hardcoded: the
+    // titles Priya can see in the Work space this week, minus any title the
+    // partner legitimately sees in a space he can read. A word that is on the
+    // page for an honest reason cannot be evidence of a leak, and the seed
+    // reuses one title list across every space, so the subtraction is what
+    // makes this assertion mean something.
+    const dannyTitles = new Set(
+      (
+        await page.$$eval('main a[href^="/calendar/event/"]', (els) =>
+          els.map((e) => e.getAttribute('aria-label') ?? ''),
+        )
+      ).map((l) => l.split(',')[0].trim().toLowerCase()),
+    );
     await ctx.close();
+
+    const { ctx: pctx, page: ppage } = await pageAs(PRIYA);
+    await ppage.goto('/calendar/week');
+    const workTitles = [
+      ...new Set(
+        (
+          await ppage.$$eval('main a[href^="/calendar/event/"]', (els) =>
+            els.map((e) => e.getAttribute('aria-label') ?? ''),
+          )
+        )
+          .filter((l) => l.endsWith(', Work'))
+          .map((l) => l.split(',')[0].trim())
+          .filter((t) => t && !dannyTitles.has(t.toLowerCase())),
+      ),
+    ];
+    await pctx.close();
+
+    const leaked = workTitles.filter((t) => html.toLowerCase().includes(t.toLowerCase()));
+    check(
+      'and no Work-only title from that week reaches the partner’s page',
+      workTitles.length > 0 && leaked.length === 0,
+      leaked.length ? `leaked: ${leaked.join(', ')}` : `${workTitles.length} titles withheld`,
+    );
   }
 
   // ---------------------------------------------- calendar: the outsider
