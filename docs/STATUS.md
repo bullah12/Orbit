@@ -1,11 +1,72 @@
 # STATUS — handoff contract
 
-Last rewritten: **session 10**, 2026-08-01. Branch:
-`claude/app-design-functionality-n6ptjw`.
+Last updated: **session 11**, 2026-08-08. Branch:
+`claude/project-completion-status-kkqpxo`. The body below the session 11 section
+is session 10's and is still accurate except where that section corrects it.
 
 This file takes precedence over your assumptions about what is done. Read it,
-then `docs/design-review.md`, then `docs/decisions-log.md`, then get the
-database up and pick from **Next three things** at the bottom.
+then `docs/remaining-work.md`, then `docs/design-review.md`, then
+`docs/decisions-log.md`, then get the database up and pick from
+**Next three things** at the bottom.
+
+---
+
+## Session 11 — one schema, and what the five commands actually say
+
+Session 11 built no feature. It re-ran the five commands from a cold container
+to check whether this file was still true, and then moved Orbit into a single
+schema so it can be deployed into a Supabase project that is already carrying
+other work.
+
+**Orbit lives in one schema, `orbit`.** Tables, enums, and every helper
+the policies call. There is no `app` schema any more and nothing is created in
+`public`. The single object outside `orbit` is the trigger on `auth.users` in
+migration 0012, which is unavoidable — that table is Supabase's and the profile
+row has to exist when an account does. `tests/schema.test.ts` holds the whole
+invariant, including that 0012 stays the only exception.
+
+**The five commands, run from a cold container at the end of session 11:**
+
+```
+./scripts/db-test.sh   106/106 pgTAP assertions   (unchanged)
+pnpm build             clean
+pnpm typecheck         clean (needs the build first on a fresh clone)
+pnpm test              744 Vitest tests in 18 files   (was 735 in 17)
+pnpm smoke             402/402 against the running app
+```
+
+No migration was added, so pgTAP is unchanged at 106. The nine new Vitest cases
+are `tests/schema.test.ts`.
+
+**Two things this move found, and one thing it did not.**
+
+1. **`orbit.space_invite()` could not have worked on Supabase.** It is SECURITY
+   DEFINER with `search_path` pinned to `orbit, pg_temp`, and it hashed the
+   invitation token with pgcrypto's `digest()` — an extension that lives in
+   `public` locally and `extensions` on Supabase, neither on that path. Every
+   redemption raised. It uses `sha256()` from `pg_catalog` now. Caught by
+   `tests/invites.test.ts`, which reads the migration source and compares it to
+   the TypeScript.
+2. **A bare `create extension` would have installed PostGIS into `orbit`**, once
+   `orbit` was first on the search_path. 0000 places extensions in `extensions`
+   where that schema exists and `public` where it does not, and leaves an
+   already-installed one alone.
+3. **The one red smoke check was a false positive, not a failure, and it was red
+   before this session started.** "a busy block carries no title" searched the
+   page for the seeded Work titles, and the seed draws every space's titles from
+   one pool — Danny legitimately has a "Stand-up" of his own. There is no leak:
+   `orbit.free_busy_blocks()` is `returns table (starts_at, ends_at, all_day)`,
+   so a title has nowhere to travel. The check now strips the three things a
+   busy block may render and requires nothing to be left.
+
+**What did not change:** every policy, `asUser`, the `dev` provider being the
+default, and the seven providers that are still written and never run. A schema
+move is not evidence about any of them.
+
+**Still true and still the most important sentence in this file:**
+`AUTH_PROVIDER=supabase` has never run.
+
+---
 
 **Where the project is: Orbit was finished at the end of session 8, made usable
 by a real person in session 9, and made usable *on a phone* in session 10.**
@@ -19,7 +80,8 @@ organiser, which is a phone product. At 390px the sidebar took 62% of the
 screen and task titles were pushed off it entirely.
 
 **Five commands are the whole truth about this repo.** All five were run at the
-end of session 10, and all five were green:
+end of session 10, and all five were green. (Session 11 re-ran them; the counts
+it saw are in the section above.)
 
 ```
 ./scripts/db-test.sh   106/106 pgTAP assertions   (unchanged)
@@ -36,7 +98,9 @@ No migration was written this session, which is why pgTAP is unchanged at 106.
 ## The one thing to understand before you touch anything
 
 **`AUTH_PROVIDER=supabase` has never run.** Unchanged from session 9 and still
-the most important sentence in this file. There is no Supabase project, no
+the most important sentence in this file. Session 11 found a bug in that path
+without running it — see the section above — which is a reason to trust it less,
+not more. There is no Supabase project, no
 credential and no network in this container. The provider is a complete
 implementation of Supabase's GoTrue REST API and not one line of it has ever
 sent a request — exactly like `calendar:google` and `ai:anthropic`.
@@ -312,13 +376,16 @@ pnpm install
 ./scripts/db-test.sh           # 106/106 must be green
 pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
-pnpm test                      # 735 Vitest tests
+pnpm test                      # 744 Vitest tests
 pnpm start                     # http://localhost:3000
 pnpm smoke                     # 402 checks; also starts a second server on :3101
 ```
 
 If Postgres has stopped but the data is still there, start it rather than
 resetting: `pg_ctlcluster 16 main start`.
+
+Everything is in the `orbit` schema, so `psql -d orbit` on its own will find
+nothing: `set search_path = orbit, public, extensions;` first, or qualify.
 
 Start the server so it survives the shell that launched it:
 

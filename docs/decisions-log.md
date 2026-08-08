@@ -1243,3 +1243,88 @@ acting on it.
   that nothing was watching, which is how it came to look absent from the
   outside. Four smoke checks now drive it, and the wrong claim was corrected in
   STATUS, in the review and here rather than quietly dropped.
+
+---
+
+## Session 11 — one schema, `orbit`
+
+### The move itself
+
+- **Everything Orbit owns is in one schema called `orbit`**: 41 tables, six
+  enums, and every helper the policies call. It was 41 tables in `public` plus a
+  second schema named `app`. The reason is deployment into a Supabase project
+  that is **already carrying other work**, which is what the owner has: `public`
+  and `app` are both names another project claims, and **both failure modes are
+  silent**. `create schema if not exists app` succeeds against somebody else's
+  `app` and attaches Orbit's policy helpers to it. A query against
+  `public.tasks` in a project that has a `public.tasks` does not error — it
+  reads their rows and Orbit looks like it is working.
+- **`app` was folded in rather than renamed to `orbit_app`.** Two schemas are a
+  weaker boundary than one, and the distinction `app.` used to draw at every
+  call site — "this is a helper, not a table" — is worth less than being able to
+  say Orbit occupies exactly one schema. No helper name collides with a table
+  name; that was checked before the rename, not after.
+- **The one object outside `orbit` is the trigger on `auth.users` in 0012**, and
+  it is unavoidable: that table is Supabase's, and the profile row has to be
+  created when an account is. `tests/schema.test.ts` asserts that 0012 is the
+  only migration that names it, so a second exception cannot appear quietly.
+- **The migrations were edited in place rather than a 0013 being added.** A
+  migration that moves 41 tables between schemas is only correct against a
+  database that has the old layout, and there is no such database anywhere:
+  nothing has ever been deployed. Writing one would have been writing a
+  migration for a situation that does not exist, and carrying it forever.
+
+### What the move turned up
+
+- **A SECURITY DEFINER function cannot reach an extension, and one was trying
+  to.** `orbit.space_invite()` pins `search_path = orbit, pg_temp` — deliberately
+  narrow, because it runs with the owner's rights — and it hashed the invitation
+  token with pgcrypto's `digest()`. pgcrypto is in `public` on a local cluster
+  and `extensions` on Supabase; neither is on that path, so **every redemption
+  raised**. It hashes with `sha256()` from `pg_catalog` now: identical digest,
+  no extension, and the pinned path stays narrow. Widening a definer function's
+  search_path to reach an extension would have been the wrong trade.
+- **The test that caught it was already there.** `tests/invites.test.ts` reads
+  migration 0012's source and asserts the SQL matches
+  `createHash('sha256')` in `src/lib/invites.ts`, because if the two disagree
+  every invitation reads back as "unknown" — a bug that looks like a policy
+  problem and is not one. It went red on the change. This is the second time a
+  test that reads source rather than behaviour has paid for itself.
+- **Extensions must not be installed by a bare `create extension` any more.**
+  With `orbit` first on the search_path, `create extension if not exists postgis`
+  would have installed PostGIS *into Orbit's schema*. 0000 now puts them in
+  `extensions` where that schema exists and `public` where it does not, and
+  leaves an already-installed extension exactly where it is. An extension is not
+  Orbit's to own: dropping `orbit` should not take PostGIS out with it.
+
+### The invariant is a test, not a convention
+
+- **`tests/schema.test.ts` is new** and asserts the whole property at once:
+  nothing qualified `public.` or `app.` anywhere that talks to Postgres, exactly
+  two schemas created (`orbit` and the `auth` shim), a pinned `search_path` in
+  every migration, every definer function pinned to `orbit, pg_temp`, and no
+  pgcrypto call at all. **It found three misses in the change**, all in files
+  already read by eye.
+- **It reads code, not prose.** The first version failed on its own explanations
+  — the comments in 0000 and 0012 discuss the `app` schema and the `digest()`
+  call by name, because that is what a comment explaining a removal has to do.
+  The structural checks strip `--` comments first. The `public.`/`app.` checks
+  do not, deliberately: those are stricter for scanning comments too.
+
+### A smoke check that was a false positive, not a failure
+
+- **"a busy block carries no title, no category and no link" had been red before
+  this session started**, and it was wrong rather than failing. It searched the
+  page HTML for the seeded Work titles, and **the seed draws every space's event
+  titles from one pool** — "Stand-up" is a Work event *and* an event in Danny's
+  own space *and* one in Home, both of which he is entitled to see. The check
+  could not tell a leak from a row he owns.
+- **There was no leak.** `orbit.free_busy_blocks()` is
+  `returns table (starts_at, ends_at, all_day)`. A title has nowhere to travel;
+  the privacy property is structural and the pgTAP suite already covers it.
+- **The replacement asserts the property instead of guessing at its symptoms.**
+  Take every busy block, remove the only three things one may render — the word
+  "Busy", the space chip, a time — and require that nothing is left. It holds
+  whatever the seed calls things, and it drops the space chip by removing the
+  element rather than by matching the space's name, so a space called "Stand-up"
+  could not launder a title through it.

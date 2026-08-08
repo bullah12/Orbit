@@ -1,9 +1,11 @@
 # Orbit — what is done, what remains, and the prompts to finish it
 
 Written session 11, 2026-08-08, on branch `claude/project-completion-status-kkqpxo`.
-This session **built nothing**. It read the handoff documents and then re-ran
-the repository's own five commands from a cold container to check whether the
-claims in `docs/STATUS.md` are still true. They are.
+The session read the handoff documents, re-ran the repository's own five
+commands from a cold container to check whether the claims in `docs/STATUS.md`
+are still true — they are — and then moved Orbit into a single schema, `orbit`,
+so it can be deployed into a Supabase project that is already carrying other
+work.
 
 This file does not replace `docs/STATUS.md`, which remains the handoff contract.
 It answers one question — *how much of Orbit is finished and what is left* — and
@@ -21,22 +23,33 @@ From a cold container: `pnpm install`, `pg_ctlcluster 16 main start`,
 | `./scripts/db-test.sh` | **106/106 pgTAP assertions** | 106 ✓ |
 | `pnpm build` | **clean**, 27 routes, standalone output | clean ✓ |
 | `pnpm typecheck` | **clean** | clean ✓ |
-| `pnpm test` | **735 tests, 17 files, all green** | 735 ✓ |
-| `pnpm smoke` | **401 of 402** — one check failed | 402 ✗ |
+| `pnpm test` | **744 tests, 18 files, all green** (735 + 9 for the schema invariant) | 735 ✓ |
+| `pnpm smoke` | **402/402** after one check was corrected — see below | 402 ✓ |
 
-Four of five clean. `docs/STATUS.md` is accurate on the four that matter most —
-its numbers were not aspirational — and one smoke check is red.
+Five for five. `docs/STATUS.md` is accurate as written, which is worth saying
+plainly: the numbers in it were not aspirational.
 
-**About that one check.** The run was captured tail-only, so the failing
-check's name was lost and it has not been re-run; it is a single check out of
-402 and the suite was otherwise identical to STATUS's count. It is recorded here
-as unidentified rather than guessed at. The first thing a next session should do
-is `pnpm seed && pnpm smoke` with the whole output kept, because the two
-documented candidates are cheap to rule out: **edge 3** (a run leaves two
-invitation rows behind and a second run without reseeding fails the revoke
-checks) and the date-sensitive fixture check that STATUS records as having
-passed Monday to Friday and failed at the weekend — session 10 fixed that one,
-and this session also ran on a Saturday.
+**The one check that was red, and why it was not a failure.** "a busy block
+carries no title, no category and no link" was failing before this session
+started. It searched the rendered page for the seeded Work event titles, and
+**the seed draws every space's titles from one pool** — "Stand-up" is a Work
+event *and* an event in Danny's own space *and* one in Home, both of which he is
+entitled to see. The check could not tell a leak from a row he owns.
+
+There was no leak. `orbit.free_busy_blocks()` is
+`returns table (starts_at, ends_at, all_day)` — a title has nowhere to travel,
+and the pgTAP suite already covers the property. The check now removes the only
+three things a busy block may render (the word "Busy", the space chip, a time)
+and requires that nothing is left, which holds whatever the seed calls things.
+
+### Session 11 also moved Orbit into one schema
+
+`public` and `app` are gone; everything Orbit owns is in **`orbit`**, so it can
+be deployed into a Supabase project already carrying other work. The move found
+a real bug in the never-run authentication path — `orbit.space_invite()` hashed
+with pgcrypto's `digest()`, which its own pinned `search_path` could not reach,
+so every invitation redemption would have raised on Supabase. See
+`docs/decisions-log.md`, session 11.
 
 Scale, for context: 27,095 lines of TypeScript/TSX in `src/`, 10,730 lines of
 tests and migrations, 13 migrations, 79 commits on `main`.
@@ -92,6 +105,11 @@ there is no project, no credential and no network for them.
    page is `force-dynamic` and `src/lib/db/index.ts` holds a pool). `docs/deploy.md` §2.
 3. **Sign up once**, and confirm `u.id = p.id`.
 
+   Orbit installs into the `orbit` schema and creates nothing in `public`, so
+   the project does **not** have to be an empty one. What it needs is the schema
+   name `orbit` being free — `docs/deploy.md` §1 checks that before writing
+   anything — and permission to put a trigger on `auth.users`.
+
 Until those three happen, "signing in works" stays proven by nothing.
 
 ### Bucket B — an agent can finish these, unattended
@@ -106,7 +124,6 @@ Ordered as `docs/STATUS.md` orders them, with its edge numbers.
 | B4 | **Device revoke** (edge 4) — `devices.revoked_at` exists and nothing sets it; lives on the settings page from B1 | small | no |
 | B5 | **A push that deletes** (edge 13) and **a scheduler** so `schedule` rules run (edge 16) | medium | maybe |
 | B6 | **An assignee picker on the task row** (edge 32) — deliberately *not* on the compose bar | small | no |
-| B0 | **Identify and fix the one red smoke check** (§1) — reseed first, keep the whole output | small | no |
 | B7 | **The remaining 27 edges** in STATUS — the invite token in browser history (2), smoke leaving invite rows (3), per-occurrence detail edits (5), `SYNCABLE_FIELDS` narrower than the forms (9), contacts that cannot be edited (27), and the rest | varies | some |
 | B8 | **Shared lists (shopping)** — the one household verb genuinely missing, per the comparison table in `docs/design-review.md` | large | **yes** |
 
@@ -137,15 +154,17 @@ Paste into a fresh session. Written to run without check-ins.
 > ambiguous, choose the option that keeps the five commands in STATUS green,
 > write the choice and its reason into `docs/decisions-log.md`, and continue.
 >
-> ### Phase 0 — get the fifth command green before building anything
+> ### Phase 0 — confirm the five commands before building anything
 >
-> Session 11 ran the five commands from a cold container: pgTAP 106/106, build,
-> typecheck and 735 Vitest tests were clean, and **one of 402 smoke checks
-> failed**. That run was captured tail-only so the check's name was lost.
-> `pnpm seed` first (edge 3), then `pnpm smoke` keeping the entire output, and
-> fix whatever it names — or record why it is environmental. **Do not start
-> Phase 1 with a red suite**: everything below is judged by the five commands,
-> and a suite that was already red cannot tell you what you broke.
+> Session 11 left all five green: 106/106 pgTAP, clean build, clean typecheck,
+> 744 Vitest tests in 18 files, 402/402 smoke. Reproduce that before you change
+> anything — `pnpm seed` first (edge 3) — because everything below is judged by
+> those five, and a suite that was already red cannot tell you what you broke.
+>
+> Note `tests/schema.test.ts`: Orbit installs into one schema, `orbit`, and that
+> test is what keeps it there. If you add a migration, it must pin its
+> search_path and qualify with `orbit.`; if you add a SECURITY DEFINER function,
+> it may not call a pgcrypto function, because its pinned path cannot reach one.
 >
 > ### Phase 1 — decide the theme question, then build settings
 >
@@ -265,6 +284,10 @@ a building prompt; it is the one that turns "written, never run" into either
 >
 > In this order, because the first failure makes the others meaningless:
 >
+> 0. The migrations landed in `orbit` and added nothing to `public`:
+>    `select schemaname, count(*) from pg_tables where schemaname in
+>    ('orbit','public') group by 1`. On a shared project this is the check that
+>    says Orbit did not tread on anything.
 > 1. `on_auth_user_created` exists on `auth.users`.
 > 2. After one sign-up, `u.id = p.id` for that account. **If this is not `t`,
 >    stop.** Every policy returns zero rows and says nothing about why — the app
@@ -276,6 +299,12 @@ a building prompt; it is the one that turns "written, never run" into either
 >    there. 106/106 or an explanation per failure.
 >
 > ### 2. Drive real authentication end to end, and write down what actually happened
+>
+> **Redeem an invitation first.** Session 11 found that `orbit.space_invite()`
+> was calling a pgcrypto function its own pinned `search_path` could not reach,
+> which would have raised on every redemption; it was fixed by hashing with
+> `sha256()` from pg_catalog, and that fix has never run against Supabase
+> either. If anything in this area is going to be wrong, it is this.
 >
 > Sign up, sign in, sign out, magic link, **and let a session expire so the
 > refresh path runs** — that last one is the specific line STATUS flags. Then:

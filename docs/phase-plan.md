@@ -252,3 +252,27 @@ and 33.
 - Category colour is the only strong colour, and never appears without an icon and
   a label.
 - Calm and dense. Neutral chrome. Full dark mode. UK conventions throughout.
+
+---
+
+## Session 11 — one schema
+
+Not a phase and not a feature. Orbit was written for a database it had to
+itself; this makes it installable into a Supabase project that is already
+carrying other work, which is the deployment it actually has to survive.
+
+- [x] Everything Orbit owns is in **one schema, `orbit`** — 41 tables, six
+      enums, and every helper the policies call. `public` gets nothing and the
+      `app` schema is gone rather than renamed
+- [x] The only object created outside it is the `auth.users` trigger in 0012,
+      which is unavoidable, and a test asserts it stays the only one
+- [x] Extensions go to `extensions` where that schema exists and `public` where
+      it does not — never into `orbit`, which a bare `create extension` would
+      have done once `orbit` led the search_path
+- [x] `orbit.space_invite()` hashes with `sha256()` from `pg_catalog` rather
+      than pgcrypto's `digest()`, which its own pinned `search_path` could not
+      reach — **a bug in the never-run authentication path, found by moving it**
+- [x] `tests/schema.test.ts` holds the invariant, and found three misses in the
+      change that reading the files by eye had not
+- [x] The five commands stay green: 106/106 pgTAP, clean build, clean typecheck,
+      744 Vitest tests, 402/402 smoke
