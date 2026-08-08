@@ -63,8 +63,34 @@ are `tests/schema.test.ts`.
 default, and the seven providers that are still written and never run. A schema
 move is not evidence about any of them.
 
+### Then it was installed into a real Supabase project
+
+Not by a session — by the owner, by hand, against a project already carrying
+other work. **This is the first time any of Orbit's SQL has run on real
+infrastructure.** What is now known, and it is more than was known before:
+
+- **All 13 migrations apply to a real Supabase project in one pass**, with
+  `ON_ERROR_STOP=1`, into the `orbit` schema, adding nothing to `public`.
+- **84 of the 106 pgTAP assertions pass there** — the isolation model holds
+  against the real `auth.uid()`, not a local shim of it.
+- **Assertion 84 passed: "a trigger on auth.users insert creates the profile".**
+  That is gotcha 1, the one that returns zero rows from every policy and says
+  nothing about why. It has been the top of the risk list for three sessions.
+
+What stopped the remaining 22 was **not Orbit**: the host project has its own
+`enforce_email_allowlist` trigger on `auth.users` that refuses an address which
+is not on its list, so the suite's fixture inserts were rejected. It is now
+gotcha 4 in `docs/deploy.md`, because the same trigger refuses a real sign-up —
+a failure that reads like Orbit's authentication being broken and is not.
+
+**Still unproven, and do not let the above suggest otherwise:** nothing has
+signed in. `AUTH_PROVIDER=supabase` has still never sent a request, `ids_match`
+has never been checked against a real account, and the invite flow (assertions
+85–106) has not run anywhere but locally.
+
 **Still true and still the most important sentence in this file:**
-`AUTH_PROVIDER=supabase` has never run.
+`AUTH_PROVIDER=supabase` has never run. The database underneath it now has;
+those are different claims and the gap between them is the whole of the risk.
 
 ---
 

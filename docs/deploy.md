@@ -110,10 +110,12 @@ psql "$ADMIN_URL" -c "\
 | `0011_travel_leg_identity.sql` | the partial unique index on a derived journey |
 | `0012_auth_user_profiles.sql` | **the one this all turns on**: the `auth.users` → `orbit.profiles` trigger, and `orbit.space_invite()`. The only migration that writes outside the `orbit` schema |
 
-### The three gotchas
+### The four gotchas
 
-These are from §2 of `docs/deployment-and-android.md`. All three are things to
-check rather than assume, and the first is the one that fails silently.
+The first three are from §2 of `docs/deployment-and-android.md`; the fourth was
+found the first time Orbit was installed into a project that was already in use.
+All four are things to check rather than assume, and the first is the one that
+fails silently.
 
 **1. `profiles.id` must equal `auth.uid()`.** `orbit.profiles.id` defaults to
 `gen_random_uuid()` and has no foreign key to `auth.users`. Every policy in the
@@ -126,7 +128,7 @@ trigger is what makes them equal. Verify it before you sign up:
 psql "$ADMIN_URL" -c "\
   select tgname from pg_trigger \
   where tgrelid = 'auth.users'::regclass and not tgisinternal"
-# expect: on_auth_user_created
+# expect: on_auth_user_created — among possibly others, see gotcha 4
 ```
 
 Then sign up once and check the pair:
