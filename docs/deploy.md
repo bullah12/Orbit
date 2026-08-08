@@ -44,6 +44,13 @@ add a trigger to `auth.users`.
 
 Create or open a project at supabase.com, then, from a clone of this repository:
 
+**If you are on WSL, use the session pooler, not the direct connection.**
+`db.<ref>.supabase.co` has an AAAA record and no A record, and WSL2's default
+networking has no IPv6 route, so the direct host is simply unreachable —
+`Network is unreachable`, which reads like a firewall and is not one. Dashboard
+→ **Connect** → *Session pooler* gives you an IPv4 host; the username becomes
+`postgres.YOUR-REF`. See `docs/windows.md`.
+
 ```sh
 # The connection string from Settings → Database → Connection string → URI.
 # Session mode, port 5432, as the `postgres` user: migrations create roles and

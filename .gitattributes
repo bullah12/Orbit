@@ -1,0 +1,39 @@
+# Line endings.
+#
+# Orbit runs on Linux and is edited from Windows — a WSL shell against a clone
+# living on the Windows filesystem is a normal way to work on it. Without this
+# file that is a trap: a Windows checkout with core.autocrlf=true rewrites every
+# file with CRLF, git reports the entire repository as modified, and `git switch`
+# refuses to move because it would "overwrite local changes" that are not changes.
+#
+# LF in the working tree, on every platform. This is not a preference — three
+# things in here break outright on CRLF:
+#
+#   *.sh   a shebang followed by \r gives `/usr/bin/env: 'bash\r': No such file
+#          or directory`, which names the interpreter and not the real problem
+#   *.sql  psql passes the \r through into string literals and function bodies
+#   *.mjs  scripts/smoke.mjs is run by node directly
+#
+# Windows-native scripts are the one exception: PowerShell wants CRLF.
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.sql  text eol=lf
+*.mjs  text eol=lf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Never touch these: a "line ending fix" applied to a binary corrupts it.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.woff  binary
+*.woff2 binary
+*.pdf  binary
+
+# Generated. Kept in the repository, but there is no value in reading its diff.
+pnpm-lock.yaml -diff linguist-generated
