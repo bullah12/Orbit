@@ -3,6 +3,12 @@
 Strict order. Each phase must be shippable — usable, demoable, not broken — before
 the next one starts. Work in vertical slices that run.
 
+**A note on names.** Phases 0–7 were written when Orbit's tables were in
+`public` and its helpers in a schema called `app`. Everything is in one schema
+called `orbit` now, so where a phase below says `app.space_move_preview()` or
+`app.free_busy_blocks()`, read `orbit.`. The ticks are left as they were
+written — see "Session 11" at the end for why the move happened.
+
 ---
 
 ## Phase 0 — Private task and note app, with sharing already real
@@ -275,4 +281,4 @@ carrying other work, which is the deployment it actually has to survive.
 - [x] `tests/schema.test.ts` holds the invariant, and found three misses in the
       change that reading the files by eye had not
 - [x] The five commands stay green: 106/106 pgTAP, clean build, clean typecheck,
-      744 Vitest tests, 402/402 smoke
+      744 Vitest tests, 403/403 smoke

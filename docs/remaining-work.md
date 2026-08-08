@@ -24,7 +24,7 @@ From a cold container: `pnpm install`, `pg_ctlcluster 16 main start`,
 | `pnpm build` | **clean**, 27 routes, standalone output | clean ✓ |
 | `pnpm typecheck` | **clean** | clean ✓ |
 | `pnpm test` | **744 tests, 18 files, all green** (735 + 9 for the schema invariant) | 735 ✓ |
-| `pnpm smoke` | **402/402** after one check was corrected — see below | 402 ✓ |
+| `pnpm smoke` | **403/403** after one check was corrected and one added — see below | 402 ✓ |
 
 Five for five. `docs/STATUS.md` is accurate as written, which is worth saying
 plainly: the numbers in it were not aspirational.
@@ -157,7 +157,7 @@ Paste into a fresh session. Written to run without check-ins.
 > ### Phase 0 — confirm the five commands before building anything
 >
 > Session 11 left all five green: 106/106 pgTAP, clean build, clean typecheck,
-> 744 Vitest tests in 18 files, 402/402 smoke. Reproduce that before you change
+> 744 Vitest tests in 18 files, 403/403 smoke. Reproduce that before you change
 > anything — `pnpm seed` first (edge 3) — because everything below is judged by
 > those five, and a suite that was already red cannot tell you what you broke.
 >

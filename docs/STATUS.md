@@ -32,7 +32,7 @@ invariant, including that 0012 stays the only exception.
 pnpm build             clean
 pnpm typecheck         clean (needs the build first on a fresh clone)
 pnpm test              744 Vitest tests in 18 files   (was 735 in 17)
-pnpm smoke             402/402 against the running app
+pnpm smoke             403/403 against the running app   (was 402)
 ```
 
 No migration was added, so pgTAP is unchanged at 106. The nine new Vitest cases
@@ -378,7 +378,7 @@ pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
 pnpm test                      # 744 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm smoke                     # 402 checks; also starts a second server on :3101
+pnpm smoke                     # 403 checks; also starts a second server on :3101
 ```
 
 If Postgres has stopped but the data is still there, start it rather than
