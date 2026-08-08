@@ -198,6 +198,15 @@ Two consequences:
   order and it is luck rather than design. A trigger sorting *after* Orbit's
   would leave a profile row behind for an account that was then rejected.
 
+**An allowlist changes what inviting somebody means.** Orbit's invite flow
+assumes a stranger can create an account: an admin sends a link, the recipient
+signs up, redeems it, and joins the space. With a trigger like this in front of
+`auth.users` that is no longer true — the invitation will be accepted by Orbit
+and the *sign-up* refused before they ever reach it, which looks like a broken
+invite link. Inviting somebody becomes two steps, and the allowlist is the first
+one. Nothing in Orbit knows about that table, and nothing should: it belongs to
+the other project.
+
 To run the full pgTAP suite against such a project, three addresses need to be
 acceptable to it: `newcomer@example.com`, `quiet.person@example.com` and
 `alice@example.com`. The suite rolls back its own inserts; anything you add to
