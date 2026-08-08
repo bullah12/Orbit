@@ -472,6 +472,11 @@ button.
 
 ## Next three things, in order
 
+**`docs/runbook.md` is the ordered sequence for item 1** — the console and CLI
+steps, with what to check after each and what going wrong looks like. Its step 0
+matters: migration `0013` was written *after* the migrations were applied by
+hand, so it still needs running.
+
 1. **Somebody has to do the by-hand steps** — create the Supabase project, run
    the migrations, create `orbit_app`, deploy, and sign up once.
    `docs/deploy.md` is the list, and `docs/remaining-work.md` §5 is the prompt
