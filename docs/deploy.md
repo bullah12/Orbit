@@ -323,6 +323,23 @@ Three of the 106 are about the `auth.users` trigger and the shim. Those are the
 ones worth watching here, because they are the ones a local container could only
 ever test against a stand-in.
 
+**Expect exactly one failure on a real project, and expect it forever:**
+
+```
+not ok 79 - every table outside the known-empty ledger holds rows, so the
+            outsider check is not vacuous
+```
+
+That assertion exists to stop assertion 78 ("the outsider sees zero rows in
+every table") from passing for the wrong reason — an empty table cannot leak.
+A real deployment starts empty and stays partly empty in genuine use, so 79
+cannot pass there. It is the suite reporting honestly that its own coverage
+check is vacuous, not a defect.
+
+**105/106 with only 79 failing is a pass.** Any other `not ok` is a real
+finding: the policies, the trigger and the invite flow are all being exercised
+against the real `auth.uid()` rather than a shim.
+
 ---
 
 ## 2. Supabase Auth settings
