@@ -170,6 +170,37 @@ with a copy of itself.
 **An error here is now a real error.** If 0000 stops, do not reach for
 `ON_ERROR_STOP=0` — read what it says.
 
+**4. A shared project may already have triggers on `auth.users`, and yours is
+not the only one.** `auth.users` is the one table Orbit writes outside its own
+schema, so it is also the one place another project in the same database can
+collide with it. Look before you sign up:
+
+```sh
+psql "$ADMIN_URL" -c "select tgname, tgenabled from pg_trigger \
+  where tgrelid='auth.users'::regclass and not tgisinternal order by tgname"
+```
+
+Anything other than `on_auth_user_created` belongs to something else, and it can
+refuse an insert that Orbit expects to succeed. A real example, found on the
+first project Orbit was installed into: an `enforce_email_allowlist` trigger
+that raises unless the address is on a list. It stops the pgTAP suite at
+assertion 84 — and, far more importantly, **it refuses your own sign-up**, with
+a failure that reads like Orbit's authentication being broken.
+
+Two consequences:
+
+- **Add your address to whatever that trigger checks before you deploy**, or the
+  first sign-up fails and gotcha 1 is untestable.
+- **Firing order is alphabetical**, so a trigger named before `on_auth_user_created`
+  aborts the insert first and no orphan profile is created. That is the safe
+  order and it is luck rather than design. A trigger sorting *after* Orbit's
+  would leave a profile row behind for an account that was then rejected.
+
+To run the full pgTAP suite against such a project, three addresses need to be
+acceptable to it: `newcomer@example.com`, `quiet.person@example.com` and
+`alice@example.com`. The suite rolls back its own inserts; anything you add to
+somebody else's allowlist to make it pass is yours to remove afterwards.
+
 **3. `orbit_app` must exist, be able to log in, own nothing, and hold no
 BYPASSRLS.** The whole security model is that the application connects as a role
 the policies apply to in full — `./scripts/db-test.sh` asserts exactly that
