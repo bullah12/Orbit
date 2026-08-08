@@ -295,9 +295,12 @@ for two things rather than trusting an exit code. Do the same by hand:
 ```sh
 psql "$ADMIN_URL" -c 'create extension if not exists pgtap'
 
-# -P pager=off, or psql pipes it through less and quitting takes the whole
-# run off the screen with it.
-psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -P pager=off \
+# --no-align --tuples-only matter: without them psql renders the TAP output as a
+#   result table and every line arrives indented by a space, so `^ok` and
+#   `^not ok` match nothing and a failing suite greps clean.
+# -P pager=off, or psql pipes it through less and quitting takes the whole run
+#   off the screen with it.
+psql "$ADMIN_URL" -X -q --no-align --tuples-only -v ON_ERROR_STOP=1 -P pager=off \
   -f supabase/tests/rls_isolation_test.sql > /tmp/pgtap.log 2>&1
 echo "psql exit: $?"
 
@@ -305,6 +308,11 @@ grep -c '^ok' /tmp/pgtap.log                    # expect: 106
 grep '^not ok' /tmp/pgtap.log                   # expect: nothing
 grep 'Looks like you' /tmp/pgtap.log            # expect: nothing
 ```
+
+Those are the flags `scripts/db-test.sh` uses, for this reason. If `grep -c '^ok'`
+ever returns 0 while the run plainly did something, the flags are missing rather
+than the suite being empty — read `Looks like you failed N tests of 106`, which
+pgTAP prints whatever the formatting.
 
 The third grep is not redundant. A wrong plan count means assertions were added
 or lost, pgTAP reports it as `Looks like you planned 106 but ran 104`, and that
