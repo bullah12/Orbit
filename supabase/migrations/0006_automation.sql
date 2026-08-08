@@ -4,10 +4,18 @@
 -- rule_runs, including dry runs, so a wrong rule can be diagnosed after the
 -- fact rather than reproduced.
 
-create table public.rules (
+-- Everything below lives in the `orbit` schema. The search_path names it
+-- first so an unqualified CREATE cannot land in a schema this project
+-- shares with somebody else's work, and names `public` and `extensions`
+-- after it because that is where an installation puts PostGIS and pgcrypto:
+-- Supabase uses `extensions`, a local cluster uses `public`.
+set search_path = orbit, public, extensions, pg_catalog;
+
+
+create table orbit.rules (
   id             uuid primary key default gen_random_uuid(),
-  space_id       uuid not null references public.spaces(id) on delete cascade,
-  owner_id       uuid not null references public.profiles(id) on delete cascade,
+  space_id       uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id       uuid not null references orbit.profiles(id) on delete cascade,
   name           text not null,
   slug           text not null,
   description    text not null default '',
@@ -35,19 +43,19 @@ create table public.rules (
   constraint rules_trigger_is_object check (jsonb_typeof(trigger) = 'object')
 );
 
-create index rules_enabled_idx on public.rules (space_id) where is_enabled;
+create index rules_enabled_idx on orbit.rules (space_id) where is_enabled;
 
-create trigger rules_touch before update on public.rules
-  for each row execute function app.touch_updated_at();
+create trigger rules_touch before update on orbit.rules
+  for each row execute function orbit.touch_updated_at();
 
-create table public.rule_runs (
+create table orbit.rule_runs (
   id            uuid primary key default gen_random_uuid(),
-  space_id      uuid not null references public.spaces(id) on delete cascade,
-  owner_id      uuid not null references public.profiles(id) on delete cascade,
-  rule_id       uuid not null references public.rules(id) on delete cascade,
+  space_id      uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id      uuid not null references orbit.profiles(id) on delete cascade,
+  rule_id       uuid not null references orbit.rules(id) on delete cascade,
   is_dry_run    boolean not null default false,
   trigger_kind  text not null,
-  entity_kind   app.entity_kind,
+  entity_kind   orbit.entity_kind,
   entity_id     uuid,
   matched       boolean not null,
   -- What the run did, or would have done: [{"kind":"...","before":…,"after":…}]
@@ -60,20 +68,20 @@ create table public.rule_runs (
   constraint rule_runs_effects_is_array check (jsonb_typeof(effects) = 'array')
 );
 
-create index rule_runs_rule_idx on public.rule_runs (space_id, rule_id, ran_at desc);
+create index rule_runs_rule_idx on orbit.rule_runs (space_id, rule_id, ran_at desc);
 
-create trigger rule_runs_touch before update on public.rule_runs
-  for each row execute function app.touch_updated_at();
+create trigger rule_runs_touch before update on orbit.rule_runs
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- reminders — attached to any entity. Delivery is a separate table so a retry
 -- does not lose the schedule.
 -- ---------------------------------------------------------------------------
-create table public.reminders (
+create table orbit.reminders (
   id           uuid primary key default gen_random_uuid(),
-  space_id     uuid not null references public.spaces(id) on delete cascade,
-  owner_id     uuid not null references public.profiles(id) on delete cascade,
-  entity_kind  app.entity_kind not null,
+  space_id     uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id     uuid not null references orbit.profiles(id) on delete cascade,
+  entity_kind  orbit.entity_kind not null,
   entity_id    uuid not null,
   remind_at    timestamptz not null,
   channel      text not null default 'in_app' check (channel in ('in_app', 'push')),
@@ -86,19 +94,19 @@ create table public.reminders (
   updated_at   timestamptz not null default now()
 );
 
-create index reminders_due_idx on public.reminders (space_id, remind_at)
+create index reminders_due_idx on orbit.reminders (space_id, remind_at)
   where fired_at is null and dismissed_at is null;
-create index reminders_entity_idx on public.reminders (space_id, entity_kind, entity_id);
+create index reminders_entity_idx on orbit.reminders (space_id, entity_kind, entity_id);
 
-create trigger reminders_touch before update on public.reminders
-  for each row execute function app.touch_updated_at();
+create trigger reminders_touch before update on orbit.reminders
+  for each row execute function orbit.touch_updated_at();
 
-create table public.notification_deliveries (
+create table orbit.notification_deliveries (
   id            uuid primary key default gen_random_uuid(),
-  space_id      uuid not null references public.spaces(id) on delete cascade,
-  owner_id      uuid not null references public.profiles(id) on delete cascade,
-  reminder_id   uuid references public.reminders(id) on delete cascade,
-  device_id     uuid references public.devices(id) on delete set null,
+  space_id      uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id      uuid not null references orbit.profiles(id) on delete cascade,
+  reminder_id   uuid references orbit.reminders(id) on delete cascade,
+  device_id     uuid references orbit.devices(id) on delete set null,
   channel       text not null check (channel in ('in_app', 'push')),
   status        text not null default 'queued'
                   check (status in ('queued', 'sent', 'failed', 'skipped')),
@@ -110,15 +118,15 @@ create table public.notification_deliveries (
   updated_at    timestamptz not null default now()
 );
 
-create index notification_deliveries_queue_idx on public.notification_deliveries (space_id, status, created_at);
+create index notification_deliveries_queue_idx on orbit.notification_deliveries (space_id, status, created_at);
 
-create trigger notification_deliveries_touch before update on public.notification_deliveries
-  for each row execute function app.touch_updated_at();
+create trigger notification_deliveries_touch before update on orbit.notification_deliveries
+  for each row execute function orbit.touch_updated_at();
 
 -- ===========================================================================
 -- RLS
 -- ===========================================================================
-select app.apply_standard_rls('rules');
-select app.apply_standard_rls('rule_runs');
-select app.apply_standard_rls('reminders');
-select app.apply_standard_rls('notification_deliveries');
+select orbit.apply_standard_rls('rules');
+select orbit.apply_standard_rls('rule_runs');
+select orbit.apply_standard_rls('reminders');
+select orbit.apply_standard_rls('notification_deliveries');

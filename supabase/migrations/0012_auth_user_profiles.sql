@@ -1,7 +1,7 @@
--- 0012_auth_user_profiles.sql — the join between auth.users and public.profiles.
+-- 0012_auth_user_profiles.sql — the join between auth.users and orbit.profiles.
 --
 -- This is the one genuinely delicate step in making Orbit use real accounts.
--- `public.profiles.id` defaults to gen_random_uuid() and has no foreign key to
+-- `orbit.profiles.id` defaults to gen_random_uuid() and has no foreign key to
 -- auth.users; every policy in the database keys off `auth.uid()`, which is the
 -- JWT's `sub` — that is, `auth.users.id`. If the two ids ever differ, every
 -- policy returns zero rows and says nothing about why. So a profile is created
@@ -26,6 +26,14 @@
 -- attached and none of it could be tested. Nothing in the app writes to it: the
 -- dev provider does not use auth.users at all.
 -- ---------------------------------------------------------------------------
+
+-- Everything below lives in the `orbit` schema. The search_path names it
+-- first so an unqualified CREATE cannot land in a schema this project
+-- shares with somebody else's work, and names `public` and `extensions`
+-- after it because that is where an installation puts PostGIS and pgcrypto:
+-- Supabase uses `extensions`, a local cluster uses `public`.
+set search_path = orbit, public, extensions, pg_catalog;
+
 create table if not exists auth.users (
   id                 uuid primary key default gen_random_uuid(),
   email              text,
@@ -52,18 +60,18 @@ end $$;
 -- The trigger.
 --
 -- SECURITY DEFINER because it runs as whoever GoTrue is inserting as, which has
--- no rights on public.profiles. `search_path` is pinned for the same reason
+-- no rights on orbit.profiles. `search_path` is pinned for the same reason
 -- every other definer function in this schema pins it.
 --
 -- The display name order is the same one `displayNameFrom()` implements in
 -- src/lib/auth/session.ts. Change both together; the pgTAP assertions below are
 -- what catch it if you do not.
 -- ---------------------------------------------------------------------------
-create or replace function app.profile_for_new_auth_user()
+create or replace function orbit.profile_for_new_auth_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
 declare
   v_email text;
@@ -87,7 +95,7 @@ begin
   -- Idempotent: a profile with this id already exists, so there is nothing to
   -- do. This is the state a re-run of the migration, or a restored dump, leaves
   -- behind, and it must not be an error.
-  if exists (select 1 from public.profiles p where p.id = new.id) then
+  if exists (select 1 from orbit.profiles p where p.id = new.id) then
     return new;
   end if;
 
@@ -101,7 +109,7 @@ begin
   -- That profile owns spaces, tasks, notes and a calendar; handing it to
   -- whoever signed up with a matching address would be the worst possible
   -- reading of "the same email means the same person".
-  select p.id into v_clash from public.profiles p where p.email = v_email;
+  select p.id into v_clash from orbit.profiles p where p.email = v_email;
   if v_clash is not null then
     raise exception
       using
@@ -114,23 +122,23 @@ begin
           'Either sign up with a different address, or delete the seeded profile that holds this one.';
   end if;
 
-  insert into public.profiles (id, email, display_name)
+  insert into orbit.profiles (id, email, display_name)
   values (new.id, v_email, left(v_name, 120));
 
   return new;
 end $$;
 
-revoke execute on function app.profile_for_new_auth_user() from public;
+revoke execute on function orbit.profile_for_new_auth_user() from public;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute function app.profile_for_new_auth_user();
+  for each row execute function orbit.profile_for_new_auth_user();
 
 -- ---------------------------------------------------------------------------
 -- Redeeming a space invite.
 --
--- No table is added or altered here: public.space_invites has had every column
+-- No table is added or altered here: orbit.space_invites has had every column
 -- this needs since 0001 and it is finally getting rows. What it needs is a way
 -- to run, which the policies genuinely cannot express — and this is the single
 -- authorised exception to "do not touch the policies", not a licence to widen
@@ -138,7 +146,7 @@ create trigger on_auth_user_created
 --
 --   * `space_invites` is admin-only in both directions, so the person holding
 --     the link cannot read the row that names the space they were invited to.
---   * `space_members_insert` requires `app.is_space_admin(space_id)`, and the
+--   * `space_members_insert` requires `orbit.is_space_admin(space_id)`, and the
 --     whole point of an invite is that the person is not in the space yet.
 --
 -- Loosening either would open every space's roster to every signed-in user, to
@@ -165,7 +173,7 @@ create trigger on_auth_user_created
 -- that has been declined is simply one that has not been accepted, and the
 -- screen says the link stays live until it expires or is revoked.
 -- ---------------------------------------------------------------------------
-create or replace function app.space_invite(
+create or replace function orbit.space_invite(
   p_token  text,
   p_action text default 'preview'
 )
@@ -177,25 +185,25 @@ returns table (
   space_colour      text,
   space_icon        text,
   space_short_label text,
-  invite_role       app.member_role,
+  invite_role       orbit.member_role,
   invited_email     text,
   expires_at        timestamptz
 )
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
 declare
   v_uid      uuid := auth.uid();
   v_hash     text;
-  v_inv      public.space_invites%rowtype;
-  v_space    public.spaces%rowtype;
+  v_inv      orbit.space_invites%rowtype;
+  v_space    orbit.spaces%rowtype;
   v_email    text;
-  v_member   public.space_members%rowtype;
+  v_member   orbit.space_members%rowtype;
   v_claimed  integer;
 begin
   if p_action not in ('preview', 'accept', 'decline') then
-    raise exception 'app.space_invite: unknown action %', p_action
+    raise exception 'orbit.space_invite: unknown action %', p_action
       using errcode = 'invalid_parameter_value';
   end if;
 
@@ -208,9 +216,17 @@ begin
   -- The raw token is hashed here and nowhere else, so it never has to be
   -- compared in the application and never has to exist in a query log as
   -- something that could be replayed.
-  v_hash := encode(digest(coalesce(p_token, ''), 'sha256'), 'hex');
+  --
+  -- `sha256()` rather than pgcrypto's `digest()`: this function is SECURITY
+  -- DEFINER with a pinned search_path of `orbit, pg_temp`, and pgcrypto is in
+  -- neither — it is in `public` on a local cluster and `extensions` on
+  -- Supabase. Widening the search_path of a definer function to reach an
+  -- extension is the wrong trade; `sha256` is in pg_catalog, which is always
+  -- resolvable, and produces the identical digest. Same bytes as
+  -- `createHash('sha256').update(token, 'utf8')` in src/lib/invites.ts.
+  v_hash := encode(sha256(convert_to(coalesce(p_token, ''), 'utf8')), 'hex');
 
-  select * into v_inv from public.space_invites i where i.token_hash = v_hash;
+  select * into v_inv from orbit.space_invites i where i.token_hash = v_hash;
   if not found then
     -- Deliberately the same answer for "no such token" and "a token for a space
     -- you were not invited to": telling somebody their guess named a real space
@@ -220,8 +236,8 @@ begin
     return;
   end if;
 
-  select * into v_space from public.spaces s where s.id = v_inv.space_id;
-  select p.email into v_email from public.profiles p where p.id = v_uid;
+  select * into v_space from orbit.spaces s where s.id = v_inv.space_id;
+  select p.email into v_email from orbit.profiles p where p.id = v_uid;
 
   invite_id         := v_inv.id;
   space_id          := v_inv.space_id;
@@ -253,7 +269,7 @@ begin
   end if;
 
   select * into v_member
-  from public.space_members m
+  from orbit.space_members m
   where m.space_id = v_inv.space_id and m.user_id = v_uid;
 
   if found and v_member.status = 'active' then
@@ -277,7 +293,7 @@ begin
   -- Claim the invite before writing the membership, so two people opening the
   -- same bearer link at the same time cannot both join: the second update
   -- matches no row and stops here.
-  update public.space_invites
+  update orbit.space_invites
      set accepted_at = now(), accepted_by = v_uid
    where id = v_inv.id and accepted_at is null;
   get diagnostics v_claimed = row_count;
@@ -291,7 +307,7 @@ begin
   -- Named by constraint rather than by columns: `space_id` is also one of this
   -- function's OUT parameters, and an inference list would be ambiguous between
   -- the two. Rejoining a space you had left is an update, not a second row.
-  insert into public.space_members (space_id, user_id, role, status)
+  insert into orbit.space_members (space_id, user_id, role, status)
   values (v_inv.space_id, v_uid, v_inv.role, 'active')
   on conflict on constraint space_members_space_user_key do update
     set role = excluded.role, status = 'active';
@@ -302,5 +318,5 @@ end $$;
 
 -- Narrow, like the identity functions in 0008: nobody holds this by default,
 -- and the only role that gets it is the one the application acts as.
-revoke execute on function app.space_invite(text, text) from public;
-grant execute on function app.space_invite(text, text) to authenticated;
+revoke execute on function orbit.space_invite(text, text) from public;
+grant execute on function orbit.space_invite(text, text) to authenticated;

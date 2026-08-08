@@ -32,11 +32,11 @@ export async function listNotes(
         case when c.id is null then null else
           jsonb_build_object('name', c.name, 'colour', c.colour, 'icon', c.icon) end as category,
         coalesce(l.n, 0) as "linkCount"
-      from public.notes n
-      join public.spaces s on s.id = n.space_id
-      left join public.categories c on c.id = n.category_id
+      from orbit.notes n
+      join orbit.spaces s on s.id = n.space_id
+      left join orbit.categories c on c.id = n.category_id
       left join lateral (
-        select count(*)::int as n from public.note_links l where l.note_id = n.id
+        select count(*)::int as n from orbit.note_links l where l.note_id = n.id
       ) l on true
       where ${archived ? tx`n.archived_at is not null` : tx`n.archived_at is null`}
         ${spaceId ? tx`and n.space_id = ${spaceId}::uuid` : tx``}
@@ -67,9 +67,9 @@ export async function getNote(
         case when c.id is null then null else
           jsonb_build_object('name', c.name, 'colour', c.colour, 'icon', c.icon) end as category,
         0 as "linkCount"
-      from public.notes n
-      join public.spaces s on s.id = n.space_id
-      left join public.categories c on c.id = n.category_id
+      from orbit.notes n
+      join orbit.spaces s on s.id = n.space_id
+      left join orbit.categories c on c.id = n.category_id
       where n.id = ${id}::uuid
     `;
     const note = rows[0];
@@ -81,11 +81,11 @@ export async function getNote(
     const links = await tx<NoteLink[]>`
       select l.entity_kind::text as "entityKind", l.entity_id as "entityId",
              coalesce(t.title, p.display_name, pl.name, e.title, '—') as label
-      from public.note_links l
-      left join public.tasks  t  on l.entity_kind = 'task'   and t.id  = l.entity_id
-      left join public.people p  on l.entity_kind = 'person' and p.id  = l.entity_id
-      left join public.places pl on l.entity_kind = 'place'  and pl.id = l.entity_id
-      left join public.events e  on l.entity_kind = 'event'  and e.id  = l.entity_id
+      from orbit.note_links l
+      left join orbit.tasks  t  on l.entity_kind = 'task'   and t.id  = l.entity_id
+      left join orbit.people p  on l.entity_kind = 'person' and p.id  = l.entity_id
+      left join orbit.places pl on l.entity_kind = 'place'  and pl.id = l.entity_id
+      left join orbit.events e  on l.entity_kind = 'event'  and e.id  = l.entity_id
       where l.note_id = ${id}::uuid
       order by l.entity_kind, label
     `;
@@ -109,24 +109,24 @@ export async function listLinkTargets(
   return asUser(userId, async (tx) => {
     return tx<LinkTarget[]>`
       (select 'task'::text as kind, t.id, t.title as label
-         from public.tasks t
+         from orbit.tasks t
         where t.space_id = ${spaceId}::uuid and not t.is_locked
           and t.status in ('todo','doing','blocked')
         order by t.title limit 100)
       union all
       (select 'person', p.id, p.display_name
-         from public.people p
+         from orbit.people p
         where p.space_id = ${spaceId}::uuid and not p.is_locked and p.archived_at is null
         order by p.display_name limit 100)
       union all
       (select 'place', pl.id, pl.name
-         from public.places pl
+         from orbit.places pl
         where pl.space_id = ${spaceId}::uuid
         order by pl.name limit 100)
       union all
       (select 'event', e.id,
               e.title || ' — ' || to_char(e.starts_at at time zone 'Europe/London', 'DD/MM/YYYY')
-         from public.events e
+         from orbit.events e
         where e.space_id = ${spaceId}::uuid and e.status <> 'cancelled'
           and e.starts_at > now() - interval '30 days'
         order by e.starts_at desc limit 100)
@@ -141,12 +141,12 @@ export async function yesterdaySummary(
   const rows = await asUser(userId, async (tx) => {
     return tx<{ eventCount: number; noteCount: number }[]>`
       select
-        (select count(*)::int from public.events e
+        (select count(*)::int from orbit.events e
           where e.status <> 'cancelled'
             and e.starts_at >= date_trunc('day', now() at time zone 'Europe/London') - interval '1 day'
             and e.starts_at <  date_trunc('day', now() at time zone 'Europe/London')
         ) as "eventCount",
-        (select count(*)::int from public.notes n
+        (select count(*)::int from orbit.notes n
           where n.created_at >= date_trunc('day', now() at time zone 'Europe/London') - interval '1 day'
             and n.created_at <  date_trunc('day', now() at time zone 'Europe/London')
         ) as "noteCount"

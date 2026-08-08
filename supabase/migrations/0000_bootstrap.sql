@@ -1,19 +1,61 @@
 -- 0000_bootstrap.sql
--- Extensions, Supabase-compatible auth shim, roles, and the `app` helper schema.
+-- Extensions, Supabase-compatible auth shim, roles, and the `orbit` schema.
 --
 -- On a real Supabase project the `auth` schema and the three roles already exist;
 -- every statement here is guarded so this migration is a no-op there.
+--
+-- EVERYTHING ORBIT OWNS LIVES IN ONE SCHEMA, `orbit` — tables, enums and the
+-- helper functions every policy calls. Orbit creates nothing in `public` and
+-- nothing named `app`, so it can be installed into a Supabase project that is
+-- already carrying other work without either side having to know about the
+-- other. The one exception is the trigger on `auth.users` in 0012, which is
+-- unavoidable: that table belongs to Supabase and the profile row has to be
+-- created when an account is.
 
--- The membership helpers below reference public.space_members, which is created
+-- The membership helpers below reference orbit.space_members, which is created
 -- in 0001. Postgres validates `language sql` bodies at CREATE time, so turn that
 -- off for this file. Every referenced object exists by the end of 0001.
 set check_function_bodies = off;
 
-create extension if not exists pgcrypto;
-create extension if not exists postgis;
--- Installed because the environment bootstrap expects it. Nothing in this schema
--- uses it: decision 10 says no pgvector. See docs/decisions-log.md.
-create extension if not exists vector;
+-- ---------------------------------------------------------------------------
+-- The schema, created before anything that might land in it
+-- ---------------------------------------------------------------------------
+-- The grant waits until the roles below exist; on a bare cluster they do not
+-- yet, and a grant to a role that is missing is an error rather than a no-op.
+create schema if not exists orbit;
+
+-- Unqualified names resolve to `orbit` for the rest of this file and every
+-- migration after it, so a CREATE that forgets its prefix lands in the right
+-- place rather than in a schema shared with somebody else's project. `public`
+-- and `extensions` follow it because that is where an installation puts
+-- PostGIS and pgcrypto — Supabase uses `extensions`, a local cluster uses
+-- `public`, and naming both means the same migration runs in either.
+set search_path = orbit, public, extensions, pg_catalog;
+
+-- ---------------------------------------------------------------------------
+-- Extensions
+-- ---------------------------------------------------------------------------
+-- Installed into `extensions` where that schema exists (Supabase) and `public`
+-- otherwise (a local cluster). Never into `orbit`: an extension is not Orbit's
+-- to own, and dropping the schema should not take PostGIS out with it. Each is
+-- a no-op when the extension is already installed, wherever it happens to live,
+-- which is the usual case on a project that is already carrying other work.
+do $$
+declare
+  v_home text := case
+    when exists (select 1 from pg_namespace where nspname = 'extensions')
+      then 'extensions' else 'public' end;
+  v_ext  text;
+begin
+  -- `vector` is installed because the environment bootstrap expects it.
+  -- Nothing in this schema uses it: decision 10 says no pgvector. See
+  -- docs/decisions-log.md.
+  foreach v_ext in array array['pgcrypto', 'postgis', 'vector'] loop
+    if not exists (select 1 from pg_extension where extname = v_ext) then
+      execute format('create extension %I with schema %I', v_ext, v_home);
+    end if;
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Roles
@@ -30,6 +72,8 @@ begin
     create role service_role nologin noinherit bypassrls;
   end if;
 end $$;
+
+grant usage on schema orbit to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- auth shim
@@ -63,34 +107,39 @@ $$;
 grant usage on schema auth to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- app schema — helper functions used by every policy
+-- Enums and the helper functions every policy calls
 -- ---------------------------------------------------------------------------
-create schema if not exists app;
-grant usage on schema app to anon, authenticated, service_role;
+-- These used to live in a schema of their own called `app`, which separated
+-- "a helper" from "a table" at every call site. They sit beside the tables now
+-- because a schema named `app` is the kind of name another project in the same
+-- Supabase database claims first, and `create schema if not exists app` would
+-- have succeeded against it — attaching Orbit's policy helpers to somebody
+-- else's schema, quietly. One schema is the stronger boundary, and no helper
+-- name collides with a table name.
 
 -- Enums -------------------------------------------------------------------
 do $$ begin
-  create type app.space_kind as enum ('personal', 'household', 'work', 'project');
+  create type orbit.space_kind as enum ('personal', 'household', 'work', 'project');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type app.member_role as enum ('owner', 'admin', 'member', 'viewer', 'free_busy');
+  create type orbit.member_role as enum ('owner', 'admin', 'member', 'viewer', 'free_busy');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type app.visibility as enum ('space', 'private');
+  create type orbit.visibility as enum ('space', 'private');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type app.task_status as enum ('todo', 'doing', 'blocked', 'done', 'dropped');
+  create type orbit.task_status as enum ('todo', 'doing', 'blocked', 'done', 'dropped');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type app.priority as enum ('none', 'low', 'normal', 'high', 'urgent');
+  create type orbit.priority as enum ('none', 'low', 'normal', 'high', 'urgent');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type app.entity_kind as enum (
+  create type orbit.entity_kind as enum (
     'task', 'note', 'person', 'event', 'place', 'travel_leg', 'rule', 'space'
   );
 exception when duplicate_object then null; end $$;
@@ -98,31 +147,31 @@ exception when duplicate_object then null; end $$;
 -- Membership helpers ------------------------------------------------------
 -- SECURITY DEFINER so policies on space_members do not recurse into themselves.
 
-create or replace function app.is_space_member(p_space_id uuid)
+create or replace function orbit.is_space_member(p_space_id uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
   )
 $$;
 
-create or replace function app.space_role(p_space_id uuid)
-returns app.member_role
+create or replace function orbit.space_role(p_space_id uuid)
+returns orbit.member_role
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select m.role
-  from public.space_members m
+  from orbit.space_members m
   where m.space_id = p_space_id
     and m.user_id = auth.uid()
     and m.status = 'active'
@@ -131,16 +180,16 @@ $$;
 
 -- Can the current user see *content* in this space? A free_busy participant is a
 -- member for calendar-availability purposes only and must never read content.
-create or replace function app.can_read_space(p_space_id uuid)
+create or replace function orbit.can_read_space(p_space_id uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -149,16 +198,16 @@ as $$
 $$;
 
 -- Can the current user create/modify content in this space?
-create or replace function app.can_write_space(p_space_id uuid)
+create or replace function orbit.can_write_space(p_space_id uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -166,16 +215,16 @@ as $$
   )
 $$;
 
-create or replace function app.is_space_admin(p_space_id uuid)
+create or replace function orbit.is_space_admin(p_space_id uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select exists (
     select 1
-    from public.space_members m
+    from orbit.space_members m
     where m.space_id = p_space_id
       and m.user_id = auth.uid()
       and m.status = 'active'
@@ -186,7 +235,7 @@ $$;
 -- ---------------------------------------------------------------------------
 -- updated_at trigger
 -- ---------------------------------------------------------------------------
-create or replace function app.touch_updated_at()
+create or replace function orbit.touch_updated_at()
 returns trigger
 language plpgsql
 as $$
@@ -210,7 +259,7 @@ end $$;
 -- Anything narrower than this (item_shares, free_busy) gets a hand-written
 -- policy and says so at the call site.
 -- ---------------------------------------------------------------------------
-create or replace function app.apply_standard_rls(
+create or replace function orbit.apply_standard_rls(
   p_table text,
   p_has_visibility boolean default false,
   p_has_owner boolean default true
@@ -229,37 +278,37 @@ begin
 
   if p_has_owner then
     v_owner_ins := ' and owner_id = auth.uid()';
-    v_owner_mod := ' and (owner_id = auth.uid() or app.is_space_admin(space_id))';
+    v_owner_mod := ' and (owner_id = auth.uid() or orbit.is_space_admin(space_id))';
   end if;
 
   -- Deliberately NOT `force row level security`: the table owner (postgres) must
   -- bypass RLS so migrations, seeds, and pgTAP setup can write. The application
   -- never connects as the owner — it connects as `authenticated`, which is not
   -- the owner and is therefore fully subject to these policies.
-  execute format('alter table public.%I enable row level security', p_table);
+  execute format('alter table orbit.%I enable row level security', p_table);
 
-  execute format('drop policy if exists %I on public.%I', p_table || '_select', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_insert', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_update', p_table);
-  execute format('drop policy if exists %I on public.%I', p_table || '_delete', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_select', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_insert', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_update', p_table);
+  execute format('drop policy if exists %I on orbit.%I', p_table || '_delete', p_table);
 
   execute format(
-    'create policy %I on public.%I for select to authenticated using (app.can_read_space(space_id)%s)',
+    'create policy %I on orbit.%I for select to authenticated using (orbit.can_read_space(space_id)%s)',
     p_table || '_select', p_table, v_read_extra);
 
   execute format(
-    'create policy %I on public.%I for insert to authenticated with check (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for insert to authenticated with check (orbit.can_write_space(space_id)%s)',
     p_table || '_insert', p_table, v_owner_ins);
 
   execute format(
-    'create policy %I on public.%I for update to authenticated using (app.can_write_space(space_id)%s) with check (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for update to authenticated using (orbit.can_write_space(space_id)%s) with check (orbit.can_write_space(space_id)%s)',
     p_table || '_update', p_table, v_owner_mod, v_owner_mod);
 
   execute format(
-    'create policy %I on public.%I for delete to authenticated using (app.can_write_space(space_id)%s)',
+    'create policy %I on orbit.%I for delete to authenticated using (orbit.can_write_space(space_id)%s)',
     p_table || '_delete', p_table, v_owner_mod);
 
-  execute format('grant select, insert, update, delete on public.%I to authenticated', p_table);
+  execute format('grant select, insert, update, delete on orbit.%I to authenticated', p_table);
 end $$;
 
 -- Convenience: standard columns every space-scoped table carries.

@@ -59,14 +59,20 @@ describe('the token', () => {
   });
 
   it('hashes the same way migration 0012 does, or no link would ever be recognised', () => {
-    // The SQL is `encode(digest(token, 'sha256'), 'hex')`. If the two ever
-    // disagree, every invitation created by the app is "unknown" when opened —
-    // which is a bug that looks like a policy problem and is not one.
+    // The SQL is `encode(sha256(convert_to(token, 'utf8')), 'hex')`. If the two
+    // ever disagree, every invitation created by the app is "unknown" when
+    // opened — which is a bug that looks like a policy problem and is not one.
+    //
+    // It was pgcrypto's `digest()` until the schema move: orbit.space_invite()
+    // is SECURITY DEFINER with a pinned search_path, and pgcrypto lives in
+    // `public` locally and `extensions` on Supabase — neither of them on it.
+    // `sha256` is in pg_catalog and needs no extension. This test is how that
+    // change was noticed rather than shipped.
     const sql = readFileSync(
       fileURLToPath(new URL('../supabase/migrations/0012_auth_user_profiles.sql', import.meta.url)),
       'utf8',
     );
-    expect(sql).toContain("encode(digest(coalesce(p_token, ''), 'sha256'), 'hex')");
+    expect(sql).toContain("encode(sha256(convert_to(coalesce(p_token, ''), 'utf8')), 'hex')");
   });
 });
 

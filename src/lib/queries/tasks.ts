@@ -127,16 +127,16 @@ export async function listTasks(
         coalesce(ci.total, 0) as "checklistTotal",
         coalesce(ci.done, 0)  as "checklistDone",
         coalesce(nl.n, 0)     as "noteCount"
-      from public.tasks t
-      join public.spaces s on s.id = t.space_id
-      left join public.categories c on c.id = t.category_id
-      left join public.profiles a on a.id = t.assignee_id
+      from orbit.tasks t
+      join orbit.spaces s on s.id = t.space_id
+      left join orbit.categories c on c.id = t.category_id
+      left join orbit.profiles a on a.id = t.assignee_id
       left join lateral (
         select count(*)::int as total, count(*) filter (where done)::int as done
-        from public.task_checklist_items i where i.task_id = t.id
+        from orbit.task_checklist_items i where i.task_id = t.id
       ) ci on true
       left join lateral (
-        select count(*)::int as n from public.note_links l
+        select count(*)::int as n from orbit.note_links l
         where l.entity_kind = 'task' and l.entity_id = t.id
       ) nl on true
       where ${clause(tx, list, userId)}
@@ -156,16 +156,16 @@ export async function smartListCounts(
   const rows = await asUser(userId, async (tx) => {
     return tx<{ list: string; n: number }[]>`
       with t as (
-        select * from public.tasks
+        select * from orbit.tasks
         where parent_task_id is null
           ${spaceId ? tx`and space_id = ${spaceId}::uuid` : tx``}
       )
       select 'mine' as list, count(*)::int as n from t
-        where status = any(${OPEN}::app.task_status[]) and assignee_id = ${userId}::uuid
+        where status = any(${OPEN}::orbit.task_status[]) and assignee_id = ${userId}::uuid
       union all select 'today', count(*)::int from t
-        where status = any(${OPEN}::app.task_status[]) and due_on is not null and due_on <= current_date
+        where status = any(${OPEN}::orbit.task_status[]) and due_on is not null and due_on <= current_date
       union all select 'overdue', count(*)::int from t
-        where status = any(${OPEN}::app.task_status[]) and due_on is not null and due_on < current_date
+        where status = any(${OPEN}::orbit.task_status[]) and due_on is not null and due_on < current_date
       union all select 'upcoming', count(*)::int from t
         where status in ('todo','doing') and due_on > current_date and due_on <= current_date + 14
       union all select 'inbox', count(*)::int from t
@@ -176,7 +176,7 @@ export async function smartListCounts(
       union all select 'done', count(*)::int from t
         where status = 'done' and completed_at > now() - interval '30 days'
       union all select 'all', count(*)::int from t
-        where status = any(${OPEN}::app.task_status[])
+        where status = any(${OPEN}::orbit.task_status[])
     `;
   });
 
@@ -205,10 +205,10 @@ export async function getTask(userId: string, id: string): Promise<TaskRow | nul
         case when c.id is null then null else
           jsonb_build_object('name', c.name, 'colour', c.colour, 'icon', c.icon) end as category,
         0 as "checklistTotal", 0 as "checklistDone", 0 as "noteCount"
-      from public.tasks t
-      join public.spaces s on s.id = t.space_id
-      left join public.categories c on c.id = t.category_id
-      left join public.profiles a on a.id = t.assignee_id
+      from orbit.tasks t
+      join orbit.spaces s on s.id = t.space_id
+      left join orbit.categories c on c.id = t.category_id
+      left join orbit.profiles a on a.id = t.assignee_id
       where t.id = ${id}::uuid
     `;
   });
@@ -223,7 +223,7 @@ export async function listCategories(
 ): Promise<CategoryOption[]> {
   return asUser(userId, async (tx) => {
     return tx<CategoryOption[]>`
-      select id, name, colour, icon from public.categories
+      select id, name, colour, icon from orbit.categories
       where space_id = ${spaceId}::uuid
       order by sort_order, name
     `;
@@ -244,7 +244,7 @@ export async function categoriesBySpace(
   const rows = await asUser(userId, async (tx) => {
     return tx<(CategoryOption & { spaceId: string })[]>`
       select id, space_id as "spaceId", name, colour, icon
-      from public.categories
+      from orbit.categories
       order by sort_order, name
     `;
   });

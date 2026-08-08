@@ -12,8 +12,16 @@
 -- is the same shape as one the feed excluded. Phase 2 only writes the imported
 -- ones.
 
-alter table public.recurrence_rules
+-- Everything below lives in the `orbit` schema. The search_path names it
+-- first so an unqualified CREATE cannot land in a schema this project
+-- shares with somebody else's work, and names `public` and `extensions`
+-- after it because that is where an installation puts PostGIS and pgcrypto:
+-- Supabase uses `extensions`, a local cluster uses `public`.
+set search_path = orbit, public, extensions, pg_catalog;
+
+
+alter table orbit.recurrence_rules
   add column exdates timestamptz[] not null default '{}';
 
-comment on column public.recurrence_rules.exdates is
+comment on column orbit.recurrence_rules.exdates is
   'Instants the series skips (RFC 5545 EXDATE). Expansion is application-side; see src/lib/recurrence.ts.';

@@ -4,14 +4,22 @@
 -- permanently, never collapsed and never auto-merged. `person_links` is that
 -- link. It is deliberately symmetric and deliberately has no "primary" side.
 
-create table public.people (
+-- Everything below lives in the `orbit` schema. The search_path names it
+-- first so an unqualified CREATE cannot land in a schema this project
+-- shares with somebody else's work, and names `public` and `extensions`
+-- after it because that is where an installation puts PostGIS and pgcrypto:
+-- Supabase uses `extensions`, a local cluster uses `public`.
+set search_path = orbit, public, extensions, pg_catalog;
+
+
+create table orbit.people (
   id             uuid primary key default gen_random_uuid(),
-  space_id       uuid not null references public.spaces(id) on delete cascade,
-  owner_id       uuid not null references public.profiles(id) on delete cascade,
-  category_id    uuid references public.categories(id) on delete set null,
+  space_id       uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id       uuid not null references orbit.profiles(id) on delete cascade,
+  category_id    uuid references orbit.categories(id) on delete set null,
 
   -- A person record may correspond to an Orbit user. Usually it does not.
-  profile_id     uuid references public.profiles(id) on delete set null,
+  profile_id     uuid references orbit.profiles(id) on delete set null,
 
   display_name   text not null,
   given_name     text,
@@ -19,7 +27,7 @@ create table public.people (
   nickname       text,
   pronouns       text,
   notes_md       text not null default '',
-  visibility     app.visibility not null default 'space',
+  visibility     orbit.visibility not null default 'space',
   is_locked      boolean not null default false,
   archived_at    timestamptz,
 
@@ -30,13 +38,13 @@ create table public.people (
     check (not is_locked or (display_name = '' and notes_md = ''))
 );
 
-create index people_space_name_idx on public.people (space_id, display_name);
-create index people_search_idx on public.people
+create index people_space_name_idx on orbit.people (space_id, display_name);
+create index people_search_idx on orbit.people
   using gin (to_tsvector('english', display_name || ' ' || coalesce(nickname, '') || ' ' || notes_md))
   where not is_locked;
 
-create trigger people_touch before update on public.people
-  for each row execute function app.touch_updated_at();
+create trigger people_touch before update on orbit.people
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- person_links — "these two records are the same human".
@@ -45,13 +53,13 @@ create trigger people_touch before update on public.people
 -- double-inserted. Crossing spaces is the whole point, so this table is scoped
 -- to the space of side A and readable from either side.
 -- ---------------------------------------------------------------------------
-create table public.person_links (
+create table orbit.person_links (
   id              uuid primary key default gen_random_uuid(),
-  space_id        uuid not null references public.spaces(id) on delete cascade,
-  owner_id        uuid not null references public.profiles(id) on delete cascade,
-  person_a_id     uuid not null references public.people(id) on delete cascade,
-  person_b_id     uuid not null references public.people(id) on delete cascade,
-  person_b_space  uuid not null references public.spaces(id) on delete cascade,
+  space_id        uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id        uuid not null references orbit.profiles(id) on delete cascade,
+  person_a_id     uuid not null references orbit.people(id) on delete cascade,
+  person_b_id     uuid not null references orbit.people(id) on delete cascade,
+  person_b_space  uuid not null references orbit.spaces(id) on delete cascade,
   confidence      text not null default 'confirmed'
                     check (confidence in ('confirmed', 'suggested')),
   linked_at       timestamptz not null default now(),
@@ -62,19 +70,19 @@ create table public.person_links (
   constraint person_links_distinct check (person_a_id <> person_b_id)
 );
 
-create index person_links_b_idx on public.person_links (person_b_id);
+create index person_links_b_idx on orbit.person_links (person_b_id);
 
-create trigger person_links_touch before update on public.person_links
-  for each row execute function app.touch_updated_at();
+create trigger person_links_touch before update on orbit.person_links
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- person_contacts / person_dates / person_relationships
 -- ---------------------------------------------------------------------------
-create table public.person_contacts (
+create table orbit.person_contacts (
   id          uuid primary key default gen_random_uuid(),
-  space_id    uuid not null references public.spaces(id) on delete cascade,
-  owner_id    uuid not null references public.profiles(id) on delete cascade,
-  person_id   uuid not null references public.people(id) on delete cascade,
+  space_id    uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id    uuid not null references orbit.profiles(id) on delete cascade,
+  person_id   uuid not null references orbit.people(id) on delete cascade,
   kind        text not null check (kind in ('email', 'phone', 'address', 'handle', 'url')),
   label       text not null default 'other',
   value       text not null,
@@ -84,16 +92,16 @@ create table public.person_contacts (
   constraint person_contacts_space_person_kind_value_key unique (space_id, person_id, kind, value)
 );
 
-create index person_contacts_person_idx on public.person_contacts (person_id);
+create index person_contacts_person_idx on orbit.person_contacts (person_id);
 
-create trigger person_contacts_touch before update on public.person_contacts
-  for each row execute function app.touch_updated_at();
+create trigger person_contacts_touch before update on orbit.person_contacts
+  for each row execute function orbit.touch_updated_at();
 
-create table public.person_dates (
+create table orbit.person_dates (
   id           uuid primary key default gen_random_uuid(),
-  space_id     uuid not null references public.spaces(id) on delete cascade,
-  owner_id     uuid not null references public.profiles(id) on delete cascade,
-  person_id    uuid not null references public.people(id) on delete cascade,
+  space_id     uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id     uuid not null references orbit.profiles(id) on delete cascade,
+  person_id    uuid not null references orbit.people(id) on delete cascade,
   kind         text not null check (kind in ('birthday', 'anniversary', 'met_on', 'other')),
   label        text,
   on_date      date not null,
@@ -105,18 +113,18 @@ create table public.person_dates (
   constraint person_dates_space_person_kind_date_key unique (space_id, person_id, kind, on_date)
 );
 
-create index person_dates_month_day_idx on public.person_dates
+create index person_dates_month_day_idx on orbit.person_dates
   (space_id, (extract(month from on_date)), (extract(day from on_date)));
 
-create trigger person_dates_touch before update on public.person_dates
-  for each row execute function app.touch_updated_at();
+create trigger person_dates_touch before update on orbit.person_dates
+  for each row execute function orbit.touch_updated_at();
 
-create table public.person_relationships (
+create table orbit.person_relationships (
   id            uuid primary key default gen_random_uuid(),
-  space_id      uuid not null references public.spaces(id) on delete cascade,
-  owner_id      uuid not null references public.profiles(id) on delete cascade,
-  person_id     uuid not null references public.people(id) on delete cascade,
-  related_id    uuid not null references public.people(id) on delete cascade,
+  space_id      uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id      uuid not null references orbit.profiles(id) on delete cascade,
+  person_id     uuid not null references orbit.people(id) on delete cascade,
+  related_id    uuid not null references orbit.people(id) on delete cascade,
   relationship  text not null,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
@@ -124,39 +132,39 @@ create table public.person_relationships (
   constraint person_relationships_distinct check (person_id <> related_id)
 );
 
-create trigger person_relationships_touch before update on public.person_relationships
-  for each row execute function app.touch_updated_at();
+create trigger person_relationships_touch before update on orbit.person_relationships
+  for each row execute function orbit.touch_updated_at();
 
 -- ===========================================================================
 -- RLS
 -- ===========================================================================
-select app.apply_standard_rls('people', p_has_visibility => true);
-select app.apply_standard_rls('person_contacts');
-select app.apply_standard_rls('person_dates');
-select app.apply_standard_rls('person_relationships');
+select orbit.apply_standard_rls('people', p_has_visibility => true);
+select orbit.apply_standard_rls('person_contacts');
+select orbit.apply_standard_rls('person_dates');
+select orbit.apply_standard_rls('person_relationships');
 
 -- person_links is the one place where a row legitimately spans two spaces. You
 -- may read the link if you can read EITHER side; you may only create one if you
 -- can write BOTH sides, which is what stops a link being used to smuggle a
 -- person record into a space you cannot see.
-alter table public.person_links enable row level security;
-grant select, insert, update, delete on public.person_links to authenticated;
+alter table orbit.person_links enable row level security;
+grant select, insert, update, delete on orbit.person_links to authenticated;
 
-create policy person_links_select on public.person_links for select to authenticated
-using (app.can_read_space(space_id) or app.can_read_space(person_b_space));
+create policy person_links_select on orbit.person_links for select to authenticated
+using (orbit.can_read_space(space_id) or orbit.can_read_space(person_b_space));
 
-create policy person_links_insert on public.person_links for insert to authenticated
+create policy person_links_insert on orbit.person_links for insert to authenticated
 with check (
   owner_id = auth.uid()
-  and app.can_write_space(space_id)
-  and app.can_write_space(person_b_space)
+  and orbit.can_write_space(space_id)
+  and orbit.can_write_space(person_b_space)
 );
 
-create policy person_links_update on public.person_links for update to authenticated
-using (app.can_write_space(space_id) and app.can_write_space(person_b_space))
-with check (app.can_write_space(space_id) and app.can_write_space(person_b_space));
+create policy person_links_update on orbit.person_links for update to authenticated
+using (orbit.can_write_space(space_id) and orbit.can_write_space(person_b_space))
+with check (orbit.can_write_space(space_id) and orbit.can_write_space(person_b_space));
 
 -- Unlinking is destructive and permanent (decision 4 says links are permanent,
 -- so this is admin-only and exists for mistakes, not for merging).
-create policy person_links_delete on public.person_links for delete to authenticated
-using (app.is_space_admin(space_id) and app.is_space_admin(person_b_space));
+create policy person_links_delete on orbit.person_links for delete to authenticated
+using (orbit.is_space_admin(space_id) and orbit.is_space_admin(person_b_space));

@@ -4,10 +4,18 @@
 -- recurrence_rules — shared by tasks and events. Stores an RFC 5545 RRULE
 -- string; expansion happens in the application, not the database.
 -- ---------------------------------------------------------------------------
-create table public.recurrence_rules (
+
+-- Everything below lives in the `orbit` schema. The search_path names it
+-- first so an unqualified CREATE cannot land in a schema this project
+-- shares with somebody else's work, and names `public` and `extensions`
+-- after it because that is where an installation puts PostGIS and pgcrypto:
+-- Supabase uses `extensions`, a local cluster uses `public`.
+set search_path = orbit, public, extensions, pg_catalog;
+
+create table orbit.recurrence_rules (
   id          uuid primary key default gen_random_uuid(),
-  space_id    uuid not null references public.spaces(id) on delete cascade,
-  owner_id    uuid not null references public.profiles(id) on delete cascade,
+  space_id    uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id    uuid not null references orbit.profiles(id) on delete cascade,
   rrule       text not null,
   dtstart     timestamptz not null,
   until       timestamptz,
@@ -16,8 +24,8 @@ create table public.recurrence_rules (
   updated_at  timestamptz not null default now()
 );
 
-create trigger recurrence_rules_touch before update on public.recurrence_rules
-  for each row execute function app.touch_updated_at();
+create trigger recurrence_rules_touch before update on orbit.recurrence_rules
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- tasks
@@ -31,19 +39,19 @@ create trigger recurrence_rules_touch before update on public.recurrence_rules
 --   waiting    : status = 'blocked'
 --   done       : status = 'done'
 -- ---------------------------------------------------------------------------
-create table public.tasks (
+create table orbit.tasks (
   id                 uuid primary key default gen_random_uuid(),
-  space_id           uuid not null references public.spaces(id) on delete cascade,
-  owner_id           uuid not null references public.profiles(id) on delete cascade,
-  category_id        uuid references public.categories(id) on delete set null,
-  parent_task_id     uuid references public.tasks(id) on delete cascade,
-  recurrence_rule_id uuid references public.recurrence_rules(id) on delete set null,
+  space_id           uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id           uuid not null references orbit.profiles(id) on delete cascade,
+  category_id        uuid references orbit.categories(id) on delete set null,
+  parent_task_id     uuid references orbit.tasks(id) on delete cascade,
+  recurrence_rule_id uuid references orbit.recurrence_rules(id) on delete set null,
 
   title              text not null,
   body_md            text not null default '',
-  status             app.task_status not null default 'todo',
-  priority           app.priority not null default 'none',
-  visibility         app.visibility not null default 'space',
+  status             orbit.task_status not null default 'todo',
+  priority           orbit.priority not null default 'none',
+  visibility         orbit.visibility not null default 'space',
 
   -- Locked tasks are E2E encrypted: `title`/`body_md` are empty and the payload
   -- lives in encrypted_blobs. Enforced by tasks_locked_has_no_plaintext below.
@@ -55,7 +63,7 @@ create table public.tasks (
   snoozed_until      timestamptz,
   completed_at       timestamptz,
 
-  assignee_id        uuid references public.profiles(id) on delete set null,
+  assignee_id        uuid references orbit.profiles(id) on delete set null,
   waiting_on         text,
   estimate_minutes   integer check (estimate_minutes is null or estimate_minutes > 0),
   sort_order         integer not null default 0,
@@ -71,28 +79,28 @@ create table public.tasks (
     check (parent_task_id is null or parent_task_id <> id)
 );
 
-create index tasks_space_status_idx  on public.tasks (space_id, status);
-create index tasks_space_due_idx     on public.tasks (space_id, due_on) where status in ('todo','doing','blocked');
-create index tasks_assignee_idx      on public.tasks (assignee_id) where status in ('todo','doing','blocked');
-create index tasks_parent_idx        on public.tasks (parent_task_id);
+create index tasks_space_status_idx  on orbit.tasks (space_id, status);
+create index tasks_space_due_idx     on orbit.tasks (space_id, due_on) where status in ('todo','doing','blocked');
+create index tasks_assignee_idx      on orbit.tasks (assignee_id) where status in ('todo','doing','blocked');
+create index tasks_parent_idx        on orbit.tasks (parent_task_id);
 
 -- Search excludes locked rows at the index level, not in application code.
-create index tasks_search_idx on public.tasks
+create index tasks_search_idx on orbit.tasks
   using gin (to_tsvector('english', title || ' ' || body_md))
   where not is_locked;
 
-create trigger tasks_touch before update on public.tasks
-  for each row execute function app.touch_updated_at();
+create trigger tasks_touch before update on orbit.tasks
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- task_checklist_items — lightweight steps inside a task. Not sub-tasks; those
 -- are tasks with a parent_task_id.
 -- ---------------------------------------------------------------------------
-create table public.task_checklist_items (
+create table orbit.task_checklist_items (
   id          uuid primary key default gen_random_uuid(),
-  space_id    uuid not null references public.spaces(id) on delete cascade,
-  owner_id    uuid not null references public.profiles(id) on delete cascade,
-  task_id     uuid not null references public.tasks(id) on delete cascade,
+  space_id    uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id    uuid not null references orbit.profiles(id) on delete cascade,
+  task_id     uuid not null references orbit.tasks(id) on delete cascade,
   label       text not null,
   done        boolean not null default false,
   sort_order  integer not null default 0,
@@ -100,23 +108,23 @@ create table public.task_checklist_items (
   updated_at  timestamptz not null default now()
 );
 
-create index task_checklist_items_task_idx on public.task_checklist_items (task_id, sort_order);
+create index task_checklist_items_task_idx on orbit.task_checklist_items (task_id, sort_order);
 
-create trigger task_checklist_items_touch before update on public.task_checklist_items
-  for each row execute function app.touch_updated_at();
+create trigger task_checklist_items_touch before update on orbit.task_checklist_items
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- notes
 -- ---------------------------------------------------------------------------
-create table public.notes (
+create table orbit.notes (
   id          uuid primary key default gen_random_uuid(),
-  space_id    uuid not null references public.spaces(id) on delete cascade,
-  owner_id    uuid not null references public.profiles(id) on delete cascade,
-  category_id uuid references public.categories(id) on delete set null,
+  space_id    uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id    uuid not null references orbit.profiles(id) on delete cascade,
+  category_id uuid references orbit.categories(id) on delete set null,
 
   title       text not null default '',
   body_md     text not null default '',
-  visibility  app.visibility not null default 'space',
+  visibility  orbit.visibility not null default 'space',
   is_locked   boolean not null default false,
   pinned_at   timestamptz,
   archived_at timestamptz,
@@ -128,24 +136,24 @@ create table public.notes (
     check (not is_locked or (title = '' and body_md = ''))
 );
 
-create index notes_space_updated_idx on public.notes (space_id, updated_at desc);
-create index notes_pinned_idx on public.notes (space_id, pinned_at desc) where pinned_at is not null;
-create index notes_search_idx on public.notes
+create index notes_space_updated_idx on orbit.notes (space_id, updated_at desc);
+create index notes_pinned_idx on orbit.notes (space_id, pinned_at desc) where pinned_at is not null;
+create index notes_search_idx on orbit.notes
   using gin (to_tsvector('english', title || ' ' || body_md))
   where not is_locked;
 
-create trigger notes_touch before update on public.notes
-  for each row execute function app.touch_updated_at();
+create trigger notes_touch before update on orbit.notes
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- note_versions — every save snapshots the previous body. Cheap, and it is the
 -- only recovery path a user has.
 -- ---------------------------------------------------------------------------
-create table public.note_versions (
+create table orbit.note_versions (
   id          uuid primary key default gen_random_uuid(),
-  space_id    uuid not null references public.spaces(id) on delete cascade,
-  owner_id    uuid not null references public.profiles(id) on delete cascade,
-  note_id     uuid not null references public.notes(id) on delete cascade,
+  space_id    uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id    uuid not null references orbit.profiles(id) on delete cascade,
+  note_id     uuid not null references orbit.notes(id) on delete cascade,
   version     integer not null,
   title       text not null default '',
   body_md     text not null default '',
@@ -154,39 +162,39 @@ create table public.note_versions (
   constraint note_versions_space_note_version_key unique (space_id, note_id, version)
 );
 
-create trigger note_versions_touch before update on public.note_versions
-  for each row execute function app.touch_updated_at();
+create trigger note_versions_touch before update on orbit.note_versions
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- note_links — a note attached to any entity. Polymorphic by (kind, id) because
 -- a note can link to a person, an event, a place, or another note.
 -- ---------------------------------------------------------------------------
-create table public.note_links (
+create table orbit.note_links (
   id           uuid primary key default gen_random_uuid(),
-  space_id     uuid not null references public.spaces(id) on delete cascade,
-  owner_id     uuid not null references public.profiles(id) on delete cascade,
-  note_id      uuid not null references public.notes(id) on delete cascade,
-  entity_kind  app.entity_kind not null,
+  space_id     uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id     uuid not null references orbit.profiles(id) on delete cascade,
+  note_id      uuid not null references orbit.notes(id) on delete cascade,
+  entity_kind  orbit.entity_kind not null,
   entity_id    uuid not null,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   constraint note_links_space_note_entity_key unique (space_id, note_id, entity_kind, entity_id)
 );
 
-create index note_links_entity_idx on public.note_links (space_id, entity_kind, entity_id);
+create index note_links_entity_idx on orbit.note_links (space_id, entity_kind, entity_id);
 
-create trigger note_links_touch before update on public.note_links
-  for each row execute function app.touch_updated_at();
+create trigger note_links_touch before update on orbit.note_links
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- attachments — metadata only. Bytes live in object storage, or, for locked
 -- items, in encrypted_blobs.
 -- ---------------------------------------------------------------------------
-create table public.attachments (
+create table orbit.attachments (
   id           uuid primary key default gen_random_uuid(),
-  space_id     uuid not null references public.spaces(id) on delete cascade,
-  owner_id     uuid not null references public.profiles(id) on delete cascade,
-  entity_kind  app.entity_kind not null,
+  space_id     uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id     uuid not null references orbit.profiles(id) on delete cascade,
+  entity_kind  orbit.entity_kind not null,
   entity_id    uuid not null,
   filename     text not null,
   mime_type    text not null,
@@ -197,22 +205,22 @@ create table public.attachments (
   updated_at   timestamptz not null default now()
 );
 
-create index attachments_entity_idx on public.attachments (space_id, entity_kind, entity_id);
+create index attachments_entity_idx on orbit.attachments (space_id, entity_kind, entity_id);
 
-create trigger attachments_touch before update on public.attachments
-  for each row execute function app.touch_updated_at();
+create trigger attachments_touch before update on orbit.attachments
+  for each row execute function orbit.touch_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- saved_views — a named filter. Smart lists ship as built-ins in code; this is
 -- for the ones a user makes.
 -- ---------------------------------------------------------------------------
-create table public.saved_views (
+create table orbit.saved_views (
   id          uuid primary key default gen_random_uuid(),
-  space_id    uuid not null references public.spaces(id) on delete cascade,
-  owner_id    uuid not null references public.profiles(id) on delete cascade,
+  space_id    uuid not null references orbit.spaces(id) on delete cascade,
+  owner_id    uuid not null references orbit.profiles(id) on delete cascade,
   name        text not null,
   slug        text not null,
-  entity_kind app.entity_kind not null default 'task',
+  entity_kind orbit.entity_kind not null default 'task',
   filter      jsonb not null default '{}'::jsonb,
   sort_order  integer not null default 0,
   created_at  timestamptz not null default now(),
@@ -220,17 +228,17 @@ create table public.saved_views (
   constraint saved_views_space_slug_key unique (space_id, slug)
 );
 
-create trigger saved_views_touch before update on public.saved_views
-  for each row execute function app.touch_updated_at();
+create trigger saved_views_touch before update on orbit.saved_views
+  for each row execute function orbit.touch_updated_at();
 
 -- ===========================================================================
 -- RLS
 -- ===========================================================================
-select app.apply_standard_rls('recurrence_rules');
-select app.apply_standard_rls('tasks', p_has_visibility => true);
-select app.apply_standard_rls('task_checklist_items');
-select app.apply_standard_rls('notes', p_has_visibility => true);
-select app.apply_standard_rls('note_versions');
-select app.apply_standard_rls('note_links');
-select app.apply_standard_rls('attachments');
-select app.apply_standard_rls('saved_views');
+select orbit.apply_standard_rls('recurrence_rules');
+select orbit.apply_standard_rls('tasks', p_has_visibility => true);
+select orbit.apply_standard_rls('task_checklist_items');
+select orbit.apply_standard_rls('notes', p_has_visibility => true);
+select orbit.apply_standard_rls('note_versions');
+select orbit.apply_standard_rls('note_links');
+select orbit.apply_standard_rls('attachments');
+select orbit.apply_standard_rls('saved_views');

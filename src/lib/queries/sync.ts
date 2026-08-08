@@ -110,8 +110,8 @@ export async function listDevices(userId: string): Promise<DeviceRow[]> {
         d.revoked_at    as "revokedAt",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.devices d
-      join public.spaces s on s.id = d.space_id
+      from orbit.devices d
+      join orbit.spaces s on s.id = d.space_id
       where d.owner_id = ${userId}::uuid
       order by s.name, d.label
     `;
@@ -142,9 +142,9 @@ export async function listCursors(userId: string): Promise<CursorRow[]> {
         c.last_sync_at  as "lastSyncAt",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.sync_cursors c
-      join public.devices d on d.id = c.device_id
-      join public.spaces  s on s.id = c.space_id
+      from orbit.sync_cursors c
+      join orbit.devices d on d.id = c.device_id
+      join orbit.spaces  s on s.id = c.space_id
       order by s.name, d.label, c.entity_kind
     `;
   });
@@ -190,8 +190,8 @@ export async function changesSince(
           e.space_id      as "spaceId",
           jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                              'colour', s.colour, 'icon', s.icon) as space
-        from ${tx.unsafe(`public.${TABLE[kind]}`)} e
-        join public.spaces s on s.id = e.space_id
+        from ${tx.unsafe(`orbit.${TABLE[kind]}`)} e
+        join orbit.spaces s on s.id = e.space_id
         where e.space_id = ${spaceId}::uuid
           and e.updated_at > ${since}::timestamptz
         order by e.updated_at desc
@@ -222,11 +222,11 @@ export async function advanceCursor(
 ): Promise<void> {
   await asUser(userId, async (tx) => {
     await tx`
-      insert into public.sync_cursors (space_id, owner_id, device_id, entity_kind, cursor_at, last_sync_at)
-      values (${spaceId}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${entityKind}::app.entity_kind,
+      insert into orbit.sync_cursors (space_id, owner_id, device_id, entity_kind, cursor_at, last_sync_at)
+      values (${spaceId}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${entityKind}::orbit.entity_kind,
               ${cursorAt}::timestamptz, now())
       on conflict (space_id, device_id, entity_kind) do update
-        set cursor_at    = greatest(public.sync_cursors.cursor_at, excluded.cursor_at),
+        set cursor_at    = greatest(orbit.sync_cursors.cursor_at, excluded.cursor_at),
             last_sync_at = now()
     `;
   });
@@ -236,7 +236,7 @@ export async function advanceCursor(
 export async function resetCursors(userId: string, spaceId: string, deviceId: string): Promise<number> {
   return asUser(userId, async (tx) => {
     const rows = await tx<{ id: string }[]>`
-      update public.sync_cursors
+      update orbit.sync_cursors
          set cursor_at = 'epoch'::timestamptz
        where space_id = ${spaceId}::uuid and device_id = ${deviceId}::uuid
       returning id
@@ -323,7 +323,7 @@ export async function applyWrite(userId: string, write: PendingWrite): Promise<A
     const rows = await tx<Record<string, FieldValue>[]>`
       select e.id, e.updated_at as "updatedAt", e.is_locked as "isLocked",
              e.space_id as "spaceId", ${tx.unsafe(cols)}
-      from ${tx.unsafe(`public.${TABLE[write.entityKind]}`)} e
+      from ${tx.unsafe(`orbit.${TABLE[write.entityKind]}`)} e
       where e.id = ${write.entityId}::uuid
       for update
     `;
@@ -415,7 +415,7 @@ export async function readCurrent(
     const cols = fields.map((f) => `e.${f}`).join(', ');
     const rows = await tx<Record<string, FieldValue>[]>`
       select e.updated_at as "updatedAt", e.is_locked as "isLocked", ${tx.unsafe(cols)}
-      from ${tx.unsafe(`public.${TABLE[kind]}`)} e
+      from ${tx.unsafe(`orbit.${TABLE[kind]}`)} e
       where e.id = ${entityId}::uuid
     `;
     if (!rows[0]) return null;
@@ -447,7 +447,7 @@ async function writeFields(
   const assignments = names.map((f, i) => `${f} = $${i + 1}`).join(', ');
   const values = names.map((f) => apply[f] ?? null);
   const rows = await tx.unsafe<{ updatedAt: string }[]>(
-    `update public.${TABLE[kind]} set ${assignments}
+    `update orbit.${TABLE[kind]} set ${assignments}
        where id = $${names.length + 1}::uuid
      returning updated_at as "updatedAt"`,
     [...values, entityId] as never[],

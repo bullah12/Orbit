@@ -13,15 +13,23 @@
 -- so an entity the caller cannot read resolves to no rows rather than to a
 -- space id. That makes it safe to call with an id supplied by a form.
 
-create or replace function app.entity_space(
-  p_entity_kind app.entity_kind,
+-- Everything below lives in the `orbit` schema. The search_path names it
+-- first so an unqualified CREATE cannot land in a schema this project
+-- shares with somebody else's work, and names `public` and `extensions`
+-- after it because that is where an installation puts PostGIS and pgcrypto:
+-- Supabase uses `extensions`, a local cluster uses `public`.
+set search_path = orbit, public, extensions, pg_catalog;
+
+
+create or replace function orbit.entity_space(
+  p_entity_kind orbit.entity_kind,
   p_entity_id   uuid
 )
 returns table (space_id uuid)
 language plpgsql
 stable
 security invoker
-set search_path to public, pg_temp
+set search_path to orbit, pg_temp
 as $$
 declare
   v_table text;
@@ -42,13 +50,13 @@ begin
   end if;
 
   return query execute format(
-    'select t.space_id from public.%I t where t.id = $1', v_table
+    'select t.space_id from orbit.%I t where t.id = $1', v_table
   ) using p_entity_id;
 end;
 $$;
 
-comment on function app.entity_space(app.entity_kind, uuid) is
+comment on function orbit.entity_space(orbit.entity_kind, uuid) is
   'The space an entity belongs to, or no rows if the caller cannot read it. '
   'SECURITY INVOKER so RLS decides, not the caller.';
 
-grant execute on function app.entity_space(app.entity_kind, uuid) to authenticated;
+grant execute on function orbit.entity_space(orbit.entity_kind, uuid) to authenticated;

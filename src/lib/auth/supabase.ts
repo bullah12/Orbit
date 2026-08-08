@@ -277,7 +277,7 @@ export async function endSession(): Promise<void> {
 /**
  * The profile row for a verified subject.
  *
- * Read through `app.identity_profile`, the same narrow SECURITY DEFINER
+ * Read through `orbit.identity_profile`, the same narrow SECURITY DEFINER
  * function the dev provider uses — the pool role holds no table grants at all
  * and this does not change that. The row exists because migration 0012 puts one
  * there when the auth user is created; if it is missing (an account created
@@ -287,7 +287,7 @@ export async function endSession(): Promise<void> {
 async function profileFor(session: SupabaseSession): Promise<SessionUser> {
   const rows = await pool<SessionUser[]>`
     select id, email, display_name as "displayName", timezone
-    from app.identity_profile(${session.userId}::uuid)`;
+    from orbit.identity_profile(${session.userId}::uuid)`;
   return (
     rows[0] ?? {
       id: session.userId,

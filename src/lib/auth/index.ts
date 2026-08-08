@@ -35,8 +35,8 @@ const devProvider: AuthProvider = {
     const jar = await cookies();
     const wanted = jar.get(COOKIE)?.value;
 
-    // These go through app.identity_profile/app.identity_profiles rather than
-    // reading public.profiles: the pool role has no table grants at all, by
+    // These go through orbit.identity_profile/orbit.identity_profiles rather than
+    // reading orbit.profiles: the pool role has no table grants at all, by
     // design. See supabase/migrations/0008_identity_lookup.sql.
     //
     // No cookie yet: fall back to the first seeded profile so a fresh clone is
@@ -44,20 +44,20 @@ const devProvider: AuthProvider = {
     if (wanted) {
       const rows = await pool<SessionUser[]>`
         select id, email, display_name as "displayName", timezone
-        from app.identity_profile(${wanted}::uuid)`;
+        from orbit.identity_profile(${wanted}::uuid)`;
       if (rows[0]) return rows[0];
     }
 
     const rows = await pool<SessionUser[]>`
       select id, email, display_name as "displayName", timezone
-      from app.identity_profiles() limit 1`;
+      from orbit.identity_profiles() limit 1`;
     return rows[0] ?? null;
   },
 
   async listSelectableUsers() {
     return pool<SessionUser[]>`
       select id, email, display_name as "displayName", timezone
-      from app.identity_profiles()`;
+      from orbit.identity_profiles()`;
   },
 };
 

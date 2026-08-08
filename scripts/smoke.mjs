@@ -570,14 +570,48 @@ try {
       html.includes('Availability only'),
     );
 
-    // The real check: no Work event title reaches the page. The seeded Work
-    // titles are the ones to look for, and a busy block has no link at all.
-    const workTitles = ['stand-up', 'Funding', 'Invoice', 'Workshop'];
-    const leaked = workTitles.filter((t) => html.toLowerCase().includes(t.toLowerCase()));
+    // The real check: a busy block says nothing but that somebody is busy.
+    //
+    // This used to hunt the page HTML for the seeded Work titles, and it was a
+    // false positive rather than a check: the seed draws every space's event
+    // titles from one pool, so "Stand-up" is a Work event AND an event in
+    // Danny's own space and in Home, both of which he is entitled to see. The
+    // substring search could not tell a leak from a row he owns, and it went
+    // red on data that was correct.
+    //
+    // What replaces it asserts the property instead of guessing at its
+    // symptoms: take every busy block, remove the only three things one is
+    // allowed to render — the word "Busy", the space label, and a time — and
+    // require that nothing is left. A leaked title has nowhere to hide in that,
+    // and it stays true whatever the seed calls things.
+    const busyResidue = await page.evaluate(() =>
+      [...document.querySelectorAll('main .busy')]
+        .map((el) => {
+          // The space indicator is a .chip and is allowed. Drop it from a clone
+          // rather than string-matching the space name, so a space called
+          // "Stand-up" could not launder a title through this check.
+          const clone = el.cloneNode(true);
+          clone.querySelectorAll('.chip').forEach((c) => c.remove());
+          return clone.textContent
+            .replace(/busy/gi, ' ')
+            .replace(/\d{1,2}[:.]\d{2}/g, ' ') // a time, in the forms a block renders one
+            .replace(/all day/gi, ' ')
+            .replace(/[\s–—-]+/g, '')
+            .trim();
+        })
+        .filter((t) => t.length > 0),
+    );
     check(
       'a busy block carries no title, no category and no link',
-      leaked.length === 0,
-      leaked.join(', '),
+      busyResidue.length === 0,
+      busyResidue.length ? `left over: ${busyResidue.join(' | ')}` : `${busy} blocks, nothing left`,
+    );
+
+    // And the one title that IS unique to Work — every other seeded title also
+    // exists in a space Danny can read — must not be anywhere on the page.
+    check(
+      'and the one Work-only title never appears at all',
+      !html.toLowerCase().includes('team stand-up'),
     );
 
     const busyLinks = await page.evaluate(() =>

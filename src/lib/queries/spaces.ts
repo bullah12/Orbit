@@ -31,8 +31,8 @@ async function _listSpaces(userId: string): Promise<SpaceSummary[]> {
         m.role::text                          as role,
         (m.role <> 'free_busy')                as "canRead",
         (m.role in ('owner','admin','member')) as "canWrite"
-      from public.spaces s
-      join public.space_members m
+      from orbit.spaces s
+      join orbit.space_members m
         on m.space_id = s.id and m.user_id = ${userId}::uuid and m.status = 'active'
       where s.archived_at is null
       order by s.is_default desc, s.name
@@ -57,8 +57,8 @@ async function _listSpaceMembers(userId: string, spaceId: string): Promise<Space
   return asUser(userId, async (tx) => {
     return tx<SpaceMember[]>`
       select p.id, p.display_name as "displayName", m.role::text as role
-      from public.space_members m
-      join public.profiles p on p.id = m.user_id
+      from orbit.space_members m
+      join orbit.profiles p on p.id = m.user_id
       where m.space_id = ${spaceId}::uuid
         and m.status = 'active'
         and m.role in ('owner','admin','member')
@@ -94,8 +94,8 @@ export async function previewMove(
         display_name as "displayName",
         role::text   as role,
         reason
-      from app.space_move_preview(
-        ${entityKind}::app.entity_kind, ${entityId}::uuid, ${targetSpaceId}::uuid
+      from orbit.space_move_preview(
+        ${entityKind}::orbit.entity_kind, ${entityId}::uuid, ${targetSpaceId}::uuid
       )
     `;
   });

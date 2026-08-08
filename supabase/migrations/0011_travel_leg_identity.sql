@@ -16,8 +16,16 @@
 --
 -- It leads with space_id, like every unique constraint in this schema, and the
 -- pgTAP suite asserts that structurally.
+
+-- Everything below lives in the `orbit` schema. The search_path names it
+-- first so an unqualified CREATE cannot land in a schema this project
+-- shares with somebody else's work, and names `public` and `extensions`
+-- after it because that is where an installation puts PostGIS and pgcrypto:
+-- Supabase uses `extensions`, a local cluster uses `public`.
+set search_path = orbit, public, extensions, pg_catalog;
+
 create unique index travel_legs_derived_identity_key
-  on public.travel_legs (space_id, from_place_id, to_place_id, arrive_at)
+  on orbit.travel_legs (space_id, from_place_id, to_place_id, arrive_at)
   where from_place_id is not null
     and to_place_id is not null
     and arrive_at is not null;

@@ -33,6 +33,23 @@ which creates those objects on a plain Postgres 16. This means:
 - local dev needs only `postgres` + `postgis` + `pgtap` — no Docker, no Supabase CLI
 - the same migrations apply unchanged to a real Supabase project later
 
+**Everything Orbit owns is in one schema, `orbit`** — tables, enums and the
+helper functions every policy calls. It creates nothing in `public`, which is
+what lets it be installed into a Supabase project that is already carrying
+other work: the only object it adds outside its own schema is the trigger on
+`auth.users` in migration 0012, and that one is unavoidable because the profile
+row has to exist when an account does.
+
+Two consequences worth stating, because both are load-bearing:
+
+- **The extensions are not Orbit's to own.** PostGIS and pgcrypto go to
+  `extensions` where that schema exists and `public` where it does not, never
+  into `orbit`. Dropping Orbit's schema should not take PostGIS out with it.
+- **A SECURITY DEFINER function cannot reach them.** Those functions pin
+  `search_path = orbit, pg_temp` on purpose, and widening it to reach an
+  extension would be the wrong trade. `orbit.space_invite()` therefore hashes
+  with `sha256()` from `pg_catalog` rather than pgcrypto's `digest()`.
+
 We do **not** depend on PostgREST, Supabase Auth, Supabase Storage, or Realtime.
 Data access is `postgres.js` from server-side TypeScript.
 

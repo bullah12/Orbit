@@ -52,6 +52,24 @@ if (process.env.NODE_ENV !== 'production') globalThis.__orbitSql = pool;
 export type Tx = TransactionSql<Record<string, never>>;
 
 /**
+ * Every Orbit object lives in the `orbit` schema — tables, enums and the
+ * helper functions the policies call. Orbit creates nothing in `public`, so it
+ * can share a Supabase project with other work.
+ *
+ * Every query in `src/lib/queries/` names the schema anyway. This is set for
+ * the cases that cannot: a type resolved by name, an operator class, PostGIS.
+ * `public` and `extensions` follow because that is where an installation puts
+ * PostGIS and pgcrypto — Supabase uses `extensions`, a local cluster uses
+ * `public` — and naming both means one string works in either.
+ *
+ * It is deliberately not read from the environment. A schema name that can
+ * differ between the database the tests run against and the database in front
+ * of a person is a schema name that will, and the failure is silent: policies
+ * that find no table return nothing rather than raising.
+ */
+const SEARCH_PATH = 'orbit, public, extensions';
+
+/**
  * Run `fn` inside a transaction acting as `userId`.
  *
  * `set local role authenticated` is what makes the policies bite: the pool's
@@ -62,6 +80,7 @@ export type Tx = TransactionSql<Record<string, never>>;
 export async function asUser<T>(userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return pool.begin(async (tx) => {
     await tx.unsafe('set local role authenticated');
+    await tx.unsafe(`set local search_path = ${SEARCH_PATH}`);
     await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: userId })}, true)`;
     return fn(tx as Tx);
   }) as Promise<T>;
@@ -75,6 +94,7 @@ export async function asUser<T>(userId: string, fn: (tx: Tx) => Promise<T>): Pro
 export async function asAnon<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   return pool.begin(async (tx) => {
     await tx.unsafe('set local role anon');
+    await tx.unsafe(`set local search_path = ${SEARCH_PATH}`);
     return fn(tx as Tx);
   }) as Promise<T>;
 }

@@ -110,10 +110,10 @@ const QUERIES: Record<SearchKind, KindQuery> = {
               websearch_to_tsquery('english', ${text})) as rank,
       ${tx.unsafe(SPACE_JSON)} as space,
       ${tx.unsafe(CATEGORY_JSON)} as category
-    from public.tasks t
-    join public.spaces s on s.id = t.space_id
-    left join public.categories c on c.id = t.category_id
-    left join public.profiles a on a.id = t.assignee_id
+    from orbit.tasks t
+    join orbit.spaces s on s.id = t.space_id
+    left join orbit.categories c on c.id = t.category_id
+    left join orbit.profiles a on a.id = t.assignee_id
     where not t.is_locked
       and to_tsvector('english', t.title || ' ' || t.body_md)
           @@ websearch_to_tsquery('english', ${text})
@@ -133,9 +133,9 @@ const QUERIES: Record<SearchKind, KindQuery> = {
               websearch_to_tsquery('english', ${text})) as rank,
       ${tx.unsafe(SPACE_JSON)} as space,
       ${tx.unsafe(CATEGORY_JSON)} as category
-    from public.notes n
-    join public.spaces s on s.id = n.space_id
-    left join public.categories c on c.id = n.category_id
+    from orbit.notes n
+    join orbit.spaces s on s.id = n.space_id
+    left join orbit.categories c on c.id = n.category_id
     where not n.is_locked
       and to_tsvector('english', n.title || ' ' || n.body_md)
           @@ websearch_to_tsquery('english', ${text})
@@ -159,9 +159,9 @@ const QUERIES: Record<SearchKind, KindQuery> = {
               websearch_to_tsquery('english', ${text})) as rank,
       ${tx.unsafe(SPACE_JSON)} as space,
       ${tx.unsafe(CATEGORY_JSON)} as category
-    from public.people p
-    join public.spaces s on s.id = p.space_id
-    left join public.categories c on c.id = p.category_id
+    from orbit.people p
+    join orbit.spaces s on s.id = p.space_id
+    left join orbit.categories c on c.id = p.category_id
     where not p.is_locked
       and to_tsvector('english',
             p.display_name || ' ' || coalesce(p.nickname, '') || ' ' || p.notes_md)
@@ -187,9 +187,9 @@ const QUERIES: Record<SearchKind, KindQuery> = {
               websearch_to_tsquery('english', ${text})) as rank,
       ${tx.unsafe(SPACE_JSON)} as space,
       ${tx.unsafe(CATEGORY_JSON)} as category
-    from public.events e
-    join public.spaces s on s.id = e.space_id
-    left join public.categories c on c.id = e.category_id
+    from orbit.events e
+    join orbit.spaces s on s.id = e.space_id
+    left join orbit.categories c on c.id = e.category_id
     where not e.is_locked
       and to_tsvector('english', e.title || ' ' || e.body_md)
           @@ websearch_to_tsquery('english', ${text})
@@ -214,9 +214,9 @@ const QUERIES: Record<SearchKind, KindQuery> = {
               websearch_to_tsquery('english', ${text})) as rank,
       ${tx.unsafe(SPACE_JSON)} as space,
       ${tx.unsafe(CATEGORY_JSON)} as category
-    from public.places pl
-    join public.spaces s on s.id = pl.space_id
-    left join public.categories c on c.id = pl.category_id
+    from orbit.places pl
+    join orbit.spaces s on s.id = pl.space_id
+    left join orbit.categories c on c.id = pl.category_id
     where not pl.is_locked
       and to_tsvector('english',
             pl.name || ' ' || coalesce(pl.address_text, '') || ' ' || pl.notes_md)
@@ -239,11 +239,11 @@ export async function countLocked(userId: string): Promise<number> {
   return asUser(userId, async (tx) => {
     const [row] = await tx<{ n: number }[]>`
       select (
-        (select count(*) from public.tasks  where is_locked) +
-        (select count(*) from public.notes  where is_locked) +
-        (select count(*) from public.people where is_locked) +
-        (select count(*) from public.events where is_locked) +
-        (select count(*) from public.places where is_locked)
+        (select count(*) from orbit.tasks  where is_locked) +
+        (select count(*) from orbit.notes  where is_locked) +
+        (select count(*) from orbit.people where is_locked) +
+        (select count(*) from orbit.events where is_locked) +
+        (select count(*) from orbit.places where is_locked)
       )::int as n
     `;
     return row?.n ?? 0;

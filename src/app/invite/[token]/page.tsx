@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
 /**
  * An invitation, as the person who was sent the link sees it.
  *
- * Everything on this page comes from `app.space_invite(token, 'preview')`. The
+ * Everything on this page comes from `orbit.space_invite(token, 'preview')`. The
  * policies on `space_invites` are admin-only in both directions, so there is no
  * query the invitee could run instead — that is the whole reason the function
  * exists, and it is the single SECURITY DEFINER exception this work adds.

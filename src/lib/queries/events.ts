@@ -16,7 +16,7 @@ import { listSpaces } from './spaces';
  *  - **A `free_busy` participant never reaches this table.** They fail
  *    `can_read_space()`, so `listEvents` returns nothing for that space no
  *    matter what the caller asks. Their view of it comes from
- *    `app.free_busy_blocks()`, which returns times and nothing else — that is
+ *    `orbit.free_busy_blocks()`, which returns times and nothing else — that is
  *    the only path, and it is a different query on purpose (decision 3).
  */
 
@@ -115,14 +115,14 @@ export async function listCalendarItems(
           ST_Y(pl.geom::geometry) as "placeLat",
           ST_X(pl.geom::geometry) as "placeLon",
           coalesce(att.n, 0) as "attendeeCount"
-        from public.events e
-        join public.spaces s on s.id = e.space_id
-        left join public.categories c on c.id = e.category_id
-        left join public.calendars cal on cal.id = e.calendar_id
-        left join public.places pl on pl.id = e.place_id
-        left join public.recurrence_rules r on r.id = e.recurrence_rule_id
+        from orbit.events e
+        join orbit.spaces s on s.id = e.space_id
+        left join orbit.categories c on c.id = e.category_id
+        left join orbit.calendars cal on cal.id = e.calendar_id
+        left join orbit.places pl on pl.id = e.place_id
+        left join orbit.recurrence_rules r on r.id = e.recurrence_rule_id
         left join lateral (
-          select count(*)::int as n from public.event_attendees a where a.event_id = e.id
+          select count(*)::int as n from orbit.event_attendees a where a.event_id = e.id
         ) att on true
         where e.status <> 'cancelled'
           and (
@@ -142,7 +142,7 @@ export async function listCalendarItems(
         const rows = await asUser(userId, async (tx) => {
           return tx<{ startsAt: string; endsAt: string; allDay: boolean }[]>`
             select starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay"
-            from app.free_busy_blocks(${space.id}::uuid, ${from}, ${to})
+            from orbit.free_busy_blocks(${space.id}::uuid, ${from}, ${to})
           `;
         });
         return rows.map(
@@ -276,12 +276,12 @@ export async function getEvent(userId: string, id: string): Promise<EventDetail 
           jsonb_build_object('name', c.name, 'colour', c.colour, 'icon', c.icon) end as category,
         cal.name as "calendarName", pl.name as "placeName",
         0 as "attendeeCount"
-      from public.events e
-      join public.spaces s on s.id = e.space_id
-      left join public.categories c on c.id = e.category_id
-      left join public.calendars cal on cal.id = e.calendar_id
-      left join public.places pl on pl.id = e.place_id
-      left join public.recurrence_rules r on r.id = e.recurrence_rule_id
+      from orbit.events e
+      join orbit.spaces s on s.id = e.space_id
+      left join orbit.categories c on c.id = e.category_id
+      left join orbit.calendars cal on cal.id = e.calendar_id
+      left join orbit.places pl on pl.id = e.place_id
+      left join orbit.recurrence_rules r on r.id = e.recurrence_rule_id
       where e.id = ${id}::uuid
     `;
   });
@@ -295,9 +295,9 @@ export async function getEvent(userId: string, id: string): Promise<EventDetail 
         coalesce(a.display_name, p.display_name, pr.display_name) as "displayName",
         a.email, a.response::text as response, a.is_organiser as "isOrganiser",
         a.person_id as "personId"
-      from public.event_attendees a
-      left join public.people p on p.id = a.person_id
-      left join public.profiles pr on pr.id = a.profile_id
+      from orbit.event_attendees a
+      left join orbit.people p on p.id = a.person_id
+      left join orbit.profiles pr on pr.id = a.profile_id
       where a.event_id = ${id}::uuid
       order by a.is_organiser desc, "displayName" nulls last
     `;
@@ -326,7 +326,7 @@ export async function listCalendarsBySpace(userId: string): Promise<Record<strin
   const rows = await asUser(userId, async (tx) => {
     return tx<CalendarOption[]>`
       select id, name, space_id as "spaceId", is_writable as "isWritable"
-      from public.calendars
+      from orbit.calendars
       order by sort_order, name
     `;
   });
@@ -339,7 +339,7 @@ export async function listCalendarsBySpace(userId: string): Promise<Record<strin
 export async function eventCountOn(userId: string, from: Date, to: Date): Promise<number> {
   const rows = await asUser(userId, async (tx) => {
     return tx<{ n: number }[]>`
-      select count(*)::int as n from public.events
+      select count(*)::int as n from orbit.events
       where status <> 'cancelled' and starts_at < ${to} and ends_at > ${from}
     `;
   });

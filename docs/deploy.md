@@ -31,7 +31,18 @@ Railway for the second, because those are what §3 of
 
 ## 1. The database
 
-Create a project at supabase.com, then, from a clone of this repository:
+**Orbit installs into one schema, `orbit`, and can share a project with other
+work.** Every table, every enum and every policy helper is in it. Orbit creates
+nothing in `public` and nothing named `app`. There is exactly one exception,
+and it is unavoidable: migration 0012 puts a trigger on `auth.users`, because
+that table belongs to Supabase and the profile row has to be created when an
+account is.
+
+That means the project does **not** have to be an empty one. What Orbit needs
+from a shared project is the schema name `orbit` being free, and permission to
+add a trigger to `auth.users`.
+
+Create or open a project at supabase.com, then, from a clone of this repository:
 
 ```sh
 # The connection string from Settings → Database → Connection string → URI.
@@ -39,39 +50,49 @@ Create a project at supabase.com, then, from a clone of this repository:
 # a trigger on auth.users, which the pooled app role cannot do.
 export ADMIN_URL='postgresql://postgres:PASSWORD@db.YOUR-REF.supabase.co:5432/postgres'
 
-# Extensions. pgcrypto, postgis and vector are what 0000 expects; pgtap only if
-# you want to run ./scripts/db-test.sh against the real project too.
-psql "$ADMIN_URL" -c 'create extension if not exists pgcrypto'
-psql "$ADMIN_URL" -c 'create extension if not exists postgis'
-psql "$ADMIN_URL" -c 'create extension if not exists vector'
-psql "$ADMIN_URL" -c 'create extension if not exists pgtap'   # optional
+# Check the name is free before writing anything. If this returns a row, stop:
+# 0000 would add Orbit's 41 tables to a schema somebody else is using.
+psql "$ADMIN_URL" -c "select nspname from pg_namespace where nspname = 'orbit'"
+# expect: 0 rows
+
+# Extensions. pgcrypto, postgis and vector are what 0000 expects, and it
+# installs any that are missing into `extensions` — Supabase's own schema for
+# them — so you do not have to do this by hand. On a project that already has
+# them, which is most, 0000 leaves them exactly where they are.
+psql "$ADMIN_URL" -c 'create extension if not exists pgtap'   # optional, for db-test.sh
 
 # The migrations, in order. Filename order is the order — they are numbered.
 for f in supabase/migrations/*.sql; do
   echo "▸ $f"
   psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f "$f" || break
 done
+
+# What landed where. The second number is the one that matters on a shared
+# project: Orbit adds nothing to public.
+psql "$ADMIN_URL" -c "\
+  select schemaname, count(*) from pg_tables \
+  where schemaname in ('orbit','public') group by 1"
 ```
 
 **Migration order, and what each one is for:**
 
 | | |
 |---|---|
-| `0000_bootstrap.sql` | extensions, the `auth` shim, roles, the `app` helper schema. Mostly a no-op on Supabase — see gotcha 2. |
+| `0000_bootstrap.sql` | **the `orbit` schema**, extensions, the `auth` shim, roles, the enums and every policy helper. Mostly a no-op on Supabase — see gotcha 2. |
 | `0001_identity.sql` | profiles, spaces, `space_members`, `space_invites`, categories, devices |
 | `0002` – `0007` | tasks and notes, people, calendar, places and travel, automation, platform tables |
 | `0008_identity_lookup.sql` | the two narrow identity functions the dev provider uses |
-| `0009_entity_space.sql` | `app.entity_space()`, SECURITY INVOKER on purpose |
+| `0009_entity_space.sql` | `orbit.entity_space()`, SECURITY INVOKER on purpose |
 | `0010_recurrence_exdates.sql` | `recurrence_rules.exdates` |
 | `0011_travel_leg_identity.sql` | the partial unique index on a derived journey |
-| `0012_auth_user_profiles.sql` | **the one this all turns on**: the `auth.users` → `public.profiles` trigger, and `app.space_invite()` |
+| `0012_auth_user_profiles.sql` | **the one this all turns on**: the `auth.users` → `orbit.profiles` trigger, and `orbit.space_invite()`. The only migration that writes outside the `orbit` schema |
 
 ### The three gotchas
 
 These are from §2 of `docs/deployment-and-android.md`. All three are things to
 check rather than assume, and the first is the one that fails silently.
 
-**1. `profiles.id` must equal `auth.uid()`.** `public.profiles.id` defaults to
+**1. `profiles.id` must equal `auth.uid()`.** `orbit.profiles.id` defaults to
 `gen_random_uuid()` and has no foreign key to `auth.users`. Every policy in the
 database keys off `auth.uid()`, which is the JWT's `sub` — that is,
 `auth.users.id`. If they ever differ, **every policy returns zero rows and says
@@ -90,7 +111,7 @@ Then sign up once and check the pair:
 ```sh
 psql "$ADMIN_URL" -c "\
   select u.id = p.id as ids_match, u.email, p.display_name \
-  from auth.users u join public.profiles p on p.id = u.id"
+  from auth.users u join orbit.profiles p on p.id = u.id"
 ```
 
 If `ids_match` is not `t` for your account, stop: nothing else will work, and
@@ -121,12 +142,12 @@ locally, and it is worthless if the deployed role is different.
 psql "$ADMIN_URL" <<'SQL'
 create role orbit_app login password 'PUT A REAL PASSWORD HERE' noinherit;
 grant connect on database postgres to orbit_app;
-grant usage on schema public, app, auth to orbit_app;
+grant usage on schema orbit, auth to orbit_app;
 grant authenticated, anon to orbit_app;
 
 -- The identity seam: two narrow functions, no table grants at all.
-grant execute on function app.identity_profile(uuid) to orbit_app;
-grant execute on function app.identity_profiles() to orbit_app;
+grant execute on function orbit.identity_profile(uuid) to orbit_app;
+grant execute on function orbit.identity_profiles() to orbit_app;
 SQL
 ```
 
@@ -138,12 +159,18 @@ psql "$ADMIN_URL" -c "\
 # expect: orbit_app | f | f
 
 psql "$ADMIN_URL" -c "\
-  select count(*) from pg_tables where schemaname = 'public' and tableowner = 'orbit_app'"
+  select count(*) from pg_tables where schemaname = 'orbit' and tableowner = 'orbit_app'"
 # expect: 0
 ```
 
 If `orbit_app` owns a table, RLS does not apply to it for that table and the
 premise of every assertion in `supabase/tests/` is gone.
+
+You do **not** need to set a `search_path` on the role. `asUser()` and
+`asAnon()` in `src/lib/db/index.ts` issue `set local search_path = orbit,
+public, extensions` inside every transaction, which is the only place it could
+be got wrong once and stay wrong. Setting it on the role as well is harmless and
+`./scripts/db-reset.sh` does it locally, but it is belt on top of braces.
 
 ### The pooler note
 

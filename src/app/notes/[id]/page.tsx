@@ -282,7 +282,7 @@ export default async function NotePage({
  * Move a note between spaces.
  *
  * Same contract as tasks, people and events: nothing is written until
- * app.space_move_preview() has said who gains and who loses. The note-specific
+ * orbit.space_move_preview() has said who gains and who loses. The note-specific
  * consequence is its links — they point at space-scoped things, so any that
  * would cross the new boundary are dropped, and that is stated here rather
  * than discovered afterwards.

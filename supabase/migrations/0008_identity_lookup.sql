@@ -12,11 +12,19 @@
 --   * execute granted to orbit_app ONLY — not to `authenticated`, which already
 --     reads profiles through the policy in 0001
 --
--- The alternative, granting orbit_app SELECT on public.profiles, silently
+-- The alternative, granting orbit_app SELECT on orbit.profiles, silently
 -- returns zero rows (RLS is enabled and no policy names that role) and would
 -- have to be widened until it worked. This cannot be widened by accident.
 
-create or replace function app.identity_profile(p_user_id uuid)
+-- Everything below lives in the `orbit` schema. The search_path names it
+-- first so an unqualified CREATE cannot land in a schema this project
+-- shares with somebody else's work, and names `public` and `extensions`
+-- after it because that is where an installation puts PostGIS and pgcrypto:
+-- Supabase uses `extensions`, a local cluster uses `public`.
+set search_path = orbit, public, extensions, pg_catalog;
+
+
+create or replace function orbit.identity_profile(p_user_id uuid)
 returns table (
   id uuid,
   email text,
@@ -26,16 +34,16 @@ returns table (
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select p.id, p.email, p.display_name, p.timezone
-  from public.profiles p
+  from orbit.profiles p
   where p.id = p_user_id
 $$;
 
 -- Used by the dev user switcher, which needs to list who you can become. A real
 -- auth provider has no equivalent and would not grant this.
-create or replace function app.identity_profiles()
+create or replace function orbit.identity_profiles()
 returns table (
   id uuid,
   email text,
@@ -45,12 +53,12 @@ returns table (
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = orbit, pg_temp
 as $$
   select p.id, p.email, p.display_name, p.timezone
-  from public.profiles p
+  from orbit.profiles p
   order by p.created_at
 $$;
 
-revoke execute on function app.identity_profile(uuid) from public;
-revoke execute on function app.identity_profiles() from public;
+revoke execute on function orbit.identity_profile(uuid) from public;
+revoke execute on function orbit.identity_profiles() from public;

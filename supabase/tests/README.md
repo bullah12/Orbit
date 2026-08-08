@@ -50,7 +50,7 @@ a policy.
 ## When you add a table
 
 1. Add it to a migration with `space_id`, `owner_id`, and
-   `select app.apply_standard_rls('your_table')`.
+   `select orbit.apply_standard_rls('your_table')`.
 2. Add an isolation case here: Alice can see her row, Bob's visibility is what
    you intended, Mallory sees nothing.
 3. Bump `select plan(N)`.

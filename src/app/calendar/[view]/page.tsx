@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic';
  * Merged means every space the caller can read, in one grid, told apart by the
  * space indicator rather than by being in separate calendars. A `free_busy`
  * space contributes anonymous blocks and nothing else — and it contributes
- * them from `app.free_busy_blocks()`, not from a filtered read of `events`.
+ * them from `orbit.free_busy_blocks()`, not from a filtered read of `events`.
  * There is no client-side filtering anywhere on this page; if a row should not
  * be here, the fix is a policy.
  */

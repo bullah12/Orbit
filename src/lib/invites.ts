@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 /**
  * Space invites — the decisions, none of the I/O.
  *
- * `public.space_invites` has existed since session 1 and held no rows: session 5
+ * `orbit.space_invites` has existed since session 1 and held no rows: session 5
  * recorded that an invite needs an auth system that can invite a stranger, and
  * a cookie naming a seeded profile is not one. That is now settled, so the table
  * is being filled in rather than changed — every column this needs was already
@@ -11,7 +11,7 @@ import { createHash, randomBytes } from 'node:crypto';
  *
  * The rule that shapes everything here: **the raw token is never stored.** It is
  * generated once, shown once as a link, and from then on only its SHA-256 hash
- * exists — in `token_hash`, and recomputed in `app.space_invite()` when somebody
+ * exists — in `token_hash`, and recomputed in `orbit.space_invite()` when somebody
  * presents a link. A database dump therefore contains no working invitation.
  */
 
@@ -20,7 +20,7 @@ export const INVITE_ROLES = ['admin', 'member', 'viewer', 'free_busy'] as const;
 export type InviteRole = (typeof INVITE_ROLES)[number];
 
 /**
- * `owner` is in `app.member_role` and is deliberately not offerable.
+ * `owner` is in `orbit.member_role` and is deliberately not offerable.
  *
  * A space's owner is the person named in `spaces.owner_id`, which is a
  * different fact from the membership row and is not changed by joining.
@@ -79,7 +79,7 @@ export function newInviteToken(): string {
 
 /**
  * The hash that is stored. Must stay identical to the SQL in migration 0012:
- * `encode(digest(token, 'sha256'), 'hex')`.
+ * `encode(sha256(convert_to(token, 'utf8')), 'hex')`.
  */
 export function hashInviteToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
@@ -90,7 +90,7 @@ export function invitePath(token: string): string {
   return `/invite/${encodeURIComponent(token)}`;
 }
 
-/** Every answer `app.space_invite()` can give. */
+/** Every answer `orbit.space_invite()` can give. */
 export const INVITE_STATUSES = [
   'ok',
   'accepted',

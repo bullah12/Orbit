@@ -67,8 +67,8 @@ export async function listRules(userId: string): Promise<RuleRow[]> {
   return asUser(userId, async (tx) => {
     return tx<RuleRow[]>`
       select ${tx.unsafe(RULE_SELECT)}
-      from public.rules r
-      join public.spaces s on s.id = r.space_id
+      from orbit.rules r
+      join orbit.spaces s on s.id = r.space_id
       order by r.is_enabled desc, r.name
       limit 200
     `;
@@ -79,8 +79,8 @@ export async function getRule(userId: string, id: string): Promise<RuleRow | nul
   return asUser(userId, async (tx) => {
     const [row] = await tx<RuleRow[]>`
       select ${tx.unsafe(RULE_SELECT)}
-      from public.rules r
-      join public.spaces s on s.id = r.space_id
+      from orbit.rules r
+      join orbit.spaces s on s.id = r.space_id
       where r.id = ${id}::uuid
     `;
     return row ?? null;
@@ -155,16 +155,16 @@ async function gatherTaskFacts(
   const rows = opts.taskId
     ? await tx<TaskFactRow[]>`
         select ${tx.unsafe(FACT_SELECT)}
-        from public.tasks t
-        left join public.categories c on c.id = t.category_id
-        left join public.profiles a on a.id = t.assignee_id
+        from orbit.tasks t
+        left join orbit.categories c on c.id = t.category_id
+        left join orbit.profiles a on a.id = t.assignee_id
         where t.id = ${opts.taskId}::uuid and t.space_id = ${spaceId}::uuid
       `
     : await tx<TaskFactRow[]>`
         select ${tx.unsafe(FACT_SELECT)}
-        from public.tasks t
-        left join public.categories c on c.id = t.category_id
-        left join public.profiles a on a.id = t.assignee_id
+        from orbit.tasks t
+        left join orbit.categories c on c.id = t.category_id
+        left join orbit.profiles a on a.id = t.assignee_id
         where t.space_id = ${spaceId}::uuid
           and t.status in ('todo','doing','blocked')
         order by t.due_on nulls last, t.created_at
@@ -185,8 +185,8 @@ async function gatherTaskFacts(
 async function membersOf(tx: Tx, spaceId: string, userId: string): Promise<Members> {
   const rows = await tx<{ id: string; name: string }[]>`
     select p.id, p.display_name as name
-    from public.space_members m
-    join public.profiles p on p.id = m.user_id
+    from orbit.space_members m
+    join orbit.profiles p on p.id = m.user_id
     where m.space_id = ${spaceId}::uuid
       and m.status = 'active'
       and m.role in ('owner','admin','member')
@@ -285,10 +285,10 @@ export async function runRule(
     });
 
     if (opts.dryRun) {
-      await tx`update public.rules set last_dry_run_at = now() where id = ${rule.id}::uuid`;
+      await tx`update orbit.rules set last_dry_run_at = now() where id = ${rule.id}::uuid`;
     } else {
       await tx`
-        update public.rules
+        update orbit.rules
         set last_run_at = now(), run_count = run_count + 1
         where id = ${rule.id}::uuid
       `;
@@ -325,7 +325,7 @@ async function applyTaskEffect(
   switch (effect.field) {
     case 'priority':
       return guard(await tx`
-        update public.tasks set priority = ${effect.value}::app.priority
+        update orbit.tasks set priority = ${effect.value}::orbit.priority
         where id = ${taskId}::uuid and space_id = ${spaceId}::uuid and not is_locked
       `);
     case 'status': {
@@ -333,25 +333,25 @@ async function applyTaskEffect(
       // timestamp in the same statement, and moving away has to clear it.
       const done = effect.value === 'done';
       return guard(await tx`
-        update public.tasks
-        set status = ${effect.value}::app.task_status,
+        update orbit.tasks
+        set status = ${effect.value}::orbit.task_status,
             completed_at = case when ${done} then coalesce(completed_at, now()) else null end
         where id = ${taskId}::uuid and space_id = ${spaceId}::uuid and not is_locked
       `);
     }
     case 'assignee_id':
       return guard(await tx`
-        update public.tasks set assignee_id = ${effect.value}::uuid
+        update orbit.tasks set assignee_id = ${effect.value}::uuid
         where id = ${taskId}::uuid and space_id = ${spaceId}::uuid and not is_locked
       `);
     case 'deferred_until':
       return guard(await tx`
-        update public.tasks set deferred_until = ${effect.value}::date
+        update orbit.tasks set deferred_until = ${effect.value}::date
         where id = ${taskId}::uuid and space_id = ${spaceId}::uuid and not is_locked
       `);
     case 'due_on':
       return guard(await tx`
-        update public.tasks set due_on = ${effect.value}::date
+        update orbit.tasks set due_on = ${effect.value}::date
         where id = ${taskId}::uuid and space_id = ${spaceId}::uuid and not is_locked
       `);
   }
@@ -374,7 +374,7 @@ async function deliverNotification(
   provider: { name: string; send: (ref: string, m: { title: string; body: string; href?: string }) => Promise<{ delivered: boolean }> },
 ): Promise<number> {
   const [device] = await tx<{ id: string }[]>`
-    select id from public.devices
+    select id from orbit.devices
     where space_id = ${fact.spaceId}::uuid and owner_id = ${userId}::uuid
     order by last_seen_at desc nulls last limit 1
   `;
@@ -397,7 +397,7 @@ async function deliverNotification(
   }
 
   await tx`
-    insert into public.notification_deliveries
+    insert into orbit.notification_deliveries
       (space_id, owner_id, device_id, channel, status, provider, error, attempts, sent_at)
     values (${fact.spaceId}::uuid, ${userId}::uuid, ${device?.id ?? null}, 'push',
             ${status}, ${provider.name}, ${error}, 1,
@@ -452,11 +452,11 @@ async function recordRunTx(tx: Tx, userId: string, row: RuleRow, args: RecordArg
   const single = summary && summary.items.length === 1 ? summary.items[0].fact.id : null;
 
   await tx`
-    insert into public.rule_runs
+    insert into orbit.rule_runs
       (space_id, owner_id, rule_id, is_dry_run, trigger_kind, entity_kind, entity_id,
        matched, effects, error, duration_ms)
     values (${row.spaceId}::uuid, ${userId}::uuid, ${row.id}::uuid, ${args.isDryRun},
-            ${args.triggerKind}, ${single ? 'task' : null}::app.entity_kind, ${single}::uuid,
+            ${args.triggerKind}, ${single ? 'task' : null}::orbit.entity_kind, ${single}::uuid,
             ${args.matched}, ${tx.json(effects)}, ${args.error}, ${args.durationMs})
   `;
 }
@@ -507,9 +507,9 @@ export async function listRuleRuns(
         r.name          as "ruleName",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.rule_runs rr
-      join public.rules r on r.id = rr.rule_id
-      join public.spaces s on s.id = rr.space_id
+      from orbit.rule_runs rr
+      join orbit.rules r on r.id = rr.rule_id
+      join orbit.spaces s on s.id = rr.space_id
       ${where}
       order by rr.ran_at desc
       limit ${limit}
@@ -546,7 +546,7 @@ export async function setRuleEnabled(
   }
 
   await asUser(userId, async (tx) => {
-    await tx`update public.rules set is_enabled = ${enabled} where id = ${ruleId}::uuid`;
+    await tx`update orbit.rules set is_enabled = ${enabled} where id = ${ruleId}::uuid`;
   });
   return { ok: true };
 }
@@ -616,13 +616,13 @@ export async function createRule(
     // suffix rather than an error somebody has to decode.
     const base = slugify(name);
     const [taken] = await tx<{ n: number }[]>`
-      select count(*)::int as n from public.rules
+      select count(*)::int as n from orbit.rules
       where space_id = ${input.spaceId}::uuid and slug like ${base + '%'}
     `;
     const slug = taken.n ? `${base}-${taken.n + 1}` : base;
 
     const [row] = await tx<{ id: string }[]>`
-      insert into public.rules (space_id, owner_id, name, slug, description, trigger, conditions, actions, is_enabled)
+      insert into orbit.rules (space_id, owner_id, name, slug, description, trigger, conditions, actions, is_enabled)
       values (${input.spaceId}::uuid, ${userId}::uuid, ${name}, ${slug},
               ${input.description.trim()}, ${tx.json(input.trigger)},
               ${tx.json([])}, ${tx.json([])}, false)
@@ -663,7 +663,7 @@ export async function updateRuleParts(
 
   await asUser(userId, async (tx) => {
     await tx`
-      update public.rules set
+      update orbit.rules set
         name        = ${name ?? row.name},
         description = ${patch.description?.trim() ?? row.description},
         trigger     = ${tx.json((patch.trigger ?? row.trigger) as never)},
@@ -790,7 +790,7 @@ export async function removeAction(
 
 export async function deleteRule(userId: string, ruleId: string): Promise<void> {
   await asUser(userId, async (tx) => {
-    await tx`delete from public.rules where id = ${ruleId}::uuid`;
+    await tx`delete from orbit.rules where id = ${ruleId}::uuid`;
   });
 }
 
@@ -828,8 +828,8 @@ export async function listDeliveries(userId: string, limit = 8): Promise<Deliver
         d.created_at as "createdAt",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.notification_deliveries d
-      join public.spaces s on s.id = d.space_id
+      from orbit.notification_deliveries d
+      join orbit.spaces s on s.id = d.space_id
       order by d.created_at desc
       limit ${limit}
     `;
