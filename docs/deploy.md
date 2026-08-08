@@ -51,6 +51,22 @@ networking has no IPv6 route, so the direct host is simply unreachable —
 → **Connect** → *Session pooler* gives you an IPv4 host; the username becomes
 `postgres.YOUR-REF`. See `docs/windows.md`.
 
+**`$ADMIN_URL` does not survive a new terminal, and psql does not complain when
+it is missing** — an empty connection string falls back to a *local* database.
+If psql ever mentions `/var/run/postgresql/.s.PGSQL.5432`, it never reached
+Supabase. On a machine with a local Postgres that is worse than an error,
+because the migrations would apply somewhere nobody meant them to and report
+success. Keep it in a file outside the repository (it holds a password) and
+guard anything that writes:
+
+```sh
+umask 077 && cat > ~/.orbit-admin.env <<'EOF'
+export ADMIN_URL='postgresql://…'
+EOF
+source ~/.orbit-admin.env
+: "${ADMIN_URL:?ADMIN_URL is not set — refusing to touch a local database}"
+```
+
 ```sh
 # The connection string from Settings → Database → Connection string → URI.
 # Session mode, port 5432, as the `postgres` user: migrations create roles and
