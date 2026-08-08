@@ -255,3 +255,40 @@ export async function categoriesBySpace(
   }
   return out;
 }
+
+export type AssigneeOption = { id: string; name: string };
+
+/**
+ * Who a task can be assigned to, per space — edge 32.
+ *
+ * The same shape as `categoriesBySpace` and for the same reason: a row picker
+ * needs its options grouped by the space the row is in, and one query is better
+ * than one per row.
+ *
+ * Only `owner`, `admin` and `member` are offered, which is exactly the set
+ * `updateTask` and `setTaskAssignee` will actually write. A `free_busy`
+ * participant is a member of the space and cannot be given a task in it — they
+ * cannot see its contents — so offering them would be offering something the
+ * write would then silently turn into NULL.
+ *
+ * No `where` on the caller: `space_members` carries the standard space-wide
+ * policy, so this returns members of spaces the caller is in and nothing else.
+ */
+export async function assignableBySpace(
+  userId: string,
+): Promise<Record<string, AssigneeOption[]>> {
+  const rows = await asUser(userId, async (tx) => {
+    return tx<{ spaceId: string; id: string; name: string }[]>`
+      select m.space_id as "spaceId", p.id, p.display_name as name
+      from public.space_members m
+      join public.profiles p on p.id = m.user_id
+      where m.status = 'active'
+        and m.role in ('owner','admin','member')
+      order by p.display_name
+    `;
+  });
+
+  const out: Record<string, AssigneeOption[]> = {};
+  for (const r of rows) (out[r.spaceId] ??= []).push({ id: r.id, name: r.name });
+  return out;
+}

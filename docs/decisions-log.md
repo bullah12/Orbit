@@ -1243,3 +1243,228 @@ acting on it.
   that nothing was watching, which is how it came to look absent from the
   outside. Four smoke checks now drive it, and the wrong claim was corrected in
   STATUS, in the review and here rather than quietly dropped.
+
+## Session 12 — settings, the offline shell, and the edges with teeth
+
+Brief C. Branch `claude/brief-c-settings-offline-shell-0l1q6x`. No migration was
+written and none was needed; the argument for the one that was expected is
+below.
+
+### Phase 0 — the red smoke check was the check, not the app
+
+- **The failing check was a false positive, and it was verified before it was
+  changed.** "A busy block carries no title, no category and no link" scanned
+  the whole of `main` for `['stand-up', 'Funding', 'Invoice', 'Workshop']`,
+  described in a comment as "the seeded Work titles". Three of the four are not
+  seeded titles at all, and `'Stand-up'` is in the seed's generic
+  `EVENT_TITLES` filler, which is drawn from for **every** space. The match was
+  `aria-label="Stand-up, all day, Danny"` — the partner's own event in his own
+  space, which he is entitled to see. Every busy block on the page carried
+  `Work | Busy` and a `title` of `Work — busy, HH:MM`, exactly as designed. The
+  check went red whenever the shuffle put a filler "Stand-up" in his week,
+  which is why it passed in session 10 and failed in session 11.
+- **It now asserts the property its name claims**, on the busy blocks
+  themselves: no link, no category colour, text ending in `Busy`, and a `title`
+  of the documented shape. The leak scan is kept, because that is the security
+  property, but its forbidden set is *derived* — the Work titles Priya can see
+  that week, minus any title the partner legitimately sees in a space he can
+  read. A word on the page for an honest reason cannot be evidence of a leak,
+  and the seed reuses one title list across every space, so the subtraction is
+  what makes the assertion mean anything.
+
+### The theme question, decided
+
+- **`light-dark()`, as `docs/design-review.md` recommended.** All 42 colour
+  tokens now hold both values in one declaration and both
+  `@media (prefers-color-scheme: dark)` blocks are gone. The manual override is
+  two `color-scheme` lines and there is no second copy of the palette to drift.
+  `only light` / `only dark` rather than bare keywords, so a pinned theme also
+  pins form controls and scrollbars — a person who chose light should not get
+  dark widgets on a light page.
+- **The conversion was generated and then verified, not typed.** A script read
+  the light and dark maps out of the old file, emitted the merged declarations,
+  and a second script read them back out of the new file and compared: 42 pairs,
+  identical, no token left as a single value. Sixty hand-retyped `oklch()`
+  triples is exactly the kind of edit that loses a digit silently.
+- **The dark-value comments were carried across, not dropped.** They are a
+  comment block above the merged tokens: dark surfaces are not an inversion,
+  dark chips hold their chroma so a space keeps its identity at sunset, and
+  water goes below `--bg` while land goes above it.
+- **`tests/contrast.test.ts` still computes real WCAG ratios for both themes**,
+  and the brace-matching is gone as predicted. Three new guards keep it honest,
+  because the failure mode inverted: a parse that returned the same half twice
+  would compute every ratio and pass every assertion while checking one theme
+  twice. So the two halves must differ, no token may escape the pair into a
+  single value, and no media query may redeclare a colour. **Mutation-tested**:
+  changing the parse to return the light half for both turns it red.
+
+### Preferences are cookies, and what that costs
+
+- **Theme, week start and default compose space live in cookies, not on
+  `profiles`.** The theme *must* be known before first paint, which rules out
+  anything fetched after render — a `useEffect` that swaps the theme is the
+  flash the requirement forbids. Every page is already `force-dynamic` and
+  already reads cookies, so the server applies the choice to `<html
+  data-theme>` on the way out. No migration, which was the constraint.
+- **The cost, recorded rather than hidden:** a preference belongs to a browser,
+  not to an account. A second device starts at the defaults. For a theme that is
+  arguably correct — a phone at night and a desktop at noon want different
+  answers — and for the default space it is a mild annoyance. Moving them onto
+  `profiles` is a migration *and* a decision about whether they are per-account
+  or per-device, which is why it was not done in passing.
+- **"System" is the absence of the attribute, not a third value.** Somebody who
+  has never chosen and somebody who chose "follow my OS" want identical
+  behaviour, so they are one state rather than two that have to be kept
+  behaving alike. Choosing system deletes the cookie.
+- **The default space is re-validated against writable spaces on every read.**
+  The cookie is a hint about which of your own spaces to prefer and never an
+  assertion that you have one; a space you later leave falls back rather than
+  failing.
+- **`generateViewport` replaced the constant `viewport`.** Once a theme can be
+  pinned, the media-query `themeColor` pair answers the wrong authority — a
+  person who pinned dark on a phone in light mode would get a pale status bar
+  above a dark app.
+
+### Week start is a layout preference and must never be more than that
+
+- **`WKST` belongs to the rule, not to the viewer.** `src/lib/recurrence.ts`
+  has its own `weekStart` driven by the rule text, and it decides which
+  occurrences a weekly rule with an interval actually has. If the cookie ever
+  reached that code, changing a display setting would silently move somebody's
+  repeating events — a data change wearing the clothes of a display change. The
+  two are kept apart by construction (recurrence never calls `startOfWeekISO`),
+  and `tests/prefs.test.ts` asserts the *consequence*: the same rule expands
+  identically under both preferences, while `WKST` in the rule text genuinely
+  changes it.
+- **`viewRange` takes the preference too.** It has to: a range cut on Monday
+  behind a grid drawn from Sunday would query six days the view never shows and
+  miss the one it does, leaving the first column permanently empty.
+
+### Edge 4 — revoking a device
+
+- **`devices.revoked_at` has existed since migration 0001 and nothing had ever
+  written it.** Something does now, and what makes it more than a label is that
+  `advanceCursor` refuses to move a revoked device's cursor. Written as a
+  guarded `insert … select … where exists` so the `on conflict do update` is
+  skipped as well: with zero rows produced there is no conflict to resolve, so
+  an existing cursor stays exactly where it was.
+- **Revoking is scoped to the caller's own rows in the statement**, on top of
+  the policy. `listDevices` deliberately shows a partner's device in a shared
+  space so that "that laptop is three days behind" is answerable — but seeing
+  somebody's device is not ending it.
+- **It is not a security boundary and is not described as one.** A revoked
+  device can be restored by its owner, and the boundary remains `asUser` and the
+  policies. The smoke run asserts the consequence with a control beside it: an
+  active device advances its cursor and a revoked one does not.
+
+### Edge 33 — the offline shell, and the rule it is built on
+
+- **No authenticated page HTML is ever cached, and everything else follows from
+  that.** Every page is `force-dynamic` and RLS-scoped, so a cached
+  `/tasks/home` served to whoever opens the phone next is a data leak, not a
+  nicety — and unlike a stale asset it cannot be noticed by looking at it. A
+  navigation is therefore network-only with `/offline` as its fallback. What is
+  cached is `/offline`, the manifest, and `/_next/static/`, which is
+  content-hashed and contains nobody's data.
+- **`/offline` is a route handler returning standalone HTML, not a page
+  component.** That is the security decision, not a styling shortcut: a page
+  component is wrapped in the root layout, and the sidebar's space names and
+  task counts would be baked into a cache entry held indefinitely. Nothing on
+  the route reads a cookie, a user or the database, so it renders identically
+  for everybody — which is the property that makes it safe to keep.
+- **The four colours it needs are a second copy of four tokens**, because
+  standalone HTML cannot link to a stylesheet whose hashed name is not knowable
+  when the route is written. That is exactly the drift the `light-dark()` merge
+  removed, so each one is pinned to `globals.css` by a test.
+- **The policy is data, the mechanism is code.** `src/lib/offline.ts` holds what
+  may be cached and is tested by Vitest; `src/app/sw.js/route.ts` injects it as
+  JSON. A hand-written `public/sw.js` would be a second copy of the rules, and
+  for a service worker that means the tested rules and the shipped rules
+  disagreeing about whether somebody's page HTML is kept. `swDecision` is total
+  and defaults to `network-only`, so a request shape nobody considered behaves
+  as if no worker were installed.
+- **There is a way out.** `skipWaiting` and `clients.claim` on install, a
+  version bump that deletes every other cache on activate, and an unregister
+  control on `/settings` that empties the caches too. A service worker with no
+  escape hatch is the classic way to ship an app that cannot be fixed.
+
+### A hole one layer below the service worker, found by the smoke run
+
+- **The browser's own HTTP cache re-served an authenticated page offline.** With
+  the network disabled, `/tasks/all` came back complete — sidebar, task counts,
+  every row. The service worker had cached nothing; it called `fetch()`, and
+  `fetch()` was answered from disk. The whole offline design rests on a
+  sentence — a page rendered for one person must not be kept — and no header had
+  ever said it out loud.
+- **`src/middleware.ts` says it.** `no-store` on pages, with
+  `_next/static`, `_next/image`, `sw.js`, `offline` and the manifest excluded
+  and a reason recorded for each. Both halves are asserted in the smoke run: a
+  page carries `no-store`, and a content-hashed asset keeps its immutable year.
+- This was not on any edge list. It was found because the offline check was
+  written to drive the real browser with the network really disabled, rather
+  than to assert that a file exists.
+
+### Edge 7 — and why it needed no migration after all
+
+- **It had more teeth than the entry said.** Dismissing lost the edit, but for
+  three of the four conflict kinds the edit was *already* gone: `settle` takes a
+  conflicted write out of the queue, and `clashes[]` carries the typed values
+  only for `field_conflict`. A `deleted_elsewhere`, `locked_elsewhere` or
+  `moved_space` conflict discarded somebody's typing the moment it was raised,
+  before they had touched anything. So the fix is in two halves — `settle` now
+  holds the write behind every conflict, and dismissing records it.
+- **No migration, and the argument was not close.** The expected fix was a
+  server-side table of discarded edits. Two things rule it out. First, **an
+  unsent edit has never been anywhere but this browser**: `localStorage` is
+  where it genuinely lives, and moving the record to the server would be moving
+  it somewhere the edit itself never was. Second, and decisively, **one of the
+  four conflict kinds is `locked_elsewhere`** — the row became end-to-end
+  encrypted while the edit was queued — so the naive table would store the
+  plaintext of an edit to a locked row, which decision 1 forbids outright.
+  Building the table *and* excluding the one kind that most needs the record
+  would be a migration that bought the least useful three quarters.
+- **The floor was a record; this is the record plus the undo.** The whole write
+  is kept, `/sync` shows what it would have written, and it can be put back —
+  at the end of the queue with a new sequence number, keeping its `base`, so the
+  next send judges it against the row as it is now and either merges it, applies
+  it, or asks the same question with today's values.
+- **The log is capped at 50, oldest dropped.** `localStorage` is shared with the
+  queue, and an unbounded discard log would eventually be the reason an edit
+  could not be saved — this feature causing the loss it exists to prevent.
+- **An older queue is defaulted, not version-bumped.** `held` and `discarded`
+  are absent from `orbit.outbox.v1` as written before this session. Forcing a
+  queue to be discarded in order to add a feature about not discarding things
+  would be a poor joke.
+
+### Edge 32 — the picker is on the row
+
+- **Not on the compose bar**, which is recorded twice and stands. The bar
+  already carries a title, a date, a category and one chip per writable space,
+  and on a phone that was three rows before anything was added. A task's owner
+  is also the thing most likely to change *after* it exists.
+- **Its own action rather than a trip through `updateTask`.** A row form routed
+  through `updateTask` would have to post the title, the body and the status
+  back with it, and would overwrite all three from whatever the page last
+  rendered.
+- **Only `owner`, `admin` and `member` are offered**, which is exactly the set
+  the write will accept. A `free_busy` participant cannot hold a task in a space
+  whose contents they cannot see, so offering them would offer something the
+  write would silently turn into NULL. A locked row gets no control at all, for
+  the same reason.
+
+### Tests
+
+- **A hydration race was fixed rather than retried away.** "? opens the list of
+  them" attaches to a Client Component's listener and asserted immediately after
+  a navigation, while its two neighbours retried via `waitForURL`. It went red
+  under a full run and passed every time in isolation. It now waits for the page
+  to settle, which is what the check meant.
+- **The two dark-mode checks only asserted a colour was non-empty**, so a
+  broken `light-dark()` merge would have passed both. They now assert the two
+  schemes are genuinely different colours.
+- **The device-revoke check carries a control.** Without one, a cursor that
+  never moved would pass "a revoked device does not advance its cursor" for
+  free, so the active case is asserted immediately before it.
+- **Edge 3 held.** The revoke section marks a device caught up, which empties
+  the "changed since" feed a later check reads, so it rewinds the cursor before
+  it closes. `pnpm smoke` passes twice in a row without a reseed.

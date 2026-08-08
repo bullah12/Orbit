@@ -49,8 +49,12 @@ import {
   readCurrent,
   resetCursors,
   resolveConflictWrite,
+  setDeviceRevoked,
+  setDeviceRevokedByLabel,
   SYNC_ENTITY_KINDS,
 } from '@/lib/queries/sync';
+import { isThemeChoice, parseWeekStart, resolveDefaultSpace } from '@/lib/prefs';
+import { writeDefaultSpace, writeTheme, writeWeekStart } from '@/lib/prefs/cookies';
 import {
   isSyncEntityKind,
   type Conflict,
@@ -2531,4 +2535,141 @@ export async function declineSpaceInvite(formData: FormData) {
 
   const result = await declineInvite(user.id, token);
   redirect(`/invite/${encodeURIComponent(token)}?outcome=${result.status}`);
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+//
+// Three preferences in cookies and one write to `devices.revoked_at`. Nothing
+// here is a permission: the preferences change what somebody's own browser
+// renders, and revoking is scoped to the caller's own rows in the statement as
+// well as by the policy behind it. See `src/lib/prefs/index.ts` for why these
+// are cookies rather than a table, and what that costs.
+// ---------------------------------------------------------------------------
+
+/**
+ * Set the theme, and land back on the page it was set from.
+ *
+ * `revalidatePath('/', 'layout')` is the point of the whole exercise: the
+ * layout is what renders `<html data-theme>`, so re-rendering it is what makes
+ * the new theme arrive already applied rather than being swapped in afterwards.
+ */
+export async function setTheme(formData: FormData) {
+  await requireUser();
+  const choice = String(formData.get('theme') ?? '');
+  if (!isThemeChoice(choice)) redirect('/settings?error=Unknown+theme.');
+
+  await writeTheme(choice);
+  revalidatePath('/', 'layout');
+  redirect('/settings?saved=theme');
+}
+
+/** Which day a calendar week begins on. Display only — see `weekDays`. */
+export async function setWeekStart(formData: FormData) {
+  await requireUser();
+  await writeWeekStart(parseWeekStart(String(formData.get('weekStart') ?? '')));
+  revalidatePath('/', 'layout');
+  redirect('/settings?saved=week');
+}
+
+/**
+ * Which space the compose bar starts in.
+ *
+ * Validated against the caller's writable spaces here as well as on every read.
+ * Checking on the way in gives a plain refusal instead of a preference that
+ * silently does nothing; checking on the way out is what still holds after
+ * somebody is removed from a space.
+ */
+export async function setDefaultSpace(formData: FormData) {
+  const user = await requireUser();
+  const raw = String(formData.get('spaceId') ?? '');
+
+  if (raw !== '') {
+    const spaces = await listSpaces(user.id);
+    const writable = spaces.filter((s) => s.canWrite).map((s) => s.id);
+    if (resolveDefaultSpace(raw, writable) === null) {
+      redirect('/settings?error=That+is+not+a+space+you+can+write+to.');
+    }
+  }
+
+  await writeDefaultSpace(raw);
+  revalidatePath('/', 'layout');
+  redirect('/settings?saved=space');
+}
+
+/**
+ * Revoke a device, or restore one — edge 4.
+ *
+ * A device is revoked per row, but "this browser" is a row per space, so the
+ * form offers both: one row, or every row carrying this browser's label. The
+ * consequence is asserted rather than assumed — `advanceCursor` refuses to move
+ * a revoked device's cursor, which is checked in the smoke run and is the
+ * reason revoking is more than a label.
+ */
+export async function setDeviceRevocation(formData: FormData) {
+  const user = await requireUser();
+  const deviceId = String(formData.get('deviceId') ?? '');
+  const label = String(formData.get('label') ?? '');
+  const revoked = String(formData.get('revoked') ?? '') === '1';
+
+  // By label — every row that is this browser — or by row.
+  if (label !== '') {
+    const n = await setDeviceRevokedByLabel(user.id, label, revoked);
+    revalidatePath('/', 'layout');
+    redirect(
+      n === 0
+        ? '/settings?error=No+device+of+yours+has+that+name.'
+        : `/settings?saved=${revoked ? 'revoked' : 'restored'}`,
+    );
+  }
+
+  if (!deviceId) redirect('/settings');
+
+  const rows = await setDeviceRevoked(user.id, deviceId, revoked);
+  revalidatePath('/', 'layout');
+  redirect(
+    rows.length === 0
+      ? '/settings?error=That+device+is+not+yours+to+revoke.'
+      : `/settings?saved=${revoked ? 'revoked' : 'restored'}`,
+  );
+}
+
+/**
+ * Set or clear one task's assignee — edge 32.
+ *
+ * Its own action rather than a trip through `updateTask`, because the row has
+ * only this one field and `updateTask` would need every other value posted back
+ * with it — a form on a list row that carried the title, the body and the
+ * status would overwrite all three from whatever the page last rendered.
+ *
+ * The assignee is resolved in SQL against the task's own space, exactly as
+ * `updateTask` resolves it: somebody who is not an active member with a role
+ * that can hold a task becomes NULL rather than being written. The policies
+ * already stop a write to a task you cannot reach; this stops a stale page from
+ * producing a row that references across a space boundary.
+ */
+export async function setTaskAssignee(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('taskId') ?? '');
+  if (!id) return;
+
+  const assigneeId = String(formData.get('assigneeId') ?? '') || null;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      update public.tasks t set
+        assignee_id = (
+          select m.user_id from public.space_members m
+          where m.user_id = ${assigneeId}::uuid
+            and m.space_id = t.space_id
+            and m.status = 'active'
+            and m.role in ('owner','admin','member')
+        ),
+        updated_at = now()
+      where t.id = ${id}::uuid and not t.is_locked
+    `;
+  });
+
+  await fireForTask(user.id, 'task.updated', id);
+  revalidatePath('/', 'layout');
 }

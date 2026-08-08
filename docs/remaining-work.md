@@ -1,5 +1,16 @@
 # Orbit — what is done, what remains, and the prompts to finish it
 
+> **Read this first (added session 12).** Prompt A below — Brief C — **has been
+> run**, on branch `claude/brief-c-settings-offline-shell-0l1q6x`. Bucket B's
+> B0, B1, B2, B3, B4 and B6 are done and edges 4, 7, 32 and 33 are closed. What
+> is left of Bucket B is **B5** (a push that deletes, edge 13; and a scheduler,
+> edge 16), **B7** (the remaining edges) and **B8** (shared lists). §1 and §2
+> below describe the repository as it was *before* that session and are kept as
+> written rather than edited after the fact; **`docs/STATUS.md` is the current
+> contract.** Bucket A is untouched and still blocks everything — §5's Prompt B
+> is the one to use once somebody has done it.
+
+
 Written session 11, 2026-08-08, on branch `claude/project-completion-status-kkqpxo`.
 This session **built nothing**. It read the handoff documents and then re-ran
 the repository's own five commands from a cold container to check whether the

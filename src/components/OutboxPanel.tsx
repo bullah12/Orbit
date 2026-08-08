@@ -5,12 +5,16 @@ import Link from 'next/link';
 import { answerConflict, sendQueue } from '@/app/actions';
 import { SpaceIndicator, type SpaceRef } from './SpaceIndicator';
 import { Icon } from './Icon';
+import { formatRelative } from '@/lib/format';
 import {
   clearConflict,
   discard,
+  dismissConflict,
+  forgetDiscarded,
   outboxSummary,
   readOffline,
   readOutbox,
+  restoreDiscarded,
   settle,
   writeOffline,
   writeOutbox,
@@ -386,8 +390,10 @@ export function OutboxPanel({
                       className="hairline rounded border px-2 py-1 text-xs"
                       disabled={busy}
                       onClick={() => {
-                        update(clearConflict(outbox, c.opId));
-                        setSaid('That conflict was dismissed. Nothing was written.');
+                        update(dismissConflict(outbox, c.opId));
+                        setSaid(
+                          'Dismissed. Nothing was written, and the edit is kept below — you can put it back.',
+                        );
                       }}
                     >
                       Dismiss
@@ -399,6 +405,118 @@ export function OutboxPanel({
           </ul>
         )}
       </section>
+
+      {/* --------------------------------------------------------- edge 7.
+
+          Dismissing a conflict used to delete it, and with it the only copy of
+          what somebody had typed — for three of the four conflict kinds the
+          typed values were already gone by then, because `clashes` is empty
+          unless two people changed the same field.
+
+          What was discarded is now kept and shown here, and it can be put back.
+          The floor the brief set was a record; this is the record plus the undo
+          it said was better.
+      */}
+      {outbox.discarded.length > 0 && (
+        <section className="hairline border-b px-5 py-4" aria-labelledby="discarded-heading">
+          <div className="flex flex-wrap items-baseline gap-3">
+            <h2 id="discarded-heading" className="text-sm font-semibold">
+              Dismissed
+            </h2>
+            <span className="faint text-xs">
+              {outbox.discarded.length} edit{outbox.discarded.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <p className="muted mt-1 text-xs">
+            Conflicts you dismissed, and what each one discarded. Nothing here was
+            written to the server. Putting one back adds it to the queue again,
+            at the end — the next send compares it against the row as it is now,
+            so it either merges, applies, or asks the same question with today’s
+            values rather than yesterday’s.
+          </p>
+
+          <ul className="mt-2 space-y-2" id="outbox-discarded">
+            {outbox.discarded.map((d) => {
+              const space = spaceOf(d.conflict.spaceId);
+              const fields = d.write ? Object.entries(d.write.changes) : [];
+              return (
+                <li key={d.conflict.opId} className="hairline rounded border px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    {space ? (
+                      <SpaceIndicator space={space} />
+                    ) : (
+                      <span className="faint text-2xs">a space this account can no longer see</span>
+                    )}
+                    <span className="muted text-2xs">{CONFLICT_LABEL[d.conflict.kind]}</span>
+                    <Link
+                      href={(PATH[d.conflict.entityKind]?.(d.conflict.entityId) ?? '/sync') as never}
+                      className="font-medium"
+                    >
+                      {d.conflict.entityKind}
+                    </Link>
+                    <span className="faint text-2xs">dismissed {formatRelative(d.discardedAt)}</span>
+                  </div>
+                  <p className="muted mt-1 text-xs">{d.conflict.reason}</p>
+
+                  {fields.length > 0 ? (
+                    <table className="mt-2 w-full text-xs">
+                      <caption className="sr-only">What this edit would have written</caption>
+                      <thead>
+                        <tr className="faint text-left text-2xs">
+                          <th scope="col" className="py-0.5 pr-3 font-medium">Field</th>
+                          <th scope="col" className="py-0.5 font-medium">What you typed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fields.map(([field, value]) => (
+                          <tr key={field}>
+                            <th scope="row" className="py-0.5 pr-3 text-left font-medium">
+                              {fieldLabel(field)}
+                            </th>
+                            <td className="py-0.5">{displayValue(value)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="faint mt-1 text-2xs">
+                      This one was dismissed before session 12 kept the edit behind
+                      it, so the conflict is recorded and its values are not.
+                    </p>
+                  )}
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {d.write && (
+                      <button
+                        type="button"
+                        className="hairline rounded border px-2 py-1 text-xs"
+                        disabled={busy}
+                        onClick={() => {
+                          update(restoreDiscarded(outbox, d.conflict.opId));
+                          setSaid('Put back in the queue. It will be sent on the next send.');
+                        }}
+                      >
+                        Put it back
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="hairline rounded border px-2 py-1 text-xs"
+                      disabled={busy}
+                      onClick={() => {
+                        update(forgetDiscarded(outbox, d.conflict.opId));
+                        setSaid('Forgotten. That one is gone for good.');
+                      }}
+                    >
+                      Forget it
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       {results.length > 0 && (
         <section className="hairline border-b px-5 py-4" aria-labelledby="results-heading">

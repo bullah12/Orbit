@@ -49,6 +49,13 @@ const PATHS: Record<string, string> = {
   sparkle: 'M12 3.5 13.8 9l5.5 1.8-5.5 1.8L12 18l-1.8-5.4L4.7 10.8 10.2 9 12 3.5ZM18.5 16.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2Z',
   wand: 'M4 20 15 9M15 9l-2-2 3-3 2 2-3 3ZM19 4.5v.1M21.5 9v.1M9 4v.1M6 7.5v.1',
   slash: 'M17 4 7 20',
+  // A gear, drawn as a ring of eight teeth plus a hub, in the same 24px box and
+  // single-stroke idiom as the rest. Settings is the one nav entry that had no
+  // icon to borrow: reusing `circle` would have made it indistinguishable from
+  // a space chip in the drawer, and every nav link carries an icon.
+  settings:
+    'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3'
+    + 'M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1M18.7 18.7l-2.1-2.1M7.4 7.4 5.3 5.3',
 };
 
 export type IconName = keyof typeof PATHS | string;

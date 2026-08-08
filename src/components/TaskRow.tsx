@@ -3,7 +3,8 @@ import { Icon } from './Icon';
 import { SpaceIndicator, CategoryChip } from './SpaceIndicator';
 import { toggleTaskDone } from '@/app/actions';
 import { formatDueDate, daysFromToday, formatDuration } from '@/lib/format';
-import type { TaskRow as Task } from '@/lib/queries/tasks';
+import { AssigneePicker } from './AssigneePicker';
+import type { AssigneeOption, TaskRow as Task } from '@/lib/queries/tasks';
 
 /**
  * One task, one line. Dense by design: the eye should be able to run down a
@@ -11,7 +12,20 @@ import type { TaskRow as Task } from '@/lib/queries/tasks';
  *
  * The space indicator is never optional here — see SpaceIndicator.tsx.
  */
-export function TaskRow({ task, showAssignee = true }: { task: Task; showAssignee?: boolean }) {
+export function TaskRow({
+  task,
+  showAssignee = true,
+  assignable,
+}: {
+  task: Task;
+  showAssignee?: boolean;
+  /**
+   * Who this task can be given to. Absent means the row is read-only about
+   * assignment and falls back to the name it always showed — which is what
+   * `/tasks/mine` wants, and what a locked row must have.
+   */
+  assignable?: AssigneeOption[];
+}) {
   const done = task.status === 'done';
   const overdue = !done && task.dueOn != null && daysFromToday(task.dueOn) < 0;
 
@@ -92,9 +106,21 @@ export function TaskRow({ task, showAssignee = true }: { task: Task; showAssigne
       </div>
 
       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 sm:mt-0 sm:shrink-0 sm:flex-nowrap sm:justify-end">
-        {showAssignee && task.assigneeName && (
-          <Assignee name={task.assigneeName} isMine={task.isMine} />
-        )}
+        {/* Edge 32. A picker when the page supplied the options and the row is
+            writable; otherwise the name as before. A locked task is excluded
+            because `setTaskAssignee` refuses one — offering a control that
+            silently does nothing is worse than not offering it. */}
+        {showAssignee &&
+          (assignable && assignable.length > 0 && !task.isLocked ? (
+            <AssigneePicker
+              taskId={task.id}
+              assigneeId={task.assigneeId}
+              options={assignable}
+              label={task.title}
+            />
+          ) : (
+            task.assigneeName && <Assignee name={task.assigneeName} isMine={task.isMine} />
+          ))}
         {task.estimateMinutes != null && (
           <span className="faint hidden text-2xs sm:inline">
             {formatDuration(task.estimateMinutes)}

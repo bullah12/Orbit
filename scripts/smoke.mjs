@@ -570,14 +570,41 @@ try {
       html.includes('Availability only'),
     );
 
-    // The real check: no Work event title reaches the page. The seeded Work
-    // titles are the ones to look for, and a busy block has no link at all.
-    const workTitles = ['stand-up', 'Funding', 'Invoice', 'Workshop'];
-    const leaked = workTitles.filter((t) => html.toLowerCase().includes(t.toLowerCase()));
+    // A busy block carries a time, a space and the word "Busy" — nothing else.
+    // Asserted on the blocks themselves rather than by scanning the page for
+    // words, because the partner's *own* events are on this page too and they
+    // are entitled to their titles.
+    //
+    // This check used to scan the whole of `main` for a fixed list of words
+    // ['stand-up', 'Funding', 'Invoice', 'Workshop'] said to be "the seeded Work
+    // titles". Three of the four are not seeded titles at all, and 'Stand-up' is
+    // in the seed's generic EVENT_TITLES filler, so it lands in *any* space —
+    // including Danny's own. The check went red the moment the shuffle put one
+    // in his week, reporting a leak that was his own row. What is asserted here
+    // instead is the property the name claims, plus a leak scan whose forbidden
+    // set is derived from the app rather than guessed at (below).
+    const blocks = await page.$$eval('main .busy', (els) =>
+      els.map((el) => ({
+        text: el.innerText.replace(/\s+/g, ' ').trim(),
+        title: el.getAttribute('title') ?? '',
+        hasLink: !!el.querySelector('a'),
+        // A category renders as an inline colour swatch; a busy block spends
+        // none of the ten category colours on somebody else's time.
+        hasCategoryColour: /var\(--c-/.test(el.getAttribute('style') ?? ''),
+      })),
+    );
+    const wrong = blocks.filter(
+      (b) =>
+        b.hasLink ||
+        b.hasCategoryColour ||
+        // "Work Busy" — the space label and the word, and nothing more.
+        !/^[^|]*\bBusy$/.test(b.text) ||
+        !/^\S.* — busy, /.test(b.title),
+    );
     check(
       'a busy block carries no title, no category and no link',
-      leaked.length === 0,
-      leaked.join(', '),
+      blocks.length > 0 && wrong.length === 0,
+      wrong.length ? JSON.stringify(wrong[0]) : `${blocks.length} blocks, all anonymous`,
     );
 
     const busyLinks = await page.evaluate(() =>
@@ -587,7 +614,43 @@ try {
     );
     check('and no busy block is a link to an event', busyLinks === 0);
 
+    // The leak scan, with the forbidden set derived rather than hardcoded: the
+    // titles Priya can see in the Work space this week, minus any title the
+    // partner legitimately sees in a space he can read. A word that is on the
+    // page for an honest reason cannot be evidence of a leak, and the seed
+    // reuses one title list across every space, so the subtraction is what
+    // makes this assertion mean something.
+    const dannyTitles = new Set(
+      (
+        await page.$$eval('main a[href^="/calendar/event/"]', (els) =>
+          els.map((e) => e.getAttribute('aria-label') ?? ''),
+        )
+      ).map((l) => l.split(',')[0].trim().toLowerCase()),
+    );
     await ctx.close();
+
+    const { ctx: pctx, page: ppage } = await pageAs(PRIYA);
+    await ppage.goto('/calendar/week');
+    const workTitles = [
+      ...new Set(
+        (
+          await ppage.$$eval('main a[href^="/calendar/event/"]', (els) =>
+            els.map((e) => e.getAttribute('aria-label') ?? ''),
+          )
+        )
+          .filter((l) => l.endsWith(', Work'))
+          .map((l) => l.split(',')[0].trim())
+          .filter((t) => t && !dannyTitles.has(t.toLowerCase())),
+      ),
+    ];
+    await pctx.close();
+
+    const leaked = workTitles.filter((t) => html.toLowerCase().includes(t.toLowerCase()));
+    check(
+      'and no Work-only title from that week reaches the partner’s page',
+      workTitles.length > 0 && leaked.length === 0,
+      leaked.length ? `leaked: ${leaked.join(', ')}` : `${workTitles.length} titles withheld`,
+    );
   }
 
   // ---------------------------------------------- calendar: the outsider
@@ -3148,6 +3211,13 @@ try {
     );
 
     await page.goto('/');
+    // The shortcut listener is attached by a Client Component, so it does not
+    // exist until the page has hydrated. The two checks above ride on
+    // `waitForURL`, which retries; this one asserts immediately and was
+    // therefore racing hydration — it went red under a full run, where the
+    // machine is busy, and passed every time on its own. Waiting for the page
+    // to go quiet is what the check meant all along.
+    await settle(page);
     await page.keyboard.press('?');
     const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
     check('? opens the list of them', await help.isVisible());
@@ -3235,12 +3305,564 @@ try {
   // ------------------------------------------------------------- dark mode
   {
     const { ctx, page } = await pageAs(PRIYA);
+    const seen = {};
     for (const scheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: scheme });
       await page.goto('/tasks/all');
       const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+      seen[scheme] = bg;
       check(`the ${scheme} theme applies`, bg !== '', bg);
     }
+    // Session 12 merged the palette into `light-dark()`. Asserting the two are
+    // *different* is what proves the pairs resolve at all — with a broken merge
+    // both schemes would still return a colour and both checks above would pass.
+    check(
+      'and the two schemes are genuinely different colours',
+      seen.light !== seen.dark,
+      `${seen.light} vs ${seen.dark}`,
+    );
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------- settings: theme
+  //
+  // The override, driven the way somebody would: pin a theme while the
+  // operating system is asking for the other one.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.emulateMedia({ colorScheme: 'light' });
+
+    await page.goto('/settings');
+    check('Settings renders', (await page.locator('h1').first().innerText()) === 'Settings');
+
+    const headings = await page.locator('main h2').allInnerTexts();
+    check(
+      'and carries the four things it is for',
+      ['Theme', 'Week starts on', 'Default space for new items', 'Offline', 'Devices'].every((h) =>
+        headings.includes(h),
+      ),
+      headings.join(' | '),
+    );
+
+    const lightBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+
+    await page.locator('main button[name="theme"][value="dark"]').click();
+    await settle(page);
+    const attr = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    const darkBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check('pinning dark overrides an operating system asking for light', attr === 'dark');
+    check('and the page is actually dark', darkBg !== lightBg, `${lightBg} -> ${darkBg}`);
+
+    // The no-flash requirement, asserted where it is decided rather than by
+    // watching for a flicker: the attribute has to be in the bytes the browser
+    // parses first. An effect or an inline script would set it *after* a paint,
+    // which is the flash.
+    const raw = await page.request.get(`${BASE}/settings`);
+    const html = await raw.text();
+    check(
+      'the choice is in the server’s HTML, so it is applied before first paint',
+      /<html[^>]*data-theme="dark"/.test(html),
+    );
+    check(
+      'and the browser chrome is told the same one colour',
+      /<meta name="theme-color" content="#14161a"\/?>/.test(html) &&
+        !/prefers-color-scheme/.test(html.slice(0, html.indexOf('</head>'))),
+    );
+
+    // Pinned light, with the OS in dark — the same thing the other way round.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.locator('main button[name="theme"][value="light"]').click();
+    await settle(page);
+    const pinnedLight = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check(
+      'pinning light overrides an operating system asking for dark',
+      (await page.evaluate(() => document.documentElement.getAttribute('data-theme'))) === 'light' &&
+        pinnedLight === lightBg,
+      pinnedLight,
+    );
+
+    // Back to system: the attribute goes away entirely rather than becoming a
+    // third value, so the OS is followed again.
+    await page.locator('main button[name="theme"][value="system"]').click();
+    await settle(page);
+    const backToOs = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check(
+      'and system removes the attribute, so the OS is followed again',
+      (await page.evaluate(() => document.documentElement.getAttribute('data-theme'))) === null &&
+        backToOs === darkBg,
+      backToOs,
+    );
+
+    await ctx.close();
+  }
+
+  // -------------------------------------------------- settings: week start
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/calendar/week');
+    const mondayFirst = (await page.locator('main a.day-heading').first().innerText()).replace(
+      /\s+/g,
+      ' ',
+    );
+    check('the week starts on Monday by default', /Mon/.test(mondayFirst), mondayFirst);
+
+    await page.goto('/settings');
+    await page.locator('main button[name="weekStart"][value="sunday"]').click();
+    await settle(page);
+
+    await page.goto('/calendar/week');
+    const sundayFirst = (await page.locator('main a.day-heading').first().innerText()).replace(
+      /\s+/g,
+      ' ',
+    );
+    check('choosing Sunday moves the first column', /Sun/.test(sundayFirst), sundayFirst);
+
+    // The bug this is really about: the query range is cut from the same
+    // preference as the grid. If it were not, the first column of a
+    // Sunday-first week would be outside the range and permanently empty.
+    await page.goto('/calendar/month');
+    const firstHeading = (await page.locator('main .grid-cols-7 > div').first().innerText()).trim();
+    check('and the month grid’s column headings move with it', /Sun/i.test(firstHeading), firstHeading);
+
+    const blocks = await page.locator('main a[href^="/calendar/event/"]').count();
+    check('the month still draws its events after the change', blocks > 0, `${blocks} blocks`);
+
+    await page.goto('/settings');
+    await page.locator('main button[name="weekStart"][value="monday"]').click();
+    await settle(page);
+    await page.goto('/calendar/week');
+    check(
+      'and Monday comes back',
+      /Mon/.test(await page.locator('main a.day-heading').first().innerText()),
+    );
+
+    await ctx.close();
+  }
+
+  // ----------------------------------------- settings: revoking a device
+  //
+  // Edge 4. `devices.revoked_at` has existed since migration 0001 with nothing
+  // ever writing it. What makes revoking more than a label is that a revoked
+  // device stops advancing its sync cursor — asserted here rather than assumed,
+  // by pressing the button that advances it and checking that it did not.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/sync');
+    const deviceId = await page
+      .locator('form input[name="deviceId"]')
+      .first()
+      .getAttribute('value');
+    check('Sync offers a device to work with', !!deviceId, deviceId ?? 'none');
+
+    const cursorNow = async () => {
+      await page.goto(`/sync?device=${deviceId}`);
+      return (await page.locator('#sync-cursors tbody tr').first().innerText()).replace(/\s+/g, ' ');
+    };
+
+    // Wind it back so "did the cursor move?" has an unambiguous answer.
+    await page.goto(`/sync?device=${deviceId}`);
+    await page.locator('form:has(input[name="deviceId"]) button:has-text("Rewind")').first().click();
+    await settle(page);
+    const rewound = await cursorNow();
+
+    // While active, marking caught up moves it. This is the control: without
+    // it, a cursor that never moves would pass the check below for free.
+    await page.locator('button:has-text("Mark caught up")').first().click();
+    await settle(page);
+    const advanced = await cursorNow();
+    check('an active device advances its cursor when marked caught up', advanced !== rewound,
+      `${rewound} -> ${advanced}`);
+
+    // Rewind again, then revoke, then try to advance it.
+    await page.locator('form:has(input[name="deviceId"]) button:has-text("Rewind")').first().click();
+    await settle(page);
+    const beforeRevoke = await cursorNow();
+
+    await page.goto('/settings');
+    const revokeForm = page.locator(`main form:has(input[value="${deviceId}"])`).first();
+    check('the device has a revoke control on Settings', (await revokeForm.count()) === 1);
+    await revokeForm.locator('button').click();
+    await settle(page);
+
+    const revokedRow = await page
+      .locator(`main li:has(form:has(input[value="${deviceId}"]))`)
+      .first()
+      .innerText();
+    check('and it says so on the row', /revoked/i.test(revokedRow), revokedRow.replace(/\s+/g, ' '));
+
+    await page.goto(`/sync?device=${deviceId}`);
+    await page.locator('button:has-text("Mark caught up")').first().click();
+    await settle(page);
+    const afterRevoke = await cursorNow();
+    check(
+      'a revoked device does not advance its cursor',
+      afterRevoke === beforeRevoke,
+      `${beforeRevoke} -> ${afterRevoke}`,
+    );
+
+    // Restore it, or the next run starts with a revoked device.
+    await page.goto('/settings');
+    await page.locator(`main form:has(input[value="${deviceId}"])`).first().locator('button').click();
+    await settle(page);
+    await page.goto(`/sync?device=${deviceId}`);
+    await page.locator('button:has-text("Mark caught up")').first().click();
+    await settle(page);
+    check('and restoring it lets the cursor move again', (await cursorNow()) !== beforeRevoke);
+
+    // Leave the cursor where a fresh seed leaves it — behind. This section
+    // marks a device caught up to prove that a revoked one cannot be, and a
+    // caught-up cursor empties the "changed since" feed that the sync section
+    // above reads. Edge 3 is the standing rule this serves: the suite has to
+    // pass twice in a row without a reseed.
+    await page.locator('form:has(input[name="deviceId"]) button:has-text("Rewind")').first().click();
+    await settle(page);
+
+    await ctx.close();
+  }
+
+  // --------------------------------------- edge 32: assignment from the row
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/tasks/all');
+
+    const pickers = page.locator('main form:has(input[name="taskId"]) select[name="assigneeId"]');
+    check('a task row carries an assignee picker', (await pickers.count()) > 0, `${await pickers.count()}`);
+
+    // The decision recorded twice and standing: not on the compose bar.
+    check(
+      'and the compose bar still does not have one',
+      (await page.locator('form[aria-label="Add a task"] select[name="assigneeId"]').count()) === 0,
+    );
+
+    // A row in a space with more than one member, so there is somebody to
+    // assign *to*. Priya's personal space has only her, and a picker offering
+    // one name would pass a weaker check without proving anything.
+    let taskId = null;
+    let target = null;
+    const n = await pickers.count();
+    for (let i = 0; i < n; i += 1) {
+      const picker = pickers.nth(i);
+      const values = await picker.locator('option').evaluateAll((els) =>
+        els.map((e) => ({ value: e.value, label: e.textContent.trim() })),
+      );
+      const others = values.filter((v) => v.value !== '');
+      if (others.length >= 2) {
+        taskId = await picker
+          .locator('xpath=ancestor::form[1]')
+          .locator('input[name="taskId"]')
+          .getAttribute('value');
+        const current = await picker.inputValue();
+        target = others.find((o) => o.value !== current);
+        check(
+          'offering every member of that row’s space and nobody else',
+          others.length >= 2 && values.some((v) => v.label === 'Unassigned'),
+          values.map((v) => v.label).join(' | '),
+        );
+        break;
+      }
+    }
+
+    if (taskId && target) {
+      const pickerFor = (id) =>
+        page.locator(`main form:has(input[value="${id}"]) select[name="assigneeId"]`).first();
+
+      const before = await pickerFor(taskId).inputValue();
+      await pickerFor(taskId).selectOption(target.value);
+      await settle(page);
+
+      // Read it back from a fresh render, not from the control just changed.
+      await page.goto('/tasks/all');
+      const after = await pickerFor(taskId).inputValue();
+      check(
+        'choosing somebody assigns the task, and it reads back',
+        after === target.value,
+        `${before || 'unassigned'} -> ${target.label}`,
+      );
+
+      // And the row says so in words, not only in the control.
+      const rowText = await page
+        .locator(`main li:has(input[value="${taskId}"])`)
+        .first()
+        .innerText();
+      check(
+        'and the row names who it is for',
+        rowText.includes(target.label) || rowText.includes('You'),
+        rowText.replace(/\s+/g, ' ').slice(0, 100),
+      );
+
+      // Put it back, so the run is repeatable without a reseed. Re-read from a
+      // fresh render rather than from the control just changed.
+      await pickerFor(taskId).selectOption(before);
+      await settle(page);
+      await page.goto('/tasks/all');
+      check(
+        'and it can be set back',
+        (await pickerFor(taskId).inputValue()) === before,
+        `${await pickerFor(taskId).inputValue()} want ${before}`,
+      );
+    } else {
+      check('a space with two members offers a real choice', false, 'no multi-member row found');
+    }
+
+    // Mine renders no assignee at all — a column saying "You" on every row of a
+    // list called Mine is a column saying nothing — so it gets no picker either.
+    await page.goto('/tasks/mine');
+    check(
+      'Mine has no assignee control, because every row is yours',
+      (await page.locator('main ul li select[name="assigneeId"]').count()) === 0,
+    );
+
+    await ctx.close();
+  }
+
+  // --------------------------------------- edge 7: a dismissal keeps a record
+  //
+  // Driven through the queue in `localStorage`, because that is genuinely where
+  // an unsent edit is, and the queue is seeded directly with a conflict that
+  // has already come back. Manufacturing one through a real flush would be
+  // testing `resolveWrite` — which has 73 Vitest tests of its own, including
+  // the one asserting `settle` keeps the write behind every conflict kind.
+  // What is checked here is the part only a browser can show: that dismissing
+  // keeps a record, that the record is reachable from /sync, and that it can be
+  // put back.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/tasks/all');
+    const href = await page.locator('main a[href^="/tasks/item/"]').first().getAttribute('href');
+    const taskId = href.split('/').pop().split('?')[0];
+
+    await page.evaluate((id) => {
+      const conflict = {
+        kind: 'field_conflict',
+        opId: 'smoke-edge7',
+        entityKind: 'task',
+        entityId: id,
+        spaceId: '00000000-0000-4000-8000-000000000004',
+        clashes: [
+          { field: 'title', mine: 'Typed on the train', theirs: 'Changed by somebody else', base: 'Ring the plumber' },
+        ],
+        mergeable: {},
+        reason: 'You both changed the title while this was queued.',
+      };
+      window.localStorage.setItem(
+        'orbit.outbox.v1',
+        JSON.stringify({
+          writes: [],
+          conflicts: [conflict],
+          held: {
+            'smoke-edge7': {
+              opId: 'smoke-edge7',
+              seq: 1,
+              queuedAt: new Date().toISOString(),
+              entityKind: 'task',
+              entityId: id,
+              spaceId: '00000000-0000-4000-8000-000000000004',
+              label: 'Typed on the train',
+              changes: { title: 'Typed on the train' },
+              base: { title: 'Ring the plumber' },
+              baseUpdatedAt: new Date(Date.now() - 3600_000).toISOString(),
+            },
+          },
+          discarded: [],
+          nextSeq: 2,
+        }),
+      );
+    }, taskId);
+
+    await page.goto('/sync');
+    const conflicts = page.locator('#outbox-conflicts li');
+    check('the queue shows a conflict waiting to be answered', (await conflicts.count()) === 1);
+
+    await conflicts.first().locator('button:has-text("Dismiss")').click();
+    await settle(page);
+
+    check('dismissing clears it from the conflicts list', (await conflicts.count()) === 0);
+
+    const discarded = page.locator('#outbox-discarded li');
+    check(
+      'and keeps a record rather than losing the edit — edge 7',
+      (await discarded.count()) === 1,
+    );
+
+    const text = await discarded.first().innerText();
+    check(
+      'the record says what was typed, not just that something happened',
+      /Typed on the train/.test(text),
+      text.replace(/\s+/g, ' ').slice(0, 120),
+    );
+    check(
+      'and it is reachable from /sync, with a way to put it back',
+      (await discarded.first().locator('button:has-text("Put it back")').count()) === 1,
+    );
+
+    await discarded.first().locator('button:has-text("Put it back")').click();
+    await settle(page);
+    check(
+      'putting it back takes it off the list and returns it to the queue',
+      (await page.locator('#outbox-discarded li').count()) === 0 &&
+        (await page.evaluate(
+          () => JSON.parse(window.localStorage.getItem('orbit.outbox.v1')).writes.length,
+        )) === 1,
+    );
+
+    // Leave this browser's queue as it was found.
+    await page.evaluate(() => window.localStorage.removeItem('orbit.outbox.v1'));
+    await ctx.close();
+  }
+
+  // ------------------------------------------------- the offline shell
+  //
+  // Driven with the network actually disabled in the browser context, rather
+  // than by asserting that a file exists.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    const sw = await page.request.get(`${BASE}/sw.js`);
+    const swBody = await sw.text();
+    check('a service worker is served from the origin root', sw.status() === 200, `HTTP ${sw.status()}`);
+    check(
+      'and it is scoped to the whole app',
+      (sw.headers()['service-worker-allowed'] ?? '') === '/',
+    );
+    check(
+      'its policy is generated rather than hand-written',
+      swBody.includes('Do not edit') && swBody.includes('"cacheablePrefixes"'),
+    );
+
+    // The offline page carries no user data — it is a route handler, not a
+    // page component, so the sidebar cannot reach it. This is what makes it
+    // safe to hold in a cache indefinitely.
+    const off = await page.request.get(`${BASE}/offline`);
+    const offBody = await off.text();
+    check('the offline page is served', off.status() === 200, `HTTP ${off.status()}`);
+    check(
+      'and it names nothing belonging to the person who cached it',
+      !/Priya|Danny|Home|Work|Sam Okafor/.test(offBody),
+    );
+    check(
+      'and it says what Orbit can and cannot do offline, and links to Sync',
+      /What still works/.test(offBody) &&
+        /What does not/.test(offBody) &&
+        /href="\/sync"/.test(offBody),
+    );
+
+    // Register it for real and wait for it to take control.
+    await page.goto('/tasks/all');
+    const registered = await page.evaluate(async () => {
+      if (!('serviceWorker' in navigator)) return 'absent';
+      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      await navigator.serviceWorker.ready;
+      // The precache is filled during `install`; give it a moment to settle.
+      for (let i = 0; i < 40; i += 1) {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          if (await cache.match('/offline')) return 'ready';
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return reg.active ? 'no-precache' : 'inactive';
+    });
+    check('it registers and precaches the offline page', registered === 'ready', registered);
+
+    check(
+      'and it cached the offline page and nothing of anybody’s',
+      await page.evaluate(async () => {
+        const keys = await caches.keys();
+        const urls = [];
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          for (const req of await cache.keys()) urls.push(new URL(req.url).pathname);
+        }
+        // Only the shell: the offline page, the manifest, and hashed assets.
+        return urls.every(
+          (p) => p === '/offline' || p === '/manifest.webmanifest' || p.startsWith('/_next/static/'),
+        );
+      }),
+    );
+
+    // The hole a layer below the service worker, found by this very check.
+    // The worker cached no page — and `/tasks/all` still came back offline,
+    // out of the *browser's* HTTP cache. Every page is force-dynamic and
+    // RLS-scoped, so none of them was ever safe to keep; nothing had said so
+    // in a header until src/middleware.ts did.
+    const pageHeaders = (await page.request.get(`${BASE}/tasks/all`)).headers();
+    check(
+      'an authenticated page tells every cache not to store it',
+      /no-store/.test(pageHeaders['cache-control'] ?? ''),
+      pageHeaders['cache-control'] ?? 'no cache-control',
+    );
+    const assetUrl = await page.evaluate(
+      () => [...document.querySelectorAll('script[src]')].map((s) => s.src).find((s) => s.includes('/_next/static/')) ?? null,
+    );
+    if (assetUrl) {
+      const assetHeaders = (await page.request.get(assetUrl)).headers();
+      check(
+        'while a content-hashed asset keeps its long cache',
+        /immutable|max-age=\d{5,}/.test(assetHeaders['cache-control'] ?? ''),
+        assetHeaders['cache-control'] ?? 'no cache-control',
+      );
+    }
+
+    // Now pull the plug.
+    await ctx.setOffline(true);
+    const res = await page.goto('/tasks/all').catch(() => null);
+    const bodyText = await page.locator('body').innerText();
+    check(
+      'with the network gone, a page load lands on the offline page',
+      /Orbit is offline/.test(bodyText),
+      res ? `HTTP ${res.status()}` : 'no response',
+    );
+    check(
+      'which is honest about what does not work, rather than a browser error',
+      /whoever picks the phone up next|What does not/.test(bodyText),
+    );
+    check(
+      'and offers a way back to Sync',
+      (await page.locator('a[href="/sync"]').count()) > 0,
+    );
+
+    // A page that was never cached is still not served from one — the whole
+    // point of the design. Nothing here should have produced a stored copy of
+    // an authenticated page.
+    check(
+      'and no authenticated page was stored while online',
+      await page.evaluate(async () => {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          for (const req of await cache.keys()) {
+            const p = new URL(req.url).pathname;
+            if (p !== '/offline' && p !== '/manifest.webmanifest' && !p.startsWith('/_next/static/')) {
+              return false;
+            }
+          }
+        }
+        return true;
+      }),
+    );
+
+    await ctx.setOffline(false);
+
+    // The escape hatch. A worker with no way out is how an app ships that
+    // cannot be fixed.
+    await page.goto('/settings');
+    const gone = await page.evaluate(async () => {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      regs.forEach((r) => r.active?.postMessage({ type: 'orbit-unregister' }));
+      await Promise.all(regs.map((r) => r.unregister()));
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      return (
+        (await navigator.serviceWorker.getRegistrations()).length === 0 &&
+        (await caches.keys()).length === 0
+      );
+    });
+    check('it can be unregistered, and its caches emptied with it', gone);
+
     await ctx.close();
   }
 } finally {

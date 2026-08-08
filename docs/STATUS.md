@@ -1,33 +1,41 @@
 # STATUS — handoff contract
 
-Last rewritten: **session 10**, 2026-08-01. Branch:
-`claude/app-design-functionality-n6ptjw`.
+Last rewritten: **session 12**, 2026-08-08. Branch:
+`claude/brief-c-settings-offline-shell-0l1q6x`.
 
 This file takes precedence over your assumptions about what is done. Read it,
 then `docs/design-review.md`, then `docs/decisions-log.md`, then get the
 database up and pick from **Next three things** at the bottom.
 
 **Where the project is: Orbit was finished at the end of session 8, made usable
-by a real person in session 9, and made usable *on a phone* in session 10.**
-Session 10 was a design and functionality review and the work it argued for. It
-added no table and no migration. It is not a phase in `docs/phase-plan.md` and
-it did not need one.
+by a real person in session 9, made usable *on a phone* in session 10, and given
+its settings surface and its offline shell in session 12.** Session 12 was Brief
+C from `docs/remaining-work.md` §4. It added **no table and no migration** — the
+one that was expected, for edge 7, was argued down rather than skipped, and the
+argument is in `docs/decisions-log.md`.
 
-**The one sentence worth carrying forward:** before this session Orbit was
-unusable on a phone — not unpolished, unusable — and it is a household
-organiser, which is a phone product. At 390px the sidebar took 62% of the
-screen and task titles were pushed off it entirely.
+**The one sentence worth carrying forward from this session:** the offline work
+was built on the rule that no page rendered for one person may ever be stored,
+and then the smoke run found the browser's own HTTP cache re-serving
+`/tasks/all` complete — sidebar, counts, every row — with the network disabled.
+The service worker had cached nothing. It called `fetch()`, and `fetch()` was
+answered from disk. That was not on any edge list, and it was only found because
+the check drives a real browser with the network really off rather than
+asserting that a file exists.
 
 **Five commands are the whole truth about this repo.** All five were run at the
-end of session 10, and all five were green:
+end of session 12, and all five were green:
 
 ```
-./scripts/db-test.sh   106/106 pgTAP assertions   (unchanged)
+./scripts/db-test.sh   106/106 pgTAP assertions   (unchanged — no migration)
 pnpm build             clean
 pnpm typecheck         clean (needs the build first on a fresh clone)
-pnpm test              735 Vitest tests in 17 files   (was 692)
-pnpm smoke             402/402 against the running app   (was 382; needs pnpm start)
+pnpm test              807 Vitest tests in 21 files   (was 735)
+pnpm smoke             451/451 against the running app   (was 402; needs pnpm start)
 ```
+
+`pnpm smoke` was also run **twice in a row without a reseed**, which is edge 3's
+standing rule, and passed both times.
 
 No migration was written this session, which is why pgTAP is unchanged at 106.
 
@@ -41,7 +49,7 @@ credential and no network in this container. The provider is a complete
 implementation of Supabase's GoTrue REST API and not one line of it has ever
 sent a request — exactly like `calendar:google` and `ai:anthropic`.
 
-Nothing in session 10 touched authentication. **"Signing in to Supabase works"
+Nothing in session 12 touched authentication. **"Signing in to Supabase works"
 is still proven by nothing.**
 
 ---
@@ -50,128 +58,141 @@ is still proven by nothing.**
 
 Everything here was executed and watched.
 
-### New in session 10
+### New in session 12
 
-**It works on a phone.** Ten smoke checks now run at 390×844 and every one of
-them fails on the previous commit.
+**The theme can be pinned, and the choice arrives before the first paint.**
+`/settings` offers system, light or dark. The server reads a cookie and writes
+`<html data-theme>`, so the correct palette is resolved by the browser on its
+first parse — there is deliberately no `useEffect`, no inline script and no
+`localStorage` read, because each of those runs *after* something has been
+painted, which is the flash. Watched in a real browser: with the OS in light
+mode, pinning dark yields `data-theme="dark"` in the raw server HTML and a body
+background of `oklch(0.165 0.008 265)`.
 
-- `viewport` is exported from `src/app/layout.tsx`. Without it a phone assumed a
-  ~980px layout viewport and scaled the page down. `maximum-scale` is
-  deliberately not set: pinching to zoom is somebody's accessibility.
-- The 240px rail is `hidden … md:flex`. Below `md` a **bottom tab bar** carries
-  Today, Calendar, Capture, Search and People, and **More** opens a drawer
-  holding the whole rail. The drawer closes on navigation, on Escape and on the
-  backdrop — all three, because it covers the page.
-- `SidebarNav` is **one** component with two homes. The bottom slot (the dev
-  switcher, or the account panel) is passed in as a slot, because
-  `usesDevAuth()` is a server decision and the boundary is `switchUser`
-  refusing, not the button being absent.
-- A task row is **two lines on a phone and one on a desktop**, and the title
-  never moves. It was a single row with a `shrink-0` metadata block that won.
-- `--tabbar` is one token, so the bar's height and the padding that clears it
-  cannot disagree. It is `0px` from `md` up.
-- `src/app/manifest.ts` exists, so Orbit installs to a home screen. **No icons
-  are declared** — an icon pointing at a file that does not exist is a broken
-  image on somebody's home screen, and there is no artwork in this repo.
+**`globals.css` is one palette now, not two.** The `globals.css` decision that
+blocked this since session 10 was made on purpose: **`light-dark()`**, as
+`docs/design-review.md` recommended. All 42 colour tokens hold both values in
+one declaration and both `@media (prefers-color-scheme: dark)` blocks are gone,
+so the override is two `color-scheme` lines and there is no second copy of the
+palette to drift.
 
-**Navigation says where you are.** Every link used to render an identical
-`className` and none set `aria-current`, so on `/` the word "Today" looked
-exactly like "Travel". Selection is now weight plus a raised surface — no hue,
-because the nav sits directly above ten coloured space chips. Rules, Sync and AI
-moved under a **More** heading; they had been beside Today at the same weight.
+- **The conversion was generated and verified, not typed.** One script emitted
+  the merged declarations from the old file; a second read them back out of the
+  new one and compared. 42 pairs, identical, no token left as a single value.
+- **The dark-value comments were carried across**, as a block above the merged
+  tokens, rather than dropped.
+- **`tests/contrast.test.ts` still computes real WCAG ratios for both themes.**
+  The brace-matching is gone, as the review predicted, and three new guards
+  replace it — because the failure mode inverted. A parse that returned the same
+  half twice would compute every ratio and pass every assertion while silently
+  checking one theme twice. So: the two halves must differ, no token may escape
+  the pair, and no media query may redeclare a colour. **Mutation-tested** —
+  making the parse return the light half for both turns it red.
 
-**Today answers what is on today.** The landing page queried tasks, birthdays
-and yesterday's notes and **never queried events**. It now has:
+**`/settings` exists, under More beside Rules, Sync and AI.** Administrative, so
+not beside Today. Built from existing tokens with no new colour.
 
-- a **range switch** on `?range=today|week|month`, in the URL so it survives a
-  reload and can be sent to somebody;
-- a **summary strip** whose three numbers are the lengths of the three lists
-  rendered below them, so they cannot disagree;
-- an **agenda** of real events against the time gutter, category colour on the
-  left edge only, with the now-line in position;
-- the whole capped at `--measure` (64rem).
+- **Theme**, above.
+- **Week start**, Monday or Sunday. Display only, and that is enforced by
+  construction: `WKST` is an RFC 5545 property of the *rule* and decides which
+  occurrences a weekly rule has, so recurrence never sees this preference. The
+  test asserts the consequence — the same rule expands identically under both
+  settings, while `WKST` in the rule text genuinely changes it.
+- **Default compose space**, re-validated against the caller's writable spaces
+  on every read, so the cookie is a hint and never a capability.
+- **Devices**, with revoke and restore.
 
-This is also where the adopted design finally got built. Commit `74789ce` took
-the revised `globals.css` from `docs/design_handoff/` and left the surfaces it
-was written for: `.seg`, `.stat`, `.stat-num`, `.block-time`, `.block-now` and
-`.now-line` had **zero** uses in any `className` in `src`. All six are now spent.
+**Edge 4 is closed: `devices.revoked_at` has its first ever write.** It has
+existed since migration 0001 with nothing writing it. What makes revoking more
+than a label is that `advanceCursor` refuses to move a revoked device's cursor,
+written as a guarded insert so the `on conflict do update` is skipped too. The
+smoke run asserts it **with a control beside it** — an active device advances
+(`01/01/1970` → `just now`) and a revoked one does not (`01/01/1970` →
+`01/01/1970`). Without the control, a cursor that never moved would pass for
+free.
 
-**A bug the strip was designed to prevent, found by building it.** The `today`
-smart list is "due today **or** overdue and still open", so counting all of it
-as due and the remainder as overdue reported *35 due and 0 overdue* on a day
-when 34 of the 35 were weeks past their date — with the sidebar saying 34 two
-inches away. Split now.
+**Edge 33 is closed: there is a service worker, and it caches no page anybody
+rendered.** Shell only, and the restriction is the design rather than a
+limitation of it.
 
-**Assignment is visible at last.** `assignee_id` has been on `tasks` since
-migration 0002, with `tasks_assignee_idx`, a partial index on open tasks by
-assignee — an index built for a query nothing wrote. `listTasks` had been
-selecting `assigneeName` and computing `isMine` on every row since Phase 0 and
-nothing rendered either.
+- A navigation is **network-only**, falling back to `/offline`. What is cached
+  is `/offline`, the manifest and `/_next/static/` — content-hashed, immutable,
+  nobody's data.
+- **`/offline` is a route handler returning standalone HTML, not a page
+  component.** That is the security decision: a page component is wrapped in the
+  root layout, and the sidebar's space names and task counts would be baked into
+  a cache entry held indefinitely. Nothing on the route reads a cookie, a user
+  or the database.
+- The policy is **data**, in `src/lib/offline.ts`, tested by Vitest and injected
+  into the generated worker as JSON — so the tested rules and the shipped rules
+  cannot disagree. `swDecision` is total and defaults to `network-only`.
+- **There is a way out**: a version bump deletes every other cache on activate,
+  and `/settings` can unregister the worker and empty its caches. A service
+  worker with no escape hatch is how an app ships that cannot be fixed.
+- Driven with the network **actually disabled** in the browser context.
 
-- The row now says whose job it is. **Somebody else's name is `--text-muted`
-  and your own is "You" at `--text-faint`**, that way round because in your own
-  lists nearly every row is yours and what the eye hunts for is the two that are
-  not.
-- **`/tasks/mine`** is the ninth smart list and the query that index was for. It
-  does not render the assignee at all — a column saying "You" on every row of a
-  list called Mine is a column saying nothing.
-- **It can be set by typing `@danny` into capture**, which has worked since
-  Phase 5 and had never been driven end to end by a check. It still cannot be
-  set from the compose bar, deliberately. See "Known bugs" 32.
+**Authenticated pages now say `no-store`** (`src/middleware.ts`), with
+`_next/static` keeping its immutable year. This is the hole described at the top
+of this file. Both halves are asserted.
 
-**The calendar opens where the day is.** It opened at 00:00 with roughly seven
-empty night hours filling the viewport. `scrollToMinute` **already existed** in
-`src/lib/calendar.ts`, already had tests, and was called from nowhere; it now
-also knows about `now`, and `ScrollToFocus` moves the scroll position on
-arrival. Also:
+**Edge 7 is closed, and it had more teeth than the entry said.** Dismissing lost
+the edit — but for three of the four conflict kinds the edit was *already* gone:
+`settle` takes a conflicted write out of the queue, and `clashes[]` carries the
+typed values only for `field_conflict`. A `deleted_elsewhere`,
+`locked_elsewhere` or `moved_space` conflict discarded somebody's typing the
+moment it was raised, before they had touched anything.
 
-- the now-line wears `.now-line` and is `--accent`, not `--danger`. Red means
-  "careful" everywhere else and the current time is not a warning;
-- `.now-line::before` (the dot) now sits at the line's own left edge, with
-  `.now-line-gutter` as the one exception for the agenda. As the default it put
-  the dot in the **previous day's column**;
-- blocks take the category colour on the **left edge only**. Every border was
-  taking it, which `globals.css` warns against by name two lines from the token;
-- a compact block no longer repeats the time it is already positioned against.
-  Five identical "Team st…" standups are finally told apart by their titles.
+- `settle` now **holds the write behind every conflict**, and dismissing moves
+  it to a discard log rather than deleting it.
+- `/sync` lists what was dismissed, what each one would have written, and offers
+  to **put it back** — the floor was a record, and this is the record plus the
+  undo. A restored write goes to the end of the queue with a new sequence
+  number, keeping its `base`, so the next send judges it against the row as it is
+  now.
+- **No migration**, and the argument was not close: an unsent edit has never
+  been anywhere but this browser, and one of the four kinds is
+  `locked_elsewhere`, so the naive server table would hold the plaintext of an
+  edit to an end-to-end-encrypted row, which decision 1 forbids.
+- Capped at 50, oldest dropped — an unbounded log in `localStorage` would
+  eventually be why an edit could not be saved.
 
-**Keyboard shortcuts.** `globals.css` justifies the focus ring with "a dense
-interface is a keyboard interface"; the app had one `addEventListener` in `src`
-and it listened for `online`.
+**Edge 32 is closed: an assignee picker on the task row.** Still **not on the
+compose bar**, which is recorded twice and stands. Its own action rather than a
+trip through `updateTask`, which would need every other field posted back with
+it. Only `owner`, `admin` and `member` are offered — exactly the set the write
+accepts — and a locked row gets no control, because the write would refuse.
 
-```
-g t/c/m/i/p/l/n/r/s   go somewhere
-/                     search
-c                     capture
-?                     the list of them
-Esc                   close whatever is open
-```
+**The one red smoke check was the check, not the app.** Session 11 recorded one
+of 402 failing with its name lost. It was *"a busy block carries no title, no
+category and no link"*, and it was a false positive, verified before it was
+touched: the check scanned the whole page for a hardcoded word list described as
+"the seeded Work titles", but three of the four are not seeded titles and
+`'Stand-up'` is in the seed's generic `EVENT_TITLES` filler, drawn from for
+**every** space. The match was `aria-label="Stand-up, all day, Danny"` — the
+partner's own event in his own space. Every busy block carried `Work | Busy` and
+nothing else. It now asserts the property its name claims, on the blocks
+themselves, and the leak scan is kept with its forbidden set *derived* from the
+app rather than guessed.
 
-Three rules, all in `src/lib/shortcuts.ts` as pure functions so they are tested
-without a DOM: **never take a key from somebody who is typing** (`c` is Capture,
-and typing "citrus" into a task title must not navigate away); **never take a
-key from the browser** (anything with ⌘, Ctrl or Alt); **never be the only way
-to do anything** (every one duplicates a link still on screen, and `?` lists
-them). `g` is a prefix that forgets itself after 1.2s.
+### Session 10 and earlier — unchanged and still green
 
-**The compose bar opens when you reach it.** Three rows and about a quarter of
-the first screen of every list, on a phone. Collapsed it is one row and
-focusing the title opens the rest — which does **not** weaken the space
-safeguard, because focusing the title is what opens the chips, so there is no
-state in which somebody types a task without the space on screen.
-
-### Session 9 and earlier — unchanged and still green
+It works on a phone: `viewport`, a bottom tab bar and a drawer below `md`, task
+rows that keep the title on screen, `--tabbar` as one token, a manifest.
+Navigation says where you are, via `aria-current` and weight rather than hue.
+Today queries events, with a range switch on `?range=`, a summary strip whose
+numbers are the lists beneath them, and an agenda with the now-line in position.
+Assignment on the row and `/tasks/mine`. The calendar opens at now. Keyboard
+shortcuts, with the rules in `src/lib/shortcuts.ts` as pure functions.
 
 Real accounts, the `auth.users`→`profiles` join, space invites, `/spaces`,
-`/invite/[token]`, the account panel. The quiet "N events yesterday, no notes"
-row; smart lists; tasks, notes with versions and Markdown, people with contacts,
-dates and linking; the merged week/day/month calendar with anonymous free/busy
-blocks, recurrence expanded from one row plus an RRULE, ICS import, provider
-pull and push; places with geocoding, visits and links; travel with trips and
-derived journeys; the rules engine with its dry run, audit trail and
-notifications; search across five kinds; local-only natural-language capture; AI
-off by default with per-feature, per-space consent; `/sync` with its outbox,
-named conflicts and per-device cursors.
+`/invite/[token]`, the account panel. Smart lists; tasks, notes with versions and
+Markdown, people with contacts, dates and linking; the merged week/day/month
+calendar with anonymous free/busy blocks, recurrence expanded from one row plus
+an RRULE, ICS import, provider pull and push; places with geocoding, visits and
+links; travel with trips and derived journeys; the rules engine with its dry
+run, audit trail and notifications; search across five kinds; local-only
+natural-language capture; AI off by default with per-feature, per-space consent;
+`/sync` with its outbox, named conflicts and per-device cursors.
 
 ---
 
@@ -196,9 +217,12 @@ a request. Do not describe one as working, and do not let a fake stand in for
 one in a "Works" claim.
 
 Also still fixture-backed or absent: **locked items** have no client-side
-crypto; **there is no scheduler**; **there is no service worker** — and the app
-is now installable, which makes that a real gap rather than a nicety (see
-"Known bugs" 33); **`AUTH_COOKIE_SECRET` still signs nothing.**
+crypto; **there is no scheduler**; **`AUTH_COOKIE_SECRET` still signs nothing.**
+
+The service worker is no longer on this list — see above — but note what it is
+*not*: it is a shell, not offline browsing. Offline **editing** is a different
+mechanism entirely and it is real; it lives in `src/lib/sync/` and the offline
+page says so and links to `/sync`.
 
 ---
 
@@ -206,42 +230,38 @@ is now installable, which makes that a real gap rather than a nicety (see
 
 - **Nothing was deployed.** No hosting account, no Supabase project, nothing
   bought. `docs/deploy.md` is instructions and says so at the top.
-- **The Android client (Brief B)** has not been started. Note that session 10
-  weakens the case for it considerably: the web app is now usable on a phone and
-  installable to a home screen, which was most of what Brief B was for.
-- **A manual light/dark override.** Deliberately not started, and *not* because
-  it is hard — see `docs/design-review.md`, "Item 7, and why it is not a small
-  job". It needs a decision about `globals.css` that should be made on purpose.
+- **The Android client (Brief B)** has not been started, and session 10 weakened
+  the case considerably: the web app is usable on a phone and installable, which
+  was most of what Brief B was for. Session 12 weakens it further — an installed
+  Orbit now behaves when the signal drops.
+- **Shared lists (shopping)** — the one household verb genuinely missing, per
+  the comparison table in `docs/design-review.md`. Large, and needs a migration.
 
 ---
 
 ## Known bugs and rough edges
 
-**33 entries.** Session 9's 31 are carried over except where noted; two are new.
+**31 entries.** Session 10's 33 carried over; **4, 7, 32 and 33 are closed** and
+are not renumbered, because the numbers are referred to by three other
+documents. Two are new.
 
-### New in session 10
+### New in session 12
 
-32. **Assignment cannot be set from the compose bar.** *(Corrected before the
-    session ended: an earlier draft of this entry said it could not be set
-    anywhere but the detail page. That was wrong — see below.)* `ComposeTask`
-    has no assignee control, and it is not getting one: that bar already carries
-    a title, a date, a category and one chip per writable space, and on a phone
-    that was three rows before anything was added. A picker on the row itself is
-    the remaining gap worth filling.
-
-    **`@person` in capture has worked end to end since Phase 5.**
-    `parseCapture` produces `assigneeHint`, `resolveAssignee` in
-    `src/lib/queries/capture.ts` matches it against active members of the target
-    space by display name or first name, and `createFromCapture` writes it.
-    Typing `bins out tomorrow @danny #home` reads back "assign to danny" as a
-    chip *before* anything is created, and the row lands with Danny on it. It
-    had **no end-to-end check** until session 10 added four; the capability was
-    there and nothing was watching it.
-33. **Orbit is installable and has no service worker.** `src/app/manifest.ts`
-    means it can be added to a home screen, and an installed app that shows a
-    network error when the connection drops is a worse impression than a
-    bookmark. The offline machinery in `src/lib/sync/` is real; what is missing
-    is the shell.
+34. **A preference belongs to a browser, not to an account.** Theme, week start
+    and default compose space are cookies, so a second device starts at the
+    defaults. For a theme that is arguably correct — a phone at night and a
+    desktop at noon want different answers — and for the default space it is a
+    mild annoyance. Moving them onto `profiles` is a migration *and* a decision
+    about whether they are per-account or per-device.
+35. **A `free_busy` viewer does not see a recurring event's occurrences as busy
+    blocks.** Noticed while verifying the smoke failure above, and not fixed:
+    Priya has five `Team stand-up` occurrences at 10:30 in Work that week, and
+    Danny — who has `free_busy` on Work — sees four busy blocks, none of them
+    the stand-up. The direction is the safe one (it shows *less*, never more),
+    but the consequence is that his free/busy view says she is free at 10:30
+    when she is not. It looks like recurrence expansion not being applied to the
+    anonymous-block query. **Nothing was changed on the strength of a guess** —
+    this is a report, not a diagnosis.
 
 ### Carried over
 
@@ -249,14 +269,12 @@ is now installable, which makes that a real gap rather than a nicety (see
    most likely to be wrong.
 2. **A raw invitation token lands in the browser's history.**
 3. **`pnpm smoke` leaves invitation rows behind** — two per run. `pnpm seed`
-   clears them. **Two runs without reseeding will fail the revoke checks**, and
-   this bit twice during session 10.
-4. **Naming a browser writes a device row per writable space, and there is no
-   way to delete one.** `devices.revoked_at` exists and nothing sets it.
+   clears them. The suite is checked to pass **twice in a row without a
+   reseed**, and session 12's new sections were written to hold that: the
+   revoke section rewinds the cursor it advanced, because a caught-up cursor
+   empties the "changed since" feed a later check reads.
 5. **Editing one occurrence's *details* is not built.**
 6. **A trip's journeys are not re-checked against its dates.**
-7. **A conflict is dismissible, and dismissing it loses the edit.** Still the
-   one with the most teeth.
 8. **The queue survives a user switch** and a sign-out.
 9. **`SYNCABLE_FIELDS` is narrower than the forms**, and only
    `/tasks/item/[id]` has an offline surface.
@@ -264,11 +282,11 @@ is now installable, which makes that a real gap rather than a nicety (see
 11. **`applyWrite` interpolates column names with `tx.unsafe`** from a closed
     list re-checked in the server action.
 12. **The push window is every dirty event, capped at 200, oldest first.**
-13. **A push does not delete.** The other one with teeth.
+13. **A push does not delete.** Now the one with the most teeth, edge 7 having
+    been closed.
 14. **The repeat builder cannot type "the third Thursday", nor a `COUNT`.**
 15. **The weekly review reads seven days from `now()`**, not the range Today is
-    showing — and Today now *has* a range, so this reads slightly worse than it
-    did.
+    showing.
 16. **Nothing runs a `schedule` rule on a schedule.**
 17. **A rule's conditions and actions are never *reordered*.**
 18. **The rules engine only knows about tasks**, capped at 500 open tasks.
@@ -278,7 +296,9 @@ is now installable, which makes that a real gap rather than a nicety (see
 22. **`switchUser` is impersonation by design.** Unreachable whenever
     `AUTH_PROVIDER` is not `dev`, but **a build deployed with
     `AUTH_PROVIDER=dev` is a build where anybody can become anybody.**
-23. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.**
+23. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Session 12
+    hit this the ordinary way: `/settings` is a new route, and typed routes do
+    not know about it until a build has run.
 24. **The Markdown subset has no tables, no images, no task lists.**
 25. **The people list's "next date" is computed twice.**
 26. **A person's category is resolved back from its *name*** on the detail page.
@@ -286,18 +306,25 @@ is now installable, which makes that a real gap rather than a nicety (see
 28. **Search covers five kinds and no more.**
 29. **Capture's space hint is one token**, a captured note gets an empty body.
 30. **The AI result is carried on the URL**, on three pages.
-31. **Environment and tooling.** Postgres does not survive container restarts —
-    **and this happened mid-session 10**; `pg_ctlcluster 16 main start` brings it
-    back without reseeding, which `./scripts/db-reset.sh` would not. Use
+31. **Environment and tooling.** Postgres does not survive container restarts;
+    `pg_ctlcluster 16 main start` brings it back without reseeding, which
+    `./scripts/db-reset.sh` would not. Use
     `pgrep -f 'next-serv[e]r' | while read pid; do kill "$pid"; done`, note the
     bracket. There is no linting, out of scope by instruction. `pnpm smoke`
     needs a running server, Chromium at
     `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` and **port 3101 free**.
+    `pnpm start` prints a warning about `output: 'standalone'`; it is harmless
+    and the suite drives that server.
 
-**One smoke check was fixed that had nothing to do with this session's work.**
-"a pulled recurring event is drawn from its rule" looked for an event the
-fixture places at `today + 2` in the week containing *today*, so it passed
-Monday to Friday and failed at the weekend. Session 10 ran on a Saturday.
+### Closed in session 12
+
+- **4 — a device row nothing could revoke.** `/settings` revokes and restores,
+  and a revoked device stops advancing its cursor.
+- **7 — a dismissed conflict lost the edit.** Kept, shown on `/sync`, and
+  restorable. No migration; the argument is in the decisions log.
+- **32 — assignment could not be set from a list.** A picker on the row.
+- **33 — installable with no service worker.** There is one, and it caches no
+  page anybody rendered.
 
 ---
 
@@ -308,13 +335,14 @@ From a cold container:
 ```sh
 cd /home/user/Orbit
 pnpm install
+pg_ctlcluster 16 main start    # if Postgres is not already up
 ./scripts/db-reset.sh          # installs extensions if needed, migrates, seeds
 ./scripts/db-test.sh           # 106/106 must be green
 pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
-pnpm test                      # 735 Vitest tests
+pnpm test                      # 807 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm smoke                     # 402 checks; also starts a second server on :3101
+pnpm seed && pnpm smoke        # 451 checks; also starts a second server on :3101
 ```
 
 If Postgres has stopped but the data is still there, start it rather than
@@ -336,8 +364,11 @@ Dev loop: `pnpm dev`. Reseed without touching schema: `pnpm seed`.
 Rebuild schema without seeding: `./scripts/db-reset.sh --no-seed`.
 
 **Env vars** — copy `.env.example` to `.env`; every value has a working default
-and **no credential is required**. Session 10 added no variable, and the table
-in session 9's history still describes every one of them.
+and **no credential is required**. Session 12 added no variable. It added three
+**cookies**, all unsigned and none of them a permission: `orbit_theme`,
+`orbit_week_start` and `orbit_space`. The last is validated against the caller's
+writable spaces on every read, so a forged value can at most prefer a space they
+can already write to.
 
 **Seeded profiles** — switch between them in the sidebar:
 
@@ -347,34 +378,36 @@ in session 9's history still describes every one of them.
 | Danny Whitehouse | `…0002` | Danny, Home; `free_busy` on Work — the partner |
 | Sam Okafor | `…00ff` | nothing at all — the outsider |
 
-**A five-minute demo of what session 10 added.**
+**A five-minute demo of what session 12 added.**
 
-Open `http://localhost:3000` and **make the window 390px wide**. The rail is
-gone; a bar sits along the bottom with Today under a rule marking where you are.
-Every task title is on the screen. Press **More** — the whole rail slides in;
-press Escape and it goes. Widen the window past 768px and the bar disappears
-while the rail comes back.
+Open `http://localhost:3000` and go to **More → Settings**. Press **Dark**. The
+page is dark before it is drawn — reload it and watch: there is no pale flash,
+because the choice is in the `<html>` tag the browser parses first rather than
+in an effect that runs after a paint. Set your operating system to light mode
+and it stays dark; press **System** and it follows the OS again.
 
-Back at full width, look at **Today**. It now opens with the day spelled out,
-three numbers, and an agenda of what is actually on — with an accent hairline
-across it marking now. Press **Week**: the same page at a coarser grain, seven
-days of agenda, the range in the URL. Check the numbers against the sidebar —
-"overdue" agrees with it, which it did not before.
+Press **Sunday** under *Week starts on*, then open the **Calendar**. The week
+begins on Sunday and the month grid's column headings have moved with it — and
+the events are all still there, because the query range is cut from the same
+preference as the grid. Set it back to Monday.
 
-Press **`?`** for the list of shortcuts, Escape to close it, then **`g`** then
-**`c`** to land on the calendar. It opens at the current hour rather than at
-midnight, with the now-line in today's column and its dot at that column's edge.
-Five Team stand-ups now read as five Team stand-ups.
+Scroll to **Devices**. Press **Revoke** beside one, then go to **Sync**, pick
+that device and press **Mark caught up**. The cursor does not move. Press
+**Restore** on Settings and try again: it moves. That column has existed since
+migration 0001 and nothing had ever written it.
 
-Press **`g`** then **`m`** for **Mine** — the ninth smart list, and the first
-query ever written against `tasks_assignee_idx`. Then click into any other list
-and note the names on the rows: somebody else's is legible, your own is a quiet
-"You".
+Now the offline shell. On **Sync**, tick **Work offline**, edit a task, and come
+back — then use your browser's dev tools to go offline properly and reload. You
+get a page that says what Orbit can and cannot do without a network and links
+back to Sync, rather than a browser error. It is deliberately not your
+`/tasks/home`: every page is rendered for you specifically, and a stored copy
+could be shown to whoever picks the phone up next.
 
-Finally, go to **Capture** and type `bins out tomorrow at half seven @danny
-#home`. It reads the line back as chips — `@danny → assign to "danny"` — before
-creating anything, and the task lands in Home with Danny's name on the row. That
-has worked since Phase 5; until session 10 nothing checked it.
+Finally, on **All open**, use the small control on a row to give a task to
+Danny. It is on the row and not on the compose bar, deliberately — and if a
+conflict ever comes back on **Sync**, pressing **Dismiss** no longer loses what
+you typed: it drops into a *Dismissed* list underneath with a **Put it back**
+button.
 
 ---
 
@@ -382,23 +415,24 @@ has worked since Phase 5; until session 10 nothing checked it.
 
 1. **Somebody has to do the by-hand steps** — create the Supabase project, run
    the migrations, create `orbit_app`, deploy, and sign up once.
-   `docs/deploy.md` is the list. **Until that happens the supabase provider
-   stays "written, never run" and no session can change that.** Unchanged from
-   session 9 and still first.
-2. **Decide the light/dark question, then build the settings page.**
-   `docs/design-review.md` sets out the two options — `light-dark()`, or
-   duplicate-and-pin — and why guessing between them is the wrong move. The
-   settings page then has somewhere to live, and edge 4 (a device row that
-   nothing can revoke, with `devices.revoked_at` sitting unused) has an obvious
-   home on it.
-3. **A service worker** (edge 33). The app is installable now, and the sync
-   machinery underneath it is real; an installed app that shows a network error
-   when the connection drops undoes much of what session 10 built. This has
-   moved up sharply because of what shipped, not because it got easier.
+   `docs/deploy.md` is the list, and `docs/remaining-work.md` §5 is the prompt
+   for the session that follows it. **Until that happens the supabase provider
+   stays "written, never run" and no session can change that.** Unchanged since
+   session 9 and still first by a distance. Everything below improves an app
+   nobody can reach yet.
+2. **Edge 13 — a push does not delete**, and **edge 16 — nothing runs a
+   `schedule` rule on a schedule.** With 7 closed, 13 is the one with the most
+   teeth: a provider push that cannot delete means a cancelled event stays in
+   somebody's Google calendar for good. 16 is the reason the rules engine's
+   `schedule` trigger is a shape with nothing behind it.
+3. **Edge 35, the new one** — a `free_busy` viewer does not see a recurring
+   event's occurrences as busy blocks, so the partner's availability view says
+   she is free at 10:30 when she is not. Small, probably, and it is a
+   correctness bug in the one feature the product owner settled by name
+   (decision 3).
 
-After those, a dismissed conflict leaving a record (edge 7) is still the one
-with the most teeth, and it probably needs a migration — read the migration
-rules before you start.
+After those, **shared lists (shopping)** is the one household verb genuinely
+missing, and it is large and needs a migration.
 
 ### Before you finish your session
 

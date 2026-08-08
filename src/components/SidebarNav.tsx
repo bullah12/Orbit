@@ -45,6 +45,7 @@ const ADMIN = [
   { href: '/rules', icon: 'route', label: 'Rules' },
   { href: '/ai', icon: 'sparkle', label: 'AI' },
   { href: '/sync', icon: 'undo', label: 'Sync' },
+  { href: '/settings', icon: 'settings', label: 'Settings' },
 ] as const;
 
 export function SidebarNav({

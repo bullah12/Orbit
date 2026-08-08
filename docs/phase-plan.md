@@ -239,9 +239,41 @@ and 33.
 - [x] The calendar opens at now, the now-line is `--accent`, and category colour
       is on the left edge only
 - [x] Keyboard shortcuts, with the rules in a pure module and tested
-- [ ] A manual light/dark override and a settings page — **blocked on a
-      deliberate decision about `globals.css`**, not on effort
-- [ ] A service worker, which the manifest turned from a nicety into a gap
+- [x] A manual light/dark override and a settings page — the `globals.css`
+      decision was made in session 12 and is recorded there
+- [x] A service worker, which the manifest turned from a nicety into a gap
+
+---
+
+## Session 12 — settings, the offline shell, and the edges with teeth
+
+Brief C, in `docs/remaining-work.md` §4. Not a phase and it did not need one: it
+finished the two boxes session 10 left open and cleared the two edges the
+handoff called the ones with teeth. **No table and no migration** — the one that
+was expected, for edge 7, was argued down in `docs/decisions-log.md`.
+
+- [x] The one red smoke check identified and fixed. It was the check, not the
+      app: a hardcoded word list collided with the seed's generic event titles,
+      so the partner's own event read as a leak from a space he only has
+      free/busy on
+- [x] `globals.css` merged into `light-dark()` — 42 token pairs, one
+      declaration each, verified value-by-value against the original.
+      `tests/contrast.test.ts` still measures both themes, with three new
+      guards against it degenerating into measuring one twice
+- [x] `/settings`, under **More**: theme, week start, default compose space and
+      devices. Cookies rather than a table, so no migration
+- [x] The theme applies **before first paint** — the server writes
+      `<html data-theme>`; there is no effect, no inline script and no flash
+- [x] Edge 4: `devices.revoked_at` gets its first ever write, and a revoked
+      device stops advancing its sync cursor — asserted with a control beside it
+- [x] Edge 33: a service worker that caches the shell and **no page anybody
+      rendered**, with an offline page carrying no user data and a way to
+      unregister
+- [x] `no-store` on authenticated pages (`src/middleware.ts`) — the browser's
+      own HTTP cache was re-serving them offline, one layer below the worker
+- [x] Edge 7: a dismissed conflict keeps what it discarded, and it can be put
+      back
+- [x] Edge 32: an assignee picker on the task row, still not on the compose bar
 
 ---
 
