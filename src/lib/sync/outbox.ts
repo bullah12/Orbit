@@ -27,11 +27,59 @@ export const OFFLINE_KEY = 'orbit.offline.v1';
 export type Outbox = {
   writes: PendingWrite[];
   conflicts: Conflict[];
+  /**
+   * The edit behind each unanswered conflict, by `opId`.
+   *
+   * Edge 7, first half. `settle` takes a conflicted write *out* of `writes` —
+   * correctly, because it is no longer waiting to be sent — and until session
+   * 12 that was the last anybody saw of it. For a `field_conflict` the typed
+   * values survived inside `clashes[].mine`, but `clashes` is empty for every
+   * other kind, so a `deleted_elsewhere`, `locked_elsewhere` or `moved_space`
+   * conflict discarded the person's typing the moment it was raised — before
+   * they had touched anything.
+   *
+   * Holding the write here is what makes the record possible at all, and what
+   * makes putting it back possible.
+   */
+  held: Record<string, PendingWrite>;
+  /**
+   * Dismissed conflicts, with the edit that was discarded. Edge 7, second half.
+   *
+   * Dismissing used to delete the conflict and with it the only copy of the
+   * edit. It now moves it here, where `/sync` lists it and can put it back.
+   * Capped, oldest dropped first — this is a safety net, not an archive, and an
+   * unbounded list in `localStorage` eventually fails to save the queue itself.
+   */
+  discarded: DiscardedEdit[];
   /** Next sequence number for this device. Monotonic, never reused. */
   nextSeq: number;
 };
 
-export const EMPTY_OUTBOX: Outbox = { writes: [], conflicts: [], nextSeq: 1 };
+/** One dismissed conflict, kept whole so it can be read back or restored. */
+export type DiscardedEdit = {
+  conflict: Conflict;
+  /** The edit exactly as it was queued, or null if it was already gone. */
+  write: PendingWrite | null;
+  /** This device's clock. Displayed, never used to order anything. */
+  discardedAt: string;
+};
+
+/**
+ * How many dismissed edits are kept.
+ *
+ * `localStorage` is a few megabytes and shared with the queue. A discard log
+ * that grew without limit would eventually be the reason an edit could not be
+ * saved, which would be this feature causing the loss it exists to prevent.
+ */
+export const DISCARD_LIMIT = 50;
+
+export const EMPTY_OUTBOX: Outbox = {
+  writes: [],
+  conflicts: [],
+  held: {},
+  discarded: [],
+  nextSeq: 1,
+};
 
 /** One flush's answer, in the shape the queue needs to act on it. */
 export type FlushOutcome = {
@@ -78,16 +126,104 @@ export function settle(outbox: Outbox, outcomes: readonly FlushOutcome[], droppe
     .filter((o) => o.outcome === 'conflict' && o.conflict)
     .map((o) => o.conflict!);
   const keptConflicts = outbox.conflicts.filter((c) => !newConflicts.some((n) => n.opId === c.opId));
+
+  // Keep the write behind every new conflict before it leaves `writes`. This is
+  // the only moment it is still reachable: after this the queue no longer has
+  // it, and for every kind but `field_conflict` the conflict itself does not
+  // carry the typed values either.
+  const held = { ...outbox.held };
+  for (const conflict of newConflicts) {
+    const write = outbox.writes.find((w) => w.opId === conflict.opId);
+    if (write) held[conflict.opId] = write;
+  }
+  // A write that was answered or dropped is not being held for anybody.
+  for (const opId of Object.keys(held)) {
+    const stillConflicted =
+      keptConflicts.some((c) => c.opId === opId) || newConflicts.some((c) => c.opId === opId);
+    if (!stillConflicted) delete held[opId];
+  }
+
   return {
     ...outbox,
     writes: outbox.writes.filter((w) => !handled.has(w.opId)),
     conflicts: [...keptConflicts, ...newConflicts],
+    held,
   };
 }
 
-/** Drop an answered conflict. */
+/**
+ * Drop an answered conflict, keeping nothing.
+ *
+ * For a conflict that was *answered* — Keep mine, Keep theirs — the edit has
+ * been dealt with and there is nothing to record. Dismissing is the other case
+ * and goes through {@link dismissConflict}.
+ */
 export function clearConflict(outbox: Outbox, opId: string): Outbox {
-  return { ...outbox, conflicts: outbox.conflicts.filter((c) => c.opId !== opId) };
+  const held = { ...outbox.held };
+  delete held[opId];
+  return { ...outbox, conflicts: outbox.conflicts.filter((c) => c.opId !== opId), held };
+}
+
+/**
+ * Dismiss a conflict, keeping what it discarded — edge 7.
+ *
+ * The floor the brief set is that dismissing keeps a record. It does more than
+ * the floor: the whole write is kept, so {@link restoreDiscarded} can put it
+ * back. Dismissing is now reversible, and the thing it used to lose is the
+ * thing it now hands back.
+ */
+export function dismissConflict(outbox: Outbox, opId: string, at: string = new Date().toISOString()): Outbox {
+  const conflict = outbox.conflicts.find((c) => c.opId === opId);
+  if (!conflict) return outbox;
+
+  const entry: DiscardedEdit = {
+    conflict,
+    write: outbox.held[opId] ?? null,
+    discardedAt: at,
+  };
+
+  const held = { ...outbox.held };
+  delete held[opId];
+
+  // Newest first, oldest dropped past the cap.
+  const discarded = [entry, ...outbox.discarded.filter((d) => d.conflict.opId !== opId)].slice(
+    0,
+    DISCARD_LIMIT,
+  );
+
+  return {
+    ...outbox,
+    conflicts: outbox.conflicts.filter((c) => c.opId !== opId),
+    held,
+    discarded,
+  };
+}
+
+/**
+ * Put a dismissed edit back in the queue.
+ *
+ * It goes back with a **new sequence number**, at the end, deliberately: it has
+ * been sitting out while other edits were sent, and re-inserting it at its old
+ * position would put it ahead of writes that have already landed. Its `base`
+ * is untouched, so the next flush compares it against the server as it is now
+ * and either merges it, applies it, or raises the conflict again with today's
+ * values — which is the honest answer rather than a stale one.
+ */
+export function restoreDiscarded(outbox: Outbox, opId: string): Outbox {
+  const entry = outbox.discarded.find((d) => d.conflict.opId === opId);
+  if (!entry || !entry.write) return outbox;
+
+  return {
+    ...outbox,
+    writes: [...outbox.writes, { ...entry.write, seq: outbox.nextSeq }],
+    nextSeq: outbox.nextSeq + 1,
+    discarded: outbox.discarded.filter((d) => d.conflict.opId !== opId),
+  };
+}
+
+/** Forget a dismissed edit for good. The only way to actually lose one. */
+export function forgetDiscarded(outbox: Outbox, opId: string): Outbox {
+  return { ...outbox, discarded: outbox.discarded.filter((d) => d.conflict.opId !== opId) };
 }
 
 /** Drop a queued write without sending it. The only way to lose an edit on purpose. */
@@ -214,6 +350,12 @@ export function readOutbox(): Outbox {
     return {
       writes: Array.isArray(parsed.writes) ? parsed.writes : [],
       conflicts: Array.isArray(parsed.conflicts) ? parsed.conflicts : [],
+      // Absent in `orbit.outbox.v1` as written before session 12. Defaulted
+      // rather than version-bumped: an older queue is still a perfectly good
+      // queue, and forcing it to be discarded to add a feature about not
+      // discarding things would be a poor joke.
+      held: parsed.held && typeof parsed.held === 'object' ? parsed.held : {},
+      discarded: Array.isArray(parsed.discarded) ? parsed.discarded : [],
       nextSeq: typeof parsed.nextSeq === 'number' ? parsed.nextSeq : 1,
     };
   } catch {

@@ -1,7 +1,13 @@
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
-import { categoriesBySpace, listTasks, SMART_LISTS, isSmartListKey } from '@/lib/queries/tasks';
+import {
+  assignableBySpace,
+  categoriesBySpace,
+  listTasks,
+  SMART_LISTS,
+  isSmartListKey,
+} from '@/lib/queries/tasks';
 import { TaskRow } from '@/components/TaskRow';
 import { ComposeTask } from '@/components/ComposeTask';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
@@ -23,10 +29,11 @@ export default async function TaskListPage({
   if (!isSmartListKey(list)) notFound();
 
   const user = await requireUser();
-  const [spaces, categories, tasks, preferredSpaceRaw] = await Promise.all([
+  const [spaces, categories, tasks, assignable, preferredSpaceRaw] = await Promise.all([
     listSpaces(user.id),
     categoriesBySpace(user.id),
     listTasks(user.id, list, { spaceId: spaceId ?? null }),
+    assignableBySpace(user.id),
     readDefaultSpaceRaw(),
   ]);
 
@@ -67,7 +74,12 @@ export default async function TaskListPage({
       ) : (
         <ul>
           {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} showAssignee={list !== 'mine'} />
+            <TaskRow
+              key={t.id}
+              task={t}
+              showAssignee={list !== 'mine'}
+              assignable={assignable[t.space.id]}
+            />
           ))}
         </ul>
       )}

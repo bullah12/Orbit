@@ -2633,3 +2633,43 @@ export async function setDeviceRevocation(formData: FormData) {
       : `/settings?saved=${revoked ? 'revoked' : 'restored'}`,
   );
 }
+
+/**
+ * Set or clear one task's assignee — edge 32.
+ *
+ * Its own action rather than a trip through `updateTask`, because the row has
+ * only this one field and `updateTask` would need every other value posted back
+ * with it — a form on a list row that carried the title, the body and the
+ * status would overwrite all three from whatever the page last rendered.
+ *
+ * The assignee is resolved in SQL against the task's own space, exactly as
+ * `updateTask` resolves it: somebody who is not an active member with a role
+ * that can hold a task becomes NULL rather than being written. The policies
+ * already stop a write to a task you cannot reach; this stops a stale page from
+ * producing a row that references across a space boundary.
+ */
+export async function setTaskAssignee(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('taskId') ?? '');
+  if (!id) return;
+
+  const assigneeId = String(formData.get('assigneeId') ?? '') || null;
+
+  await asUser(user.id, async (tx) => {
+    await tx`
+      update public.tasks t set
+        assignee_id = (
+          select m.user_id from public.space_members m
+          where m.user_id = ${assigneeId}::uuid
+            and m.space_id = t.space_id
+            and m.status = 'active'
+            and m.role in ('owner','admin','member')
+        ),
+        updated_at = now()
+      where t.id = ${id}::uuid and not t.is_locked
+    `;
+  });
+
+  await fireForTask(user.id, 'task.updated', id);
+  revalidatePath('/', 'layout');
+}

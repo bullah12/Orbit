@@ -16,9 +16,17 @@ import {
   type ServerRow,
 } from '@/lib/sync/conflict';
 import {
+  clearConflict,
   DEVICE_LABEL_MAX,
+  DISCARD_LIMIT,
+  dismissConflict,
+  EMPTY_OUTBOX,
+  forgetDiscarded,
   normaliseDeviceLabel,
+  restoreDiscarded,
+  settle,
   suggestDeviceLabel,
+  type Outbox,
 } from '@/lib/sync/outbox';
 
 /**
@@ -616,5 +624,202 @@ describe('naming this browser', () => {
       expect(s.length).toBeGreaterThan(0);
       expect(s.length).toBeLessThanOrEqual(DEVICE_LABEL_MAX);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edge 7 — a dismissed conflict keeps what it discarded
+// ---------------------------------------------------------------------------
+
+/**
+ * The one with the most teeth, and the reason it had them.
+ *
+ * `settle` takes a conflicted write out of `writes` — correctly, since it is no
+ * longer waiting to be sent. Until session 12 that was the last anybody saw of
+ * it. For a `field_conflict` the typed values survived inside `clashes[].mine`,
+ * but `clashes` is empty for every other kind, so a `deleted_elsewhere`,
+ * `locked_elsewhere` or `moved_space` conflict discarded somebody's typing the
+ * moment it was raised — before they had touched anything. Dismissing then
+ * deleted the record of it too.
+ */
+describe('a conflicted write is kept, not dropped', () => {
+  const write: PendingWrite = {
+    opId: 'op-1',
+    seq: 1,
+    queuedAt: '2026-08-08T10:00:00Z',
+    entityKind: 'task',
+    entityId: 'task-1',
+    spaceId: 'space-1',
+    label: 'Ring the plumber',
+    changes: { title: 'Ring the plumber', due_on: '2026-08-12' },
+    base: { title: 'Ring the plumber back', due_on: null },
+    baseUpdatedAt: '2026-08-08T09:00:00Z',
+  };
+
+  const conflictOf = (kind: Conflict['kind']): Conflict => ({
+    kind,
+    opId: 'op-1',
+    entityKind: 'task',
+    entityId: 'task-1',
+    spaceId: 'space-1',
+    // Empty for every kind but field_conflict — which is the whole problem.
+    clashes: [],
+    mergeable: {},
+    reason: 'Somebody else got there first.',
+  });
+
+  const queued = (): Outbox => ({ ...EMPTY_OUTBOX, writes: [write], nextSeq: 2 });
+
+  const settled = (kind: Conflict['kind']): Outbox =>
+    settle(queued(), [
+      { opId: 'op-1', outcome: 'conflict', note: null, conflict: conflictOf(kind) },
+    ]);
+
+  it.each(['field_conflict', 'deleted_elsewhere', 'locked_elsewhere', 'moved_space'] as const)(
+    'holds the edit behind a %s conflict',
+    (kind) => {
+      const out = settled(kind);
+      expect(out.writes).toHaveLength(0);
+      expect(out.conflicts).toHaveLength(1);
+      // The typed values are still reachable, whatever the kind.
+      expect(out.held['op-1']).toEqual(write);
+      expect(out.held['op-1']!.changes).toEqual({
+        title: 'Ring the plumber',
+        due_on: '2026-08-12',
+      });
+    },
+  );
+
+  it('stops holding it once the conflict is answered', () => {
+    // Answering is not dismissing: the edit has been dealt with, so there is
+    // nothing to record and nothing to keep.
+    const out = clearConflict(settled('field_conflict'), 'op-1');
+    expect(out.conflicts).toHaveLength(0);
+    expect(out.held).toEqual({});
+    expect(out.discarded).toHaveLength(0);
+  });
+
+  it('dismissing records the conflict *and* the edit', () => {
+    const out = dismissConflict(settled('deleted_elsewhere'), 'op-1', '2026-08-08T11:00:00Z');
+
+    expect(out.conflicts).toHaveLength(0);
+    expect(out.held).toEqual({});
+    expect(out.discarded).toHaveLength(1);
+
+    const [entry] = out.discarded;
+    expect(entry!.conflict.kind).toBe('deleted_elsewhere');
+    expect(entry!.discardedAt).toBe('2026-08-08T11:00:00Z');
+    // The thing dismissing used to lose.
+    expect(entry!.write).toEqual(write);
+  });
+
+  it('dismissing an opId that is not there changes nothing', () => {
+    const before = settled('field_conflict');
+    expect(dismissConflict(before, 'op-nope')).toEqual(before);
+  });
+
+  it('never keeps two records for one conflict', () => {
+    const once = dismissConflict(settled('field_conflict'), 'op-1', '2026-08-08T11:00:00Z');
+    const twice = dismissConflict(
+      { ...once, conflicts: [conflictOf('field_conflict')], held: { 'op-1': write } },
+      'op-1',
+      '2026-08-08T12:00:00Z',
+    );
+    expect(twice.discarded).toHaveLength(1);
+    expect(twice.discarded[0]!.discardedAt).toBe('2026-08-08T12:00:00Z');
+  });
+});
+
+describe('a dismissed edit can be put back', () => {
+  const write: PendingWrite = {
+    opId: 'op-1',
+    seq: 1,
+    queuedAt: '2026-08-08T10:00:00Z',
+    entityKind: 'task',
+    entityId: 'task-1',
+    spaceId: 'space-1',
+    label: 'Ring the plumber',
+    changes: { title: 'Ring the plumber' },
+    base: { title: 'Ring the plumber back' },
+    baseUpdatedAt: '2026-08-08T09:00:00Z',
+  };
+
+  const conflict: Conflict = {
+    kind: 'field_conflict',
+    opId: 'op-1',
+    entityKind: 'task',
+    entityId: 'task-1',
+    spaceId: 'space-1',
+    clashes: [],
+    mergeable: {},
+    reason: 'Both of you changed the title.',
+  };
+
+  const dismissed = (): Outbox =>
+    dismissConflict(
+      settle({ ...EMPTY_OUTBOX, writes: [write], nextSeq: 2 }, [
+        { opId: 'op-1', outcome: 'conflict', note: null, conflict },
+      ]),
+      'op-1',
+      '2026-08-08T11:00:00Z',
+    );
+
+  it('returns it to the queue and takes it off the list', () => {
+    const out = restoreDiscarded(dismissed(), 'op-1');
+    expect(out.discarded).toHaveLength(0);
+    expect(out.writes).toHaveLength(1);
+    expect(out.writes[0]!.changes).toEqual({ title: 'Ring the plumber' });
+  });
+
+  it('gives it a new sequence number, at the end of the queue', () => {
+    // It sat out while other edits were sent. Re-inserting it at its old
+    // position would put it ahead of writes that have already landed.
+    const before = dismissed();
+    const out = restoreDiscarded({ ...before, nextSeq: 9 }, 'op-1');
+    expect(out.writes[0]!.seq).toBe(9);
+    expect(out.nextSeq).toBe(10);
+  });
+
+  it('keeps its base, so the next send judges it against the server as it is now', () => {
+    // Not rebased here on purpose: `flushQueue` compares `base` against the
+    // current row, so an unchanged base is what lets the answer be "merged",
+    // "applied" or "the same conflict again, with today's values".
+    const out = restoreDiscarded(dismissed(), 'op-1');
+    expect(out.writes[0]!.base).toEqual(write.base);
+    expect(out.writes[0]!.baseUpdatedAt).toBe(write.baseUpdatedAt);
+  });
+
+  it('does nothing for a record with no edit behind it', () => {
+    // A conflict dismissed before session 12 has a record and no values.
+    const legacy: Outbox = {
+      ...EMPTY_OUTBOX,
+      discarded: [{ conflict, write: null, discardedAt: '2026-08-01T00:00:00Z' }],
+    };
+    expect(restoreDiscarded(legacy, 'op-1')).toEqual(legacy);
+  });
+
+  it('forgetting one is the only way to actually lose it', () => {
+    const out = forgetDiscarded(dismissed(), 'op-1');
+    expect(out.discarded).toHaveLength(0);
+    expect(out.writes).toHaveLength(0);
+  });
+
+  it('caps the list so it cannot be the reason a queue fails to save', () => {
+    let outbox: Outbox = EMPTY_OUTBOX;
+    for (let i = 0; i < DISCARD_LIMIT + 10; i += 1) {
+      const opId = `op-${i}`;
+      outbox = dismissConflict(
+        {
+          ...outbox,
+          conflicts: [{ ...conflict, opId }],
+          held: { [opId]: { ...write, opId } },
+        },
+        opId,
+        `2026-08-08T${String(i % 24).padStart(2, '0')}:00:00Z`,
+      );
+    }
+    expect(outbox.discarded).toHaveLength(DISCARD_LIMIT);
+    // Newest first, so the oldest are the ones dropped.
+    expect(outbox.discarded[0]!.conflict.opId).toBe(`op-${DISCARD_LIMIT + 9}`);
   });
 });

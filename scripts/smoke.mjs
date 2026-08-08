@@ -3211,6 +3211,13 @@ try {
     );
 
     await page.goto('/');
+    // The shortcut listener is attached by a Client Component, so it does not
+    // exist until the page has hydrated. The two checks above ride on
+    // `waitForURL`, which retries; this one asserts immediately and was
+    // therefore racing hydration — it went red under a full run, where the
+    // machine is busy, and passed every time on its own. Waiting for the page
+    // to go quiet is what the check meant all along.
+    await settle(page);
     await page.keyboard.press('?');
     const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
     check('? opens the list of them', await help.isVisible());
@@ -3504,6 +3511,205 @@ try {
     await settle(page);
     check('and restoring it lets the cursor move again', (await cursorNow()) !== beforeRevoke);
 
+    // Leave the cursor where a fresh seed leaves it — behind. This section
+    // marks a device caught up to prove that a revoked one cannot be, and a
+    // caught-up cursor empties the "changed since" feed that the sync section
+    // above reads. Edge 3 is the standing rule this serves: the suite has to
+    // pass twice in a row without a reseed.
+    await page.locator('form:has(input[name="deviceId"]) button:has-text("Rewind")').first().click();
+    await settle(page);
+
+    await ctx.close();
+  }
+
+  // --------------------------------------- edge 32: assignment from the row
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.goto('/tasks/all');
+
+    const pickers = page.locator('main form:has(input[name="taskId"]) select[name="assigneeId"]');
+    check('a task row carries an assignee picker', (await pickers.count()) > 0, `${await pickers.count()}`);
+
+    // The decision recorded twice and standing: not on the compose bar.
+    check(
+      'and the compose bar still does not have one',
+      (await page.locator('form[aria-label="Add a task"] select[name="assigneeId"]').count()) === 0,
+    );
+
+    // A row in a space with more than one member, so there is somebody to
+    // assign *to*. Priya's personal space has only her, and a picker offering
+    // one name would pass a weaker check without proving anything.
+    let taskId = null;
+    let target = null;
+    const n = await pickers.count();
+    for (let i = 0; i < n; i += 1) {
+      const picker = pickers.nth(i);
+      const values = await picker.locator('option').evaluateAll((els) =>
+        els.map((e) => ({ value: e.value, label: e.textContent.trim() })),
+      );
+      const others = values.filter((v) => v.value !== '');
+      if (others.length >= 2) {
+        taskId = await picker
+          .locator('xpath=ancestor::form[1]')
+          .locator('input[name="taskId"]')
+          .getAttribute('value');
+        const current = await picker.inputValue();
+        target = others.find((o) => o.value !== current);
+        check(
+          'offering every member of that row’s space and nobody else',
+          others.length >= 2 && values.some((v) => v.label === 'Unassigned'),
+          values.map((v) => v.label).join(' | '),
+        );
+        break;
+      }
+    }
+
+    if (taskId && target) {
+      const pickerFor = (id) =>
+        page.locator(`main form:has(input[value="${id}"]) select[name="assigneeId"]`).first();
+
+      const before = await pickerFor(taskId).inputValue();
+      await pickerFor(taskId).selectOption(target.value);
+      await settle(page);
+
+      // Read it back from a fresh render, not from the control just changed.
+      await page.goto('/tasks/all');
+      const after = await pickerFor(taskId).inputValue();
+      check(
+        'choosing somebody assigns the task, and it reads back',
+        after === target.value,
+        `${before || 'unassigned'} -> ${target.label}`,
+      );
+
+      // And the row says so in words, not only in the control.
+      const rowText = await page
+        .locator(`main li:has(input[value="${taskId}"])`)
+        .first()
+        .innerText();
+      check(
+        'and the row names who it is for',
+        rowText.includes(target.label) || rowText.includes('You'),
+        rowText.replace(/\s+/g, ' ').slice(0, 100),
+      );
+
+      // Put it back, so the run is repeatable without a reseed. Re-read from a
+      // fresh render rather than from the control just changed.
+      await pickerFor(taskId).selectOption(before);
+      await settle(page);
+      await page.goto('/tasks/all');
+      check(
+        'and it can be set back',
+        (await pickerFor(taskId).inputValue()) === before,
+        `${await pickerFor(taskId).inputValue()} want ${before}`,
+      );
+    } else {
+      check('a space with two members offers a real choice', false, 'no multi-member row found');
+    }
+
+    // Mine renders no assignee at all — a column saying "You" on every row of a
+    // list called Mine is a column saying nothing — so it gets no picker either.
+    await page.goto('/tasks/mine');
+    check(
+      'Mine has no assignee control, because every row is yours',
+      (await page.locator('main ul li select[name="assigneeId"]').count()) === 0,
+    );
+
+    await ctx.close();
+  }
+
+  // --------------------------------------- edge 7: a dismissal keeps a record
+  //
+  // Driven through the queue in `localStorage`, because that is genuinely where
+  // an unsent edit is, and the queue is seeded directly with a conflict that
+  // has already come back. Manufacturing one through a real flush would be
+  // testing `resolveWrite` — which has 73 Vitest tests of its own, including
+  // the one asserting `settle` keeps the write behind every conflict kind.
+  // What is checked here is the part only a browser can show: that dismissing
+  // keeps a record, that the record is reachable from /sync, and that it can be
+  // put back.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/tasks/all');
+    const href = await page.locator('main a[href^="/tasks/item/"]').first().getAttribute('href');
+    const taskId = href.split('/').pop().split('?')[0];
+
+    await page.evaluate((id) => {
+      const conflict = {
+        kind: 'field_conflict',
+        opId: 'smoke-edge7',
+        entityKind: 'task',
+        entityId: id,
+        spaceId: '00000000-0000-4000-8000-000000000004',
+        clashes: [
+          { field: 'title', mine: 'Typed on the train', theirs: 'Changed by somebody else', base: 'Ring the plumber' },
+        ],
+        mergeable: {},
+        reason: 'You both changed the title while this was queued.',
+      };
+      window.localStorage.setItem(
+        'orbit.outbox.v1',
+        JSON.stringify({
+          writes: [],
+          conflicts: [conflict],
+          held: {
+            'smoke-edge7': {
+              opId: 'smoke-edge7',
+              seq: 1,
+              queuedAt: new Date().toISOString(),
+              entityKind: 'task',
+              entityId: id,
+              spaceId: '00000000-0000-4000-8000-000000000004',
+              label: 'Typed on the train',
+              changes: { title: 'Typed on the train' },
+              base: { title: 'Ring the plumber' },
+              baseUpdatedAt: new Date(Date.now() - 3600_000).toISOString(),
+            },
+          },
+          discarded: [],
+          nextSeq: 2,
+        }),
+      );
+    }, taskId);
+
+    await page.goto('/sync');
+    const conflicts = page.locator('#outbox-conflicts li');
+    check('the queue shows a conflict waiting to be answered', (await conflicts.count()) === 1);
+
+    await conflicts.first().locator('button:has-text("Dismiss")').click();
+    await settle(page);
+
+    check('dismissing clears it from the conflicts list', (await conflicts.count()) === 0);
+
+    const discarded = page.locator('#outbox-discarded li');
+    check(
+      'and keeps a record rather than losing the edit — edge 7',
+      (await discarded.count()) === 1,
+    );
+
+    const text = await discarded.first().innerText();
+    check(
+      'the record says what was typed, not just that something happened',
+      /Typed on the train/.test(text),
+      text.replace(/\s+/g, ' ').slice(0, 120),
+    );
+    check(
+      'and it is reachable from /sync, with a way to put it back',
+      (await discarded.first().locator('button:has-text("Put it back")').count()) === 1,
+    );
+
+    await discarded.first().locator('button:has-text("Put it back")').click();
+    await settle(page);
+    check(
+      'putting it back takes it off the list and returns it to the queue',
+      (await page.locator('#outbox-discarded li').count()) === 0 &&
+        (await page.evaluate(
+          () => JSON.parse(window.localStorage.getItem('orbit.outbox.v1')).writes.length,
+        )) === 1,
+    );
+
+    // Leave this browser's queue as it was found.
+    await page.evaluate(() => window.localStorage.removeItem('orbit.outbox.v1'));
     await ctx.close();
   }
 
@@ -3577,6 +3783,29 @@ try {
         );
       }),
     );
+
+    // The hole a layer below the service worker, found by this very check.
+    // The worker cached no page — and `/tasks/all` still came back offline,
+    // out of the *browser's* HTTP cache. Every page is force-dynamic and
+    // RLS-scoped, so none of them was ever safe to keep; nothing had said so
+    // in a header until src/middleware.ts did.
+    const pageHeaders = (await page.request.get(`${BASE}/tasks/all`)).headers();
+    check(
+      'an authenticated page tells every cache not to store it',
+      /no-store/.test(pageHeaders['cache-control'] ?? ''),
+      pageHeaders['cache-control'] ?? 'no cache-control',
+    );
+    const assetUrl = await page.evaluate(
+      () => [...document.querySelectorAll('script[src]')].map((s) => s.src).find((s) => s.includes('/_next/static/')) ?? null,
+    );
+    if (assetUrl) {
+      const assetHeaders = (await page.request.get(assetUrl)).headers();
+      check(
+        'while a content-hashed asset keeps its long cache',
+        /immutable|max-age=\d{5,}/.test(assetHeaders['cache-control'] ?? ''),
+        assetHeaders['cache-control'] ?? 'no cache-control',
+      );
+    }
 
     // Now pull the plug.
     await ctx.setOffline(true);
