@@ -163,14 +163,27 @@ locally, and it is worthless if the deployed role is different.
 psql "$ADMIN_URL" <<'SQL'
 create role orbit_app login password 'PUT A REAL PASSWORD HERE' noinherit;
 grant connect on database postgres to orbit_app;
-grant usage on schema orbit, auth to orbit_app;
+grant usage on schema orbit to orbit_app;
 grant authenticated, anon to orbit_app;
 
--- The identity seam: two narrow functions, no table grants at all.
+-- The identity seam: two narrow functions, no table grants at all. Only the
+-- dev provider calls these; harmless to grant either way.
 grant execute on function orbit.identity_profile(uuid) to orbit_app;
 grant execute on function orbit.identity_profiles() to orbit_app;
 SQL
 ```
+
+**Do not grant on schema `auth` here.** It belongs to `supabase_auth_admin` and
+the statement fails the same way 0000 used to. It is also unnecessary:
+`asUser()` issues `set local role authenticated` before it does anything else,
+and on Supabase `authenticated` already holds usage on `auth` and execute on
+`auth.uid()`. The pool role reaches nothing under its own name — which is the
+point of `noinherit`.
+
+**Through the pooler, `orbit_app`'s username carries the project ref too** —
+`orbit_app.YOUR-REF`, exactly as `postgres` became `postgres.YOUR-REF`. A
+`DATABASE_URL` with a bare `orbit_app` fails authentication against the pooler
+host and the message does not explain why.
 
 Then confirm what it is *not*:
 
