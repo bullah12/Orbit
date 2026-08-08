@@ -16,7 +16,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(106);
+select plan(112);
 
 -- ===========================================================================
 -- Fixtures. Built as the table owner, so RLS does not apply to the setup.
@@ -108,6 +108,19 @@ insert into public.recurrence_rules (id, space_id, owner_id, rrule, dtstart) val
    '11111111-1111-1111-1111-111111111111', 'FREQ=WEEKLY;BYDAY=MO', '2026-08-03 09:00+01'),
   ('ffffffff-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'FREQ=MONTHLY;BYMONTHDAY=31', '2026-08-31 18:00+01');
+
+-- A repeating *event*, carrying the shared space's rule. The fixture had rules
+-- and no event pointing at one, so nothing exercised the join — which is how
+-- edge 35 survived: `free_busy_blocks` filtered on the stored row's
+-- `starts_at`, a series is stored once at its DTSTART, and a grantee therefore
+-- saw none of somebody's recurring commitments. There is now a row that only
+-- `app.free_busy_recurring()` can answer for.
+insert into public.events (id, space_id, owner_id, title, starts_at, ends_at, recurrence_rule_id)
+values
+  ('dddddddd-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'Monday stand-up',
+   '2026-08-03 09:00+01', '2026-08-03 09:15+01',
+   'ffffffff-0000-0000-0000-000000000001');
 
 insert into public.people (id, space_id, owner_id, display_name) values
   ('eeeeeeee-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001',
@@ -343,6 +356,60 @@ select is(
     '2026-08-01 00:00+01', '2026-08-05 00:00+01')),
   0,
   'free_busy blocks are not readable for a space with no grant');
+
+-- Edge 35. A repeating event is stored once, at its DTSTART, and expanded on
+-- read — so `free_busy_blocks` filtering on the stored row dropped every
+-- recurring commitment a grantee had. The two functions now split the work and
+-- no row is in both, which is what stops the anchor being drawn twice.
+select is(
+  (select count(*)::int from app.free_busy_blocks(
+    'aaaaaaaa-0000-0000-0000-000000000002',
+    '2026-08-01 00:00+01', '2026-08-05 00:00+01')),
+  1,
+  'free_busy_blocks returns one-off events only');
+
+select is(
+  (select count(*)::int from app.free_busy_recurring(
+    'aaaaaaaa-0000-0000-0000-000000000002',
+    '2026-08-01 00:00+01', '2026-08-05 00:00+01')),
+  1,
+  'and free_busy_recurring returns the series a grantee could not see before');
+
+select is(
+  (select rrule from app.free_busy_recurring(
+    'aaaaaaaa-0000-0000-0000-000000000002',
+    '2026-08-01 00:00+01', '2026-08-05 00:00+01')),
+  'FREQ=WEEKLY;BYDAY=MO',
+  'carrying the rule the app expands, and no title with it');
+
+-- The grant is re-checked by the function itself, exactly as free_busy_blocks
+-- does. A second entry point to somebody's times that trusted its caller would
+-- be worse than no entry point.
+select is(
+  (select count(*)::int from app.free_busy_recurring(
+    'aaaaaaaa-0000-0000-0000-000000000001',
+    '2026-08-01 00:00+01', '2026-08-05 00:00+01')),
+  0,
+  'free_busy_recurring is not readable for a space with no grant');
+
+-- The window test is the *series* test: a rule is offered whenever it could
+-- still be running, and which occurrences land is decided by expansion.
+select is(
+  (select count(*)::int from app.free_busy_recurring(
+    'aaaaaaaa-0000-0000-0000-000000000002',
+    '2027-01-01 00:00+00', '2027-01-08 00:00+00')),
+  1,
+  'a series with no UNTIL is still offered for a window years later');
+
+-- The outsider has no grant at all, so neither door opens.
+select tests.act_as('44444444-4444-4444-4444-444444444444');
+select is(
+  (select count(*)::int from app.free_busy_recurring(
+    'aaaaaaaa-0000-0000-0000-000000000002',
+    '2026-08-01 00:00+01', '2026-08-05 00:00+01')),
+  0,
+  'and somebody with no share at all gets nothing from it');
+select tests.act_as('33333333-3333-3333-3333-333333333333');
 
 -- A recurrence rule is a fact about somebody's week: how often, and from when.
 -- It must be no more visible than the event that carries it.

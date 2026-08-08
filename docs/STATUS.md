@@ -10,9 +10,11 @@ database up and pick from **Next three things** at the bottom.
 **Where the project is: Orbit was finished at the end of session 8, made usable
 by a real person in session 9, made usable *on a phone* in session 10, and given
 its settings surface and its offline shell in session 12.** Session 12 was Brief
-C from `docs/remaining-work.md` §4. It added **no table and no migration** — the
-one that was expected, for edge 7, was argued down rather than skipped, and the
-argument is in `docs/decisions-log.md`.
+C from `docs/remaining-work.md` §4. Brief C added **no table and no
+migration** — the one expected for edge 7 was argued down rather than skipped,
+and the argument is in `docs/decisions-log.md`. A **second pass** then closed
+the four things worth doing before a deployment, and that one *did* need a
+migration: `0013_free_busy_recurrence.sql`, for edge 35.
 
 **The one sentence worth carrying forward from this session:** the offline work
 was built on the rule that no page rendered for one person may ever be stored,
@@ -27,17 +29,18 @@ asserting that a file exists.
 end of session 12, and all five were green:
 
 ```
-./scripts/db-test.sh   106/106 pgTAP assertions   (unchanged — no migration)
+./scripts/db-test.sh   112/112 pgTAP assertions   (was 106; migration 0013)
 pnpm build             clean
 pnpm typecheck         clean (needs the build first on a fresh clone)
-pnpm test              807 Vitest tests in 21 files   (was 735)
-pnpm smoke             451/451 against the running app   (was 402; needs pnpm start)
+pnpm test              816 Vitest tests in 21 files   (was 735)
+pnpm smoke             455/455 against the running app   (was 402; needs pnpm start)
 ```
 
 `pnpm smoke` was also run **twice in a row without a reseed**, which is edge 3's
 standing rule, and passed both times.
 
-No migration was written this session, which is why pgTAP is unchanged at 106.
+**One migration was written**, `0013_free_busy_recurrence.sql`, in the second
+pass — the first schema change since 0012. Brief C itself needed none.
 
 ---
 
@@ -174,6 +177,57 @@ nothing else. It now asserts the property its name claims, on the blocks
 themselves, and the leak scan is kept with its forbidden set *derived* from the
 app rather than guessed.
 
+### New in the second pass — before a deployment
+
+The Supabase migrations were applied by hand between the two passes. These are
+the four things worth closing before anything is public.
+
+**Edge 22 is enforced, not warned about.** `AUTH_PROVIDER=dev` on a production
+build is refused: every page returns a sentence naming what to set instead.
+`switchUser` is impersonation by design and **`dev` is the default**, so the
+dangerous case was never a typo — it was forgetting to set a variable. The
+escape hatch is where the design is: `pnpm start` sets `ORBIT_ALLOW_DEV_AUTH=1`
+so the zero-credential run and `pnpm smoke` are untouched, and the **Dockerfile
+does not** — it runs `node server.js`, so nothing in `package.json` can leak
+into an image. Thrown from `authProvider()` so every entry point fails closed,
+and given its own page in the layout because the existing catch would have
+called it *"Orbit can't reach its database"*. Only the exact string `'1'`
+disarms it. Verified against a real production server both ways.
+
+**`/health` runs `select 1`** and answers `200` or `503`. The most likely
+production failure is a `DATABASE_URL` that does not work, and the default check
+on Fly and Railway is "did the port open", which is true of a container that
+cannot serve a page. It returns one key and no error text on purpose — it is
+unauthenticated by necessity. Verified with a working and a broken URL.
+
+**`fly.toml` is committed**, because two `fly launch` defaults are wrong here
+and both fail quietly: `auto_stop_machines` throws the connection pool away
+between requests, and `internal_port` defaults to 8080 while Next listens on
+3000. `AUTH_PROVIDER` is deliberately absent from `[env]`, so a deployment that
+forgets it meets the guard above.
+
+**Edge 35 is closed — migration 0013.** `app.free_busy_blocks()` filtered on the
+*stored* row, and a repeating event is stored once at its DTSTART, so a weekly
+stand-up that began in March never overlapped "this week": a `free_busy` grantee
+saw **none** of somebody's recurring commitments. The direction was the safe one
+— less, never more — which is exactly what hid it, while the availability view
+answered "free" about the busiest hour of the week.
+
+- The pgTAP fixture had recurrence *rules* and no event pointing at one, so
+  nothing exercised the join. That is how this survived from Phase 2.
+- `free_busy_blocks` is one-offs only now; `app.free_busy_recurring()` returns
+  the series, and the app expands it with the one tested implementation.
+  Duplicating RFC 5545 expansion in PL/pgSQL would be a second answer to *which
+  occurrences exist*, and the two would disagree visibly.
+- **That choice lets a grantee's session obtain the rule text**, which is a real
+  departure from *"the shape of somebody's week is content"*. Argued in the
+  decisions log; what is rendered is unchanged, and `BusyBlock` has no field a
+  rule could live in.
+- Watched: Priya has nine Work events in a week, five of them stand-up
+  occurrences. Danny saw four busy blocks before and sees nine now, with no
+  title leaked. The smoke check asserts the two **agree** rather than counting
+  blocks — counting alone passed throughout the bug.
+
 ### Session 10 and earlier — unchanged and still green
 
 It works on a phone: `viewport`, a bottom tab bar and a drawer below `md`, task
@@ -253,15 +307,8 @@ documents. Two are new.
     desktop at noon want different answers — and for the default space it is a
     mild annoyance. Moving them onto `profiles` is a migration *and* a decision
     about whether they are per-account or per-device.
-35. **A `free_busy` viewer does not see a recurring event's occurrences as busy
-    blocks.** Noticed while verifying the smoke failure above, and not fixed:
-    Priya has five `Team stand-up` occurrences at 10:30 in Work that week, and
-    Danny — who has `free_busy` on Work — sees four busy blocks, none of them
-    the stand-up. The direction is the safe one (it shows *less*, never more),
-    but the consequence is that his free/busy view says she is free at 10:30
-    when she is not. It looks like recurrence expansion not being applied to the
-    anonymous-block query. **Nothing was changed on the strength of a guess** —
-    this is a report, not a diagnosis.
+35. **Closed in the second pass.** A `free_busy` viewer saw none of somebody's
+    recurring commitments. See below.
 
 ### Carried over
 
@@ -318,6 +365,18 @@ documents. Two are new.
 
 ### Closed in session 12
 
+- **22 — a build deployed with `AUTH_PROVIDER=dev`** is one where anybody can
+  become anybody. Orbit now refuses to serve any page on a production build
+  unless a real provider is chosen. The escape hatch is `ORBIT_ALLOW_DEV_AUTH=1`,
+  set by `pnpm start` and deliberately not by the Dockerfile. Entry 22 above is
+  kept for its description of what `switchUser` is.
+- **35 — a recurring event was not busy time.** `app.free_busy_blocks()`
+  filtered on the *stored* row, and a series is stored once at its DTSTART, so a
+  weekly stand-up that began in March never overlapped "this week". Migration
+  0013 splits one-offs from series; the app expands the rule with the one tested
+  implementation rather than growing a second one in SQL. That choice lets a
+  grantee's session obtain the rule text, which is a real departure from a
+  recorded position and is argued in the decisions log.
 - **4 — a device row nothing could revoke.** `/settings` revokes and restores,
   and a revoked device stops advancing its cursor.
 - **7 — a dismissed conflict lost the edit.** Kept, shown on `/sync`, and
@@ -340,9 +399,9 @@ pg_ctlcluster 16 main start    # if Postgres is not already up
 ./scripts/db-test.sh           # 106/106 must be green
 pnpm build                     # also generates the typed-route definitions
 pnpm typecheck                 # needs the build above on a fresh clone
-pnpm test                      # 807 Vitest tests
+pnpm test                      # 816 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm seed && pnpm smoke        # 451 checks; also starts a second server on :3101
+pnpm seed && pnpm smoke        # 455 checks; also starts a second server on :3101
 ```
 
 If Postgres has stopped but the data is still there, start it rather than

@@ -139,25 +139,91 @@ export async function listCalendarItems(
     // way to widen this into "all spaces": the function re-checks the grant.
     Promise.all(
       opaque.map(async (space) => {
-        const rows = await asUser(userId, async (tx) => {
-          return tx<{ startsAt: string; endsAt: string; allDay: boolean }[]>`
-            select starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay"
-            from app.free_busy_blocks(${space.id}::uuid, ${from}, ${to})
-          `;
-        });
-        return rows.map(
-          (r, i): BusyBlock => ({
-            key: `busy:${space.id}:${i}`,
-            startsAt: new Date(r.startsAt).toISOString(),
-            endsAt: new Date(r.endsAt).toISOString(),
-            allDay: r.allDay,
-            space: {
-              id: space.id, name: space.name, shortLabel: space.shortLabel,
-              colour: space.colour, icon: space.icon,
-            },
-            isBusy: true,
+        const ref = {
+          id: space.id, name: space.name, shortLabel: space.shortLabel,
+          colour: space.colour, icon: space.icon,
+        };
+
+        // Two calls, because a repeating event is stored once and expanded on
+        // read. Edge 35: `free_busy_blocks` filtered on the *stored* row's
+        // `starts_at`, so a weekly stand-up whose DTSTART was weeks earlier
+        // never overlapped the window and a grantee saw none of somebody's
+        // recurring commitments at all — an availability view saying "free"
+        // about the busiest hour of the week. Migration 0013 splits the two:
+        // one-offs here, series below, with no row in both.
+        const [singles, series] = await Promise.all([
+          asUser(userId, async (tx) => {
+            return tx<{ startsAt: string; endsAt: string; allDay: boolean }[]>`
+              select starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay"
+              from app.free_busy_blocks(${space.id}::uuid, ${from}, ${to})
+            `;
           }),
-        );
+          asUser(userId, async (tx) => {
+            return tx<
+              {
+                startsAt: string;
+                endsAt: string;
+                allDay: boolean;
+                rrule: string;
+                exdates: string[];
+              }[]
+            >`
+              select starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay",
+                     rrule, exdates
+              from app.free_busy_recurring(${space.id}::uuid, ${from}, ${to})
+            `;
+          }),
+        ]);
+
+        const blocks: BusyBlock[] = singles.map((r, i) => ({
+          key: `busy:${space.id}:${i}`,
+          startsAt: new Date(r.startsAt).toISOString(),
+          endsAt: new Date(r.endsAt).toISOString(),
+          allDay: r.allDay,
+          space: ref,
+          isBusy: true,
+        }));
+
+        // The rule is expanded here and goes no further. `BusyBlock` has no
+        // field it could live in, which is what keeps "anonymous" a property of
+        // the type rather than of somebody remembering — the same reason a
+        // busy block has no id and no title.
+        for (const row of series) {
+          const anchor = new Date(row.startsAt).toISOString();
+          const occurrences = (() => {
+            try {
+              return expandRecurrence({
+                rrule: row.rrule,
+                dtstart: anchor,
+                dtend: new Date(row.endsAt).toISOString(),
+                exdates: row.exdates,
+                from: from.toISOString(),
+                to: to.toISOString(),
+                maxOccurrences: 400,
+              });
+            } catch {
+              // A rule that will not parse must not take the calendar down. The
+              // anchor is a stored fact; showing it is the conservative answer,
+              // and over-reporting busy time is the safe direction here.
+              return [{ startsAt: anchor, endsAt: new Date(row.endsAt).toISOString() }];
+            }
+          })();
+
+          for (const o of occurrences) {
+            blocks.push({
+              // The occurrence's own start makes the key, so two series at the
+              // same minute cannot collide and React never reuses a block.
+              key: `busy:${space.id}:${anchor}:${o.startsAt}`,
+              startsAt: o.startsAt,
+              endsAt: o.endsAt,
+              allDay: row.allDay,
+              space: ref,
+              isBusy: true,
+            });
+          }
+        }
+
+        return blocks;
       }),
     ),
   ]);

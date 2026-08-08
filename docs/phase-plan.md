@@ -275,6 +275,19 @@ was expected, for edge 7, was argued down in `docs/decisions-log.md`.
       back
 - [x] Edge 32: an assignee picker on the task row, still not on the compose bar
 
+### Second pass — before a deployment
+
+The Supabase migrations were applied by hand between the two passes.
+
+- [x] Edge 22 enforced: `AUTH_PROVIDER=dev` on a production build is refused,
+      with an escape hatch `pnpm start` sets and the Dockerfile does not
+- [x] `/health`, which runs `select 1` so a container with a broken
+      `DATABASE_URL` is taken out of rotation rather than serving errors
+- [x] `fly.toml` committed, because two `fly launch` defaults are wrong here
+      and both fail quietly
+- [x] Edge 35 — **migration 0013**, the first schema change since 0012: a
+      recurring event is busy time too
+
 ---
 
 ## Standing rules
