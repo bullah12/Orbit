@@ -7,6 +7,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { Shortcuts } from '@/components/Shortcuts';
 import { THEME_COLOUR, themeAttribute } from '@/lib/prefs';
 import { readTheme } from '@/lib/prefs/cookies';
+import { RegisterServiceWorker } from '@/components/ServiceWorker';
 
 export const metadata: Metadata = {
   title: 'Orbit',
@@ -119,7 +120,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en-GB" data-theme={theme}>
-      <body>{body}</body>
+      <body>
+        {body}
+        {/* Registers after load, and does nothing at all where `serviceWorker`
+            is absent. Outside `body` above so it is present on the sign-in page
+            and the database-down page too — the offline shell is most useful
+            to somebody whose connection is already unreliable. */}
+        <RegisterServiceWorker />
+      </body>
     </html>
   );
 }

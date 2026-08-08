@@ -8,6 +8,7 @@ import { setDefaultSpace, setDeviceRevocation, setTheme, setWeekStart } from '@/
 import { thisDeviceLabel } from '@/lib/sync/device';
 import { THEME_CHOICES, WEEK_STARTS, resolveDefaultSpace } from '@/lib/prefs';
 import { readDefaultSpaceRaw, readTheme, readWeekStart } from '@/lib/prefs/cookies';
+import { ServiceWorkerControl } from '@/components/ServiceWorker';
 
 export const dynamic = 'force-dynamic';
 
@@ -199,6 +200,27 @@ export default async function SettingsPage({
               Save
             </button>
           </form>
+        </section>
+
+        {/* --------------------------------------------------- offline shell */}
+        <section className="hairline border-b px-5 py-4" aria-labelledby="offline-heading">
+          <h2 id="offline-heading" className="text-sm font-semibold">
+            Offline
+          </h2>
+          <p className="muted mt-1 text-xs">
+            Orbit installs to a home screen, and an installed app that shows a
+            network error the moment the signal drops is a worse impression than
+            a bookmark. A service worker keeps the offline page and this build’s
+            static files so there is something to show instead.
+          </p>
+          <p className="muted mt-2 text-xs">
+            It deliberately keeps no page you have visited. Every page is
+            rendered for you specifically, so a stored copy of one could be
+            served to whoever opens this browser next — which is a data leak
+            rather than a convenience. Offline editing is a different mechanism
+            entirely and it is real: see <a href="/sync">Sync</a>.
+          </p>
+          <ServiceWorkerControl />
         </section>
 
         {/* --------------------------------------------------------- devices */}

@@ -3298,12 +3298,342 @@ try {
   // ------------------------------------------------------------- dark mode
   {
     const { ctx, page } = await pageAs(PRIYA);
+    const seen = {};
     for (const scheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: scheme });
       await page.goto('/tasks/all');
       const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+      seen[scheme] = bg;
       check(`the ${scheme} theme applies`, bg !== '', bg);
     }
+    // Session 12 merged the palette into `light-dark()`. Asserting the two are
+    // *different* is what proves the pairs resolve at all — with a broken merge
+    // both schemes would still return a colour and both checks above would pass.
+    check(
+      'and the two schemes are genuinely different colours',
+      seen.light !== seen.dark,
+      `${seen.light} vs ${seen.dark}`,
+    );
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------- settings: theme
+  //
+  // The override, driven the way somebody would: pin a theme while the
+  // operating system is asking for the other one.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+    await page.emulateMedia({ colorScheme: 'light' });
+
+    await page.goto('/settings');
+    check('Settings renders', (await page.locator('h1').first().innerText()) === 'Settings');
+
+    const headings = await page.locator('main h2').allInnerTexts();
+    check(
+      'and carries the four things it is for',
+      ['Theme', 'Week starts on', 'Default space for new items', 'Offline', 'Devices'].every((h) =>
+        headings.includes(h),
+      ),
+      headings.join(' | '),
+    );
+
+    const lightBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+
+    await page.locator('main button[name="theme"][value="dark"]').click();
+    await settle(page);
+    const attr = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    const darkBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check('pinning dark overrides an operating system asking for light', attr === 'dark');
+    check('and the page is actually dark', darkBg !== lightBg, `${lightBg} -> ${darkBg}`);
+
+    // The no-flash requirement, asserted where it is decided rather than by
+    // watching for a flicker: the attribute has to be in the bytes the browser
+    // parses first. An effect or an inline script would set it *after* a paint,
+    // which is the flash.
+    const raw = await page.request.get(`${BASE}/settings`);
+    const html = await raw.text();
+    check(
+      'the choice is in the server’s HTML, so it is applied before first paint',
+      /<html[^>]*data-theme="dark"/.test(html),
+    );
+    check(
+      'and the browser chrome is told the same one colour',
+      /<meta name="theme-color" content="#14161a"\/?>/.test(html) &&
+        !/prefers-color-scheme/.test(html.slice(0, html.indexOf('</head>'))),
+    );
+
+    // Pinned light, with the OS in dark — the same thing the other way round.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.locator('main button[name="theme"][value="light"]').click();
+    await settle(page);
+    const pinnedLight = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check(
+      'pinning light overrides an operating system asking for dark',
+      (await page.evaluate(() => document.documentElement.getAttribute('data-theme'))) === 'light' &&
+        pinnedLight === lightBg,
+      pinnedLight,
+    );
+
+    // Back to system: the attribute goes away entirely rather than becoming a
+    // third value, so the OS is followed again.
+    await page.locator('main button[name="theme"][value="system"]').click();
+    await settle(page);
+    const backToOs = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check(
+      'and system removes the attribute, so the OS is followed again',
+      (await page.evaluate(() => document.documentElement.getAttribute('data-theme'))) === null &&
+        backToOs === darkBg,
+      backToOs,
+    );
+
+    await ctx.close();
+  }
+
+  // -------------------------------------------------- settings: week start
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/calendar/week');
+    const mondayFirst = (await page.locator('main a.day-heading').first().innerText()).replace(
+      /\s+/g,
+      ' ',
+    );
+    check('the week starts on Monday by default', /Mon/.test(mondayFirst), mondayFirst);
+
+    await page.goto('/settings');
+    await page.locator('main button[name="weekStart"][value="sunday"]').click();
+    await settle(page);
+
+    await page.goto('/calendar/week');
+    const sundayFirst = (await page.locator('main a.day-heading').first().innerText()).replace(
+      /\s+/g,
+      ' ',
+    );
+    check('choosing Sunday moves the first column', /Sun/.test(sundayFirst), sundayFirst);
+
+    // The bug this is really about: the query range is cut from the same
+    // preference as the grid. If it were not, the first column of a
+    // Sunday-first week would be outside the range and permanently empty.
+    await page.goto('/calendar/month');
+    const firstHeading = (await page.locator('main .grid-cols-7 > div').first().innerText()).trim();
+    check('and the month grid’s column headings move with it', /Sun/i.test(firstHeading), firstHeading);
+
+    const blocks = await page.locator('main a[href^="/calendar/event/"]').count();
+    check('the month still draws its events after the change', blocks > 0, `${blocks} blocks`);
+
+    await page.goto('/settings');
+    await page.locator('main button[name="weekStart"][value="monday"]').click();
+    await settle(page);
+    await page.goto('/calendar/week');
+    check(
+      'and Monday comes back',
+      /Mon/.test(await page.locator('main a.day-heading').first().innerText()),
+    );
+
+    await ctx.close();
+  }
+
+  // ----------------------------------------- settings: revoking a device
+  //
+  // Edge 4. `devices.revoked_at` has existed since migration 0001 with nothing
+  // ever writing it. What makes revoking more than a label is that a revoked
+  // device stops advancing its sync cursor — asserted here rather than assumed,
+  // by pressing the button that advances it and checking that it did not.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    await page.goto('/sync');
+    const deviceId = await page
+      .locator('form input[name="deviceId"]')
+      .first()
+      .getAttribute('value');
+    check('Sync offers a device to work with', !!deviceId, deviceId ?? 'none');
+
+    const cursorNow = async () => {
+      await page.goto(`/sync?device=${deviceId}`);
+      return (await page.locator('#sync-cursors tbody tr').first().innerText()).replace(/\s+/g, ' ');
+    };
+
+    // Wind it back so "did the cursor move?" has an unambiguous answer.
+    await page.goto(`/sync?device=${deviceId}`);
+    await page.locator('form:has(input[name="deviceId"]) button:has-text("Rewind")').first().click();
+    await settle(page);
+    const rewound = await cursorNow();
+
+    // While active, marking caught up moves it. This is the control: without
+    // it, a cursor that never moves would pass the check below for free.
+    await page.locator('button:has-text("Mark caught up")').first().click();
+    await settle(page);
+    const advanced = await cursorNow();
+    check('an active device advances its cursor when marked caught up', advanced !== rewound,
+      `${rewound} -> ${advanced}`);
+
+    // Rewind again, then revoke, then try to advance it.
+    await page.locator('form:has(input[name="deviceId"]) button:has-text("Rewind")').first().click();
+    await settle(page);
+    const beforeRevoke = await cursorNow();
+
+    await page.goto('/settings');
+    const revokeForm = page.locator(`main form:has(input[value="${deviceId}"])`).first();
+    check('the device has a revoke control on Settings', (await revokeForm.count()) === 1);
+    await revokeForm.locator('button').click();
+    await settle(page);
+
+    const revokedRow = await page
+      .locator(`main li:has(form:has(input[value="${deviceId}"]))`)
+      .first()
+      .innerText();
+    check('and it says so on the row', /revoked/i.test(revokedRow), revokedRow.replace(/\s+/g, ' '));
+
+    await page.goto(`/sync?device=${deviceId}`);
+    await page.locator('button:has-text("Mark caught up")').first().click();
+    await settle(page);
+    const afterRevoke = await cursorNow();
+    check(
+      'a revoked device does not advance its cursor',
+      afterRevoke === beforeRevoke,
+      `${beforeRevoke} -> ${afterRevoke}`,
+    );
+
+    // Restore it, or the next run starts with a revoked device.
+    await page.goto('/settings');
+    await page.locator(`main form:has(input[value="${deviceId}"])`).first().locator('button').click();
+    await settle(page);
+    await page.goto(`/sync?device=${deviceId}`);
+    await page.locator('button:has-text("Mark caught up")').first().click();
+    await settle(page);
+    check('and restoring it lets the cursor move again', (await cursorNow()) !== beforeRevoke);
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------------- the offline shell
+  //
+  // Driven with the network actually disabled in the browser context, rather
+  // than by asserting that a file exists.
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    const sw = await page.request.get(`${BASE}/sw.js`);
+    const swBody = await sw.text();
+    check('a service worker is served from the origin root', sw.status() === 200, `HTTP ${sw.status()}`);
+    check(
+      'and it is scoped to the whole app',
+      (sw.headers()['service-worker-allowed'] ?? '') === '/',
+    );
+    check(
+      'its policy is generated rather than hand-written',
+      swBody.includes('Do not edit') && swBody.includes('"cacheablePrefixes"'),
+    );
+
+    // The offline page carries no user data — it is a route handler, not a
+    // page component, so the sidebar cannot reach it. This is what makes it
+    // safe to hold in a cache indefinitely.
+    const off = await page.request.get(`${BASE}/offline`);
+    const offBody = await off.text();
+    check('the offline page is served', off.status() === 200, `HTTP ${off.status()}`);
+    check(
+      'and it names nothing belonging to the person who cached it',
+      !/Priya|Danny|Home|Work|Sam Okafor/.test(offBody),
+    );
+    check(
+      'and it says what Orbit can and cannot do offline, and links to Sync',
+      /What still works/.test(offBody) &&
+        /What does not/.test(offBody) &&
+        /href="\/sync"/.test(offBody),
+    );
+
+    // Register it for real and wait for it to take control.
+    await page.goto('/tasks/all');
+    const registered = await page.evaluate(async () => {
+      if (!('serviceWorker' in navigator)) return 'absent';
+      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      await navigator.serviceWorker.ready;
+      // The precache is filled during `install`; give it a moment to settle.
+      for (let i = 0; i < 40; i += 1) {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          if (await cache.match('/offline')) return 'ready';
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return reg.active ? 'no-precache' : 'inactive';
+    });
+    check('it registers and precaches the offline page', registered === 'ready', registered);
+
+    check(
+      'and it cached the offline page and nothing of anybody’s',
+      await page.evaluate(async () => {
+        const keys = await caches.keys();
+        const urls = [];
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          for (const req of await cache.keys()) urls.push(new URL(req.url).pathname);
+        }
+        // Only the shell: the offline page, the manifest, and hashed assets.
+        return urls.every(
+          (p) => p === '/offline' || p === '/manifest.webmanifest' || p.startsWith('/_next/static/'),
+        );
+      }),
+    );
+
+    // Now pull the plug.
+    await ctx.setOffline(true);
+    const res = await page.goto('/tasks/all').catch(() => null);
+    const bodyText = await page.locator('body').innerText();
+    check(
+      'with the network gone, a page load lands on the offline page',
+      /Orbit is offline/.test(bodyText),
+      res ? `HTTP ${res.status()}` : 'no response',
+    );
+    check(
+      'which is honest about what does not work, rather than a browser error',
+      /whoever picks the phone up next|What does not/.test(bodyText),
+    );
+    check(
+      'and offers a way back to Sync',
+      (await page.locator('a[href="/sync"]').count()) > 0,
+    );
+
+    // A page that was never cached is still not served from one — the whole
+    // point of the design. Nothing here should have produced a stored copy of
+    // an authenticated page.
+    check(
+      'and no authenticated page was stored while online',
+      await page.evaluate(async () => {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          for (const req of await cache.keys()) {
+            const p = new URL(req.url).pathname;
+            if (p !== '/offline' && p !== '/manifest.webmanifest' && !p.startsWith('/_next/static/')) {
+              return false;
+            }
+          }
+        }
+        return true;
+      }),
+    );
+
+    await ctx.setOffline(false);
+
+    // The escape hatch. A worker with no way out is how an app ships that
+    // cannot be fixed.
+    await page.goto('/settings');
+    const gone = await page.evaluate(async () => {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      regs.forEach((r) => r.active?.postMessage({ type: 'orbit-unregister' }));
+      await Promise.all(regs.map((r) => r.unregister()));
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      return (
+        (await navigator.serviceWorker.getRegistrations()).length === 0 &&
+        (await caches.keys()).length === 0
+      );
+    });
+    check('it can be unregistered, and its caches emptied with it', gone);
+
     await ctx.close();
   }
 } finally {
