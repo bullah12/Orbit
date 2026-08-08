@@ -3522,6 +3522,37 @@ try {
     await ctx.close();
   }
 
+  // ------------------------------------------ the health check and the guard
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    const health = await page.request.get(`${BASE}/health`);
+    const body = await health.json();
+    check(
+      'the health check answers, and it touched the database',
+      health.status() === 200 && body.status === 'ok',
+      `HTTP ${health.status()} ${JSON.stringify(body)}`,
+    );
+    check(
+      'and it says nothing else — it is unauthenticated by necessity',
+      Object.keys(body).length === 1,
+      Object.keys(body).join(', '),
+    );
+
+    // Edge 22. The guard itself is a pure function with its own tests over the
+    // whole matrix; what is checked here is that this build is not the
+    // dangerous one — `pnpm start` sets the escape hatch, so dev auth is live
+    // and the switcher is reachable, which is exactly right locally and is the
+    // thing a deployment must not be.
+    await page.goto('/');
+    check(
+      'this build serves pages rather than refusing, because the hatch is set',
+      !(await page.locator('body').innerText()).includes('will not start'),
+    );
+
+    await ctx.close();
+  }
+
   // --------------------------------------- edge 32: assignment from the row
   {
     const { ctx, page } = await pageAs(PRIYA);

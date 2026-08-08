@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALLOW_DEV_AUTH_ENV,
   accessTokenExpired,
   authProviderName,
+  devAuthRefusal,
   decodeJwtPayloadUnverified,
   displayNameFrom,
   parseTokenResponse,
@@ -228,5 +230,93 @@ describe('where somebody may be sent after signing in', () => {
     expect(safeNextPath(null)).toBe('/');
     expect(safeNextPath(undefined)).toBe('/');
     expect(safeNextPath('')).toBe('/');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edge 22 — dev auth must not reach a public URL
+// ---------------------------------------------------------------------------
+
+/**
+ * The switcher is impersonation by design.
+ *
+ * With `AUTH_PROVIDER=dev` the sidebar lists accounts and becoming any of them
+ * is one click, with no password anywhere. That is exactly right in a container
+ * with three seeded profiles and no credentials, and it is a total compromise
+ * on a public URL. Until session 12 the only thing between the two was a
+ * sentence in `docs/deploy.md` saying "do not" — and **`dev` is the default**,
+ * so the dangerous case is not a typo, it is forgetting to set a variable.
+ *
+ * The whole matrix is asserted because the escape hatch is the risk: a guard
+ * that can be switched off has to be off in exactly one place and on
+ * everywhere else.
+ */
+describe('dev auth is refused on a production build', () => {
+  const env = (over: Record<string, string | undefined>): NodeJS.ProcessEnv =>
+    over as NodeJS.ProcessEnv;
+
+  it('refuses when AUTH_PROVIDER is set to dev', () => {
+    const refusal = devAuthRefusal(env({ AUTH_PROVIDER: 'dev', NODE_ENV: 'production' }));
+    expect(refusal).toBeTruthy();
+    expect(refusal).toContain('set to `dev`');
+  });
+
+  it('refuses when AUTH_PROVIDER is unset, which is the dangerous case', () => {
+    // `dev` is the default, so a deployment that simply never set the variable
+    // is a deployment where anybody can become anybody. The sentence says so
+    // rather than reporting a value nobody chose.
+    const refusal = devAuthRefusal(env({ NODE_ENV: 'production' }));
+    expect(refusal).toBeTruthy();
+    expect(refusal).toContain('unset');
+  });
+
+  it('names what to do instead, not just what is wrong', () => {
+    const refusal = devAuthRefusal(env({ NODE_ENV: 'production' }))!;
+    expect(refusal).toContain('AUTH_PROVIDER=supabase');
+    expect(refusal).toContain(ALLOW_DEV_AUTH_ENV);
+  });
+
+  it('allows the supabase provider, which is the point', () => {
+    expect(devAuthRefusal(env({ AUTH_PROVIDER: 'supabase', NODE_ENV: 'production' }))).toBeNull();
+  });
+
+  it('allows dev auth outside a production build', () => {
+    // The zero-credential guarantee: `pnpm dev`, Vitest and a cold container
+    // must be completely unaffected.
+    for (const nodeEnv of ['development', 'test', undefined]) {
+      expect(devAuthRefusal(env({ AUTH_PROVIDER: 'dev', NODE_ENV: nodeEnv })), nodeEnv).toBeNull();
+      expect(devAuthRefusal(env({ NODE_ENV: nodeEnv })), `unset/${nodeEnv}`).toBeNull();
+    }
+  });
+
+  it('allows it when the escape hatch is set exactly', () => {
+    // `pnpm start` sets this, so the local production run and `pnpm smoke`
+    // still work with no credentials. The Dockerfile does not, and it runs
+    // `node server.js` rather than `pnpm start`, so nothing in package.json
+    // can leak into an image.
+    expect(
+      devAuthRefusal(env({ NODE_ENV: 'production', [ALLOW_DEV_AUTH_ENV]: '1' })),
+    ).toBeNull();
+  });
+
+  it('is not switched off by a nearly-right value', () => {
+    // Fail closed: only the exact string opts out, so a stray 'true' or an
+    // empty assignment leaves the guard on rather than silently disarming it.
+    for (const value of ['true', 'yes', '0', '', ' 1', '1 ', 'TRUE']) {
+      expect(
+        devAuthRefusal(env({ NODE_ENV: 'production', [ALLOW_DEV_AUTH_ENV]: value })),
+        JSON.stringify(value),
+      ).toBeTruthy();
+    }
+  });
+
+  it('does not fire for an unknown provider, which fails its own way', () => {
+    // `authProvider()` throws "Unknown AUTH_PROVIDER" for these, and two
+    // different refusals for one misconfiguration would be a worse message.
+    expect(devAuthRefusal(env({ AUTH_PROVIDER: 'nonsense', NODE_ENV: 'production' }))).toBeNull();
+  });
+
+  it('treats whitespace around dev the way authProviderName does', () => {
+    expect(devAuthRefusal(env({ AUTH_PROVIDER: '  dev  ', NODE_ENV: 'production' }))).toBeTruthy();
   });
 });

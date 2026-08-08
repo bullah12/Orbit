@@ -2,7 +2,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { pool } from '@/lib/db';
-import { authProviderName, usesDevAuth, type SessionUser } from './session';
+import { authProviderName, devAuthRefusal, usesDevAuth, type SessionUser } from './session';
 import { currentSupabaseUser } from './supabase';
 
 /**
@@ -21,7 +21,7 @@ import { currentSupabaseUser } from './supabase';
  */
 
 export type { SessionUser };
-export { authProviderName, usesDevAuth } from './session';
+export { authProviderName, devAuthRefusal, usesDevAuth } from './session';
 
 export interface AuthProvider {
   getCurrentUser(): Promise<SessionUser | null>;
@@ -89,6 +89,15 @@ export function authProvider(): AuthProvider {
       `Unknown AUTH_PROVIDER: ${name}. Known providers: ${Object.keys(providers).join(', ')}.`,
     );
   }
+
+  // Edge 22, enforced rather than warned about. Thrown here rather than only
+  // checked in the layout, because the layout is not the only way in: a server
+  // action, a route handler and `requireUser()` all arrive through this
+  // function, and a guard that only guards the page somebody looks at is not a
+  // guard. `devAuthRefusal` explains the whole rule.
+  const refusal = devAuthRefusal();
+  if (refusal) throw new Error(refusal);
+
   return provider;
 }
 
