@@ -213,6 +213,27 @@ export async function changesSince(
  * re-download. The write is an upsert because the first sync of a new kind on
  * a new device has no row yet.
  */
+/**
+ * Move a device's cursor forward for one kind — unless the device is revoked.
+ *
+ * `select … where exists` rather than `values`, and that is the whole of what
+ * revoking a device *means* on the server. Revoking used to be unrepresentable
+ * (`devices.revoked_at` had existed since migration 0001 with nothing ever
+ * writing it); now that something does, a revoked row must stop being a device
+ * that syncs, or the column would be decoration.
+ *
+ * The guard belongs here rather than in the action, because this is the one
+ * place a cursor moves — `catchUpDevice` and the flush path both come through
+ * it. Written as a guarded insert so the `on conflict do update` is skipped
+ * too: with zero rows produced there is no conflict to resolve, so an existing
+ * cursor is left exactly where it was rather than being bumped.
+ *
+ * It is not a policy and it is not a permission. A revoked device belonging to
+ * somebody who can still write to the space could, in principle, be un-revoked
+ * by its owner from `/settings` — this stops it advancing, it does not pretend
+ * to be a security boundary. The security boundary is `asUser` and the
+ * policies, unchanged.
+ */
 export async function advanceCursor(
   userId: string,
   spaceId: string,
@@ -223,12 +244,77 @@ export async function advanceCursor(
   await asUser(userId, async (tx) => {
     await tx`
       insert into public.sync_cursors (space_id, owner_id, device_id, entity_kind, cursor_at, last_sync_at)
-      values (${spaceId}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${entityKind}::app.entity_kind,
-              ${cursorAt}::timestamptz, now())
+      select ${spaceId}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${entityKind}::app.entity_kind,
+             ${cursorAt}::timestamptz, now()
+       where exists (
+         select 1 from public.devices
+          where id = ${deviceId}::uuid and revoked_at is null
+       )
       on conflict (space_id, device_id, entity_kind) do update
         set cursor_at    = greatest(public.sync_cursors.cursor_at, excluded.cursor_at),
             last_sync_at = now()
     `;
+  });
+}
+
+/**
+ * Revoke a device, or restore one — edge 4, and the first write `revoked_at`
+ * has ever had.
+ *
+ * `where owner_id = ` on top of the policy, deliberately, and it is the one
+ * place in this file that narrows past what RLS allows. `listDevices` shows a
+ * partner's device in a shared space on purpose, so that "that laptop is three
+ * days behind" is answerable — but *seeing* somebody's device is not *ending*
+ * it. Revoking is an act on your own hardware, so it is scoped to the owner in
+ * the statement as well as by the policy behind it.
+ *
+ * Returns the rows it changed, so the caller can tell "revoked" from "that was
+ * not yours" rather than reporting success either way.
+ */
+export async function setDeviceRevoked(
+  userId: string,
+  deviceId: string,
+  revoked: boolean,
+): Promise<DeviceRow[]> {
+  return asUser(userId, async (tx) => {
+    return tx<DeviceRow[]>`
+      update public.devices d
+         set revoked_at = ${revoked ? tx`now()` : tx`null`}
+        from public.spaces s
+       where d.id = ${deviceId}::uuid
+         and d.owner_id = ${userId}::uuid
+         and s.id = d.space_id
+      returning
+        d.id, d.label, d.platform,
+        d.space_id     as "spaceId",
+        d.last_seen_at as "lastSeenAt",
+        d.revoked_at   as "revokedAt",
+        jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
+                           'colour', s.colour, 'icon', s.icon) as space
+    `;
+  });
+}
+
+/**
+ * Every row that is this browser, across its spaces.
+ *
+ * One browser is one row per space, keyed `(space_id, owner_id, label)`, so
+ * revoking "this laptop" is a set of rows and not one — and a person who
+ * revokes their laptop from their laptop should not find it half revoked.
+ */
+export async function setDeviceRevokedByLabel(
+  userId: string,
+  label: string,
+  revoked: boolean,
+): Promise<number> {
+  return asUser(userId, async (tx) => {
+    const rows = await tx<{ id: string }[]>`
+      update public.devices
+         set revoked_at = ${revoked ? tx`now()` : tx`null`}
+       where owner_id = ${userId}::uuid and label = ${label}
+      returning id
+    `;
+    return rows.length;
   });
 }
 

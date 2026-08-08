@@ -28,39 +28,65 @@
   --radius-lg: 0.5rem;
 }
 
+/* Every colour token holds both its values, light first, in `light-dark()`.
+   The two were a `:root` block and a `@media (prefers-color-scheme: dark)`
+   block until session 12; merging them is what makes a *manual* light/dark
+   override possible, because forcing a theme is then one `color-scheme` line
+   (see `[data-theme]` below) rather than sixty duplicated declarations that
+   drift apart. `docs/design-review.md` sets out the two options and what each
+   costs; this is the one it recommends.
+
+   The merge cost the comments that used to sit beside the dark values on their
+   own. They are carried here rather than dropped, because each records a
+   decision that is not obvious from the number:
+
+   - **The dark surfaces are not an inversion.** Dark rows separate by a wider
+     luminance step than light ones, because a hairline carries less on a dark
+     substrate than it does on a light one.
+   - **Dark chips are light text on a dark tint** — the same relationship,
+     flipped. Chroma is held near the light values so a space keeps its identity
+     when the OS switches at sunset.
+   - **Water goes below `--bg` and land above it** in dark, so the coastline
+     still reads when the whole app is dark and the map is the brightest thing
+     on screen. In light they sit the other way round.
+
+   `tests/contrast.test.ts` reads both halves of every pair out of this file and
+   computes real WCAG ratios for each theme. It also asserts the two halves
+   differ, so a merge that quietly checked one theme twice fails. */
+
 :root {
   color-scheme: light dark;
 
   /* Chrome stays greyscale, but not literally neutral: a trace of blue keeps
      white surfaces from going yellow next to the category chips. */
-  --bg:            oklch(98.6% 0.002 265);
-  --bg-raised:     oklch(100% 0 0);
-  --bg-sunken:     oklch(96.2% 0.004 265);
-  --bg-hover:      oklch(94.6% 0.005 265);
+  --bg:           light-dark(oklch(98.6% 0.002 265), oklch(16.5% 0.008 265));
+  --bg-raised:    light-dark(oklch(100% 0 0), oklch(21% 0.010 265));
+  --bg-sunken:    light-dark(oklch(96.2% 0.004 265), oklch(13% 0.007 265));
+  --bg-hover:     light-dark(oklch(94.6% 0.005 265), oklch(26% 0.012 265));
 
-  --text:          oklch(22% 0.014 265);
-  --text-muted:    oklch(47.5% 0.013 265);
-  --text-faint:    oklch(60% 0.012 265);
+  --text:         light-dark(oklch(22% 0.014 265), oklch(95% 0.004 265));
+  --text-muted:   light-dark(oklch(47.5% 0.013 265), oklch(74% 0.009 265));
+  --text-faint:   light-dark(oklch(60% 0.012 265), oklch(60% 0.010 265));
 
-  --line:          oklch(89% 0.006 265);
-  --line-strong:   oklch(80% 0.010 265);
+  --line:         light-dark(oklch(89% 0.006 265), oklch(30% 0.010 265));
+  --line-strong:  light-dark(oklch(80% 0.010 265), oklch(40% 0.012 265));
 
-  --accent:        oklch(48% 0.14 258);
-  --accent-text:   oklch(100% 0 0);
+  --accent:       light-dark(oklch(48% 0.14 258), oklch(76% 0.12 258));
+  --accent-text:  light-dark(oklch(100% 0 0), oklch(16.5% 0.008 265));
 
   /* Status is not category. Borrowing amber for a warning made one colour mean
      both "Work" and "careful", which is one meaning too many. */
-  --danger:        oklch(47% 0.20 25);
-  --danger-bg:     oklch(95% 0.035 25);
-  --warning:       oklch(47% 0.12 70);
-  --warning-bg:    oklch(95.5% 0.045 70);
-  --success:       oklch(45% 0.12 155);
-  --success-bg:    oklch(95% 0.035 155);
+  --danger:       light-dark(oklch(47% 0.20 25), oklch(74% 0.15 25));
+  --danger-bg:    light-dark(oklch(95% 0.035 25), oklch(30% 0.06 25));
+  --warning:      light-dark(oklch(47% 0.12 70), oklch(80% 0.11 70));
+  --warning-bg:   light-dark(oklch(95.5% 0.045 70), oklch(31% 0.055 70));
+  --success:      light-dark(oklch(45% 0.12 155), oklch(78% 0.12 155));
+  --success-bg:   light-dark(oklch(95% 0.035 155), oklch(29% 0.05 155));
 
   /* The focus ring is measured against the halo, never against whatever it
      happens to be sitting on. That is what makes it safe on a chip fill. */
-  --focus-ring:    oklch(48% 0.14 258);
-  --focus-halo:    oklch(100% 0 0);
+  --focus-ring:   light-dark(oklch(48% 0.14 258), oklch(76% 0.12 258));
+  --focus-halo:   light-dark(oklch(100% 0 0), oklch(21% 0.010 265));
 
   --radius:        0.5rem;
 
@@ -90,47 +116,23 @@
   /* Map surfaces. Land and water are chrome, not category colour: they are
      greyscale plus the smallest amount of blue that still says "sea", because
      ten category pins have to sit on top of them and stay legible. */
-  --map-water:     oklch(97% 0.008 235);
-  --map-land:      oklch(93.7% 0.004 265);
-  --map-line:      oklch(84.5% 0.006 265);
+  --map-water:    light-dark(oklch(97% 0.008 235), oklch(12% 0.012 235));
+  --map-land:     light-dark(oklch(93.7% 0.004 265), oklch(25.5% 0.008 265));
+  --map-line:     light-dark(oklch(84.5% 0.006 265), oklch(38.5% 0.010 265));
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Not an inversion. Dark rows separate by a wider luminance step because a
-       hairline carries less on a dark substrate than it does on a light one. */
-    --bg:          oklch(16.5% 0.008 265);
-    --bg-raised:   oklch(21% 0.010 265);
-    --bg-sunken:   oklch(13% 0.007 265);
-    --bg-hover:    oklch(26% 0.012 265);
+/* The manual override, and the whole of what it costs.
 
-    --text:        oklch(95% 0.004 265);
-    --text-muted:  oklch(74% 0.009 265);
-    --text-faint:  oklch(60% 0.010 265);
+   `color-scheme` is what `light-dark()` resolves against, so pinning it to one
+   keyword picks the other half of every pair in one line. `only` is deliberate:
+   plain `light` still lets a user-agent honour a dark preference for form
+   controls and scrollbars, which would leave a person who chose light with dark
+   widgets on a light page.
 
-    --line:        oklch(30% 0.010 265);
-    --line-strong: oklch(40% 0.012 265);
-
-    --accent:      oklch(76% 0.12 258);
-    --accent-text: oklch(16.5% 0.008 265);
-
-    --danger:      oklch(74% 0.15 25);
-    --danger-bg:   oklch(30% 0.06 25);
-    --warning:     oklch(80% 0.11 70);
-    --warning-bg:  oklch(31% 0.055 70);
-    --success:     oklch(78% 0.12 155);
-    --success-bg:  oklch(29% 0.05 155);
-
-    --focus-ring:  oklch(76% 0.12 258);
-    --focus-halo:  oklch(21% 0.010 265);
-
-    /* Water goes below --bg and land above it, so the coastline still reads when
-       the whole app is dark and the map is the brightest thing on screen. */
-    --map-water:   oklch(12% 0.012 235);
-    --map-land:    oklch(25.5% 0.008 265);
-    --map-line:    oklch(38.5% 0.010 265);
-  }
-}
+   No token is redeclared here. That is the point of the merge — there is no
+   second copy of the palette to drift out of step with the first. */
+:root[data-theme='light'] { color-scheme: only light; }
+:root[data-theme='dark']  { color-scheme: only dark; }
 
 /* The ten names are database values (spaces.colour, categories.colour), so they
    are fixed. What changed is their spacing: hues are now 27-40 degrees apart
@@ -138,34 +140,26 @@
    collapse under deuteranopia - emerald/lime, rose/orange, indigo/violet - also
    differ in lightness, so they stay told apart when hue stops helping. */
 :root {
-  --c-rose:     oklch(50% 0.17 18);      --c-rose-bg:     oklch(94.5% 0.035 18);
-  --c-orange:   oklch(51.5% 0.145 52);   --c-orange-bg:   oklch(95% 0.045 52);
-  --c-amber:    oklch(50.5% 0.125 88);   --c-amber-bg:    oklch(95% 0.05 88);
-  --c-lime:     oklch(50.5% 0.14 128);   --c-lime-bg:     oklch(95% 0.05 128);
-  --c-emerald:  oklch(47.5% 0.12 162);   --c-emerald-bg:  oklch(94.5% 0.04 162);
-  --c-sky:      oklch(50.5% 0.13 228);   --c-sky-bg:      oklch(94.5% 0.04 228);
-  --c-indigo:   oklch(46.5% 0.16 268);   --c-indigo-bg:   oklch(94.5% 0.04 268);
-  --c-violet:   oklch(52.5% 0.17 300);   --c-violet-bg:   oklch(94.5% 0.04 300);
-  --c-fuchsia:  oklch(50.5% 0.19 338);   --c-fuchsia-bg:  oklch(94.5% 0.045 338);
-  --c-slate:    oklch(48.5% 0.018 265);  --c-slate-bg:    oklch(93.5% 0.006 265);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Dark chips are light text on a dark tint - the same relationship, flipped.
-       Chroma is held near the light values so a space keeps its identity when
-       the OS switches at sunset. */
-    --c-rose:     oklch(75.5% 0.14 18);     --c-rose-bg:     oklch(31.5% 0.055 18);
-    --c-orange:   oklch(80% 0.12 52);       --c-orange-bg:   oklch(32.5% 0.055 52);
-    --c-amber:    oklch(83.5% 0.13 88);     --c-amber-bg:    oklch(33% 0.06 88);
-    --c-lime:     oklch(85.5% 0.16 128);    --c-lime-bg:     oklch(33% 0.06 128);
-    --c-emerald:  oklch(77.5% 0.135 162);   --c-emerald-bg:  oklch(31% 0.05 162);
-    --c-sky:      oklch(79% 0.11 228);      --c-sky-bg:      oklch(30.5% 0.05 228);
-    --c-indigo:   oklch(73.5% 0.13 268);    --c-indigo-bg:   oklch(30% 0.055 268);
-    --c-violet:   oklch(78.5% 0.13 300);    --c-violet-bg:   oklch(31.5% 0.055 300);
-    --c-fuchsia:  oklch(77% 0.15 338);      --c-fuchsia-bg:  oklch(32% 0.06 338);
-    --c-slate:    oklch(73.5% 0.018 265);   --c-slate-bg:    oklch(28.5% 0.008 265);
-  }
+  --c-rose:       light-dark(oklch(50% 0.17 18), oklch(75.5% 0.14 18));
+  --c-rose-bg:    light-dark(oklch(94.5% 0.035 18), oklch(31.5% 0.055 18));
+  --c-orange:     light-dark(oklch(51.5% 0.145 52), oklch(80% 0.12 52));
+  --c-orange-bg:  light-dark(oklch(95% 0.045 52), oklch(32.5% 0.055 52));
+  --c-amber:      light-dark(oklch(50.5% 0.125 88), oklch(83.5% 0.13 88));
+  --c-amber-bg:   light-dark(oklch(95% 0.05 88), oklch(33% 0.06 88));
+  --c-lime:       light-dark(oklch(50.5% 0.14 128), oklch(85.5% 0.16 128));
+  --c-lime-bg:    light-dark(oklch(95% 0.05 128), oklch(33% 0.06 128));
+  --c-emerald:    light-dark(oklch(47.5% 0.12 162), oklch(77.5% 0.135 162));
+  --c-emerald-bg: light-dark(oklch(94.5% 0.04 162), oklch(31% 0.05 162));
+  --c-sky:        light-dark(oklch(50.5% 0.13 228), oklch(79% 0.11 228));
+  --c-sky-bg:     light-dark(oklch(94.5% 0.04 228), oklch(30.5% 0.05 228));
+  --c-indigo:     light-dark(oklch(46.5% 0.16 268), oklch(73.5% 0.13 268));
+  --c-indigo-bg:  light-dark(oklch(94.5% 0.04 268), oklch(30% 0.055 268));
+  --c-violet:     light-dark(oklch(52.5% 0.17 300), oklch(78.5% 0.13 300));
+  --c-violet-bg:  light-dark(oklch(94.5% 0.04 300), oklch(31.5% 0.055 300));
+  --c-fuchsia:    light-dark(oklch(50.5% 0.19 338), oklch(77% 0.15 338));
+  --c-fuchsia-bg: light-dark(oklch(94.5% 0.045 338), oklch(32% 0.06 338));
+  --c-slate:      light-dark(oklch(48.5% 0.018 265), oklch(73.5% 0.018 265));
+  --c-slate-bg:   light-dark(oklch(93.5% 0.006 265), oklch(28.5% 0.008 265));
 }
 
 /* From `md` up the bottom bar is not rendered, so nothing has to be cleared. */

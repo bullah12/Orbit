@@ -5,6 +5,8 @@ import { listSpaces } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
 import { Sidebar } from '@/components/Sidebar';
 import { Shortcuts } from '@/components/Shortcuts';
+import { THEME_COLOUR, themeAttribute } from '@/lib/prefs';
+import { readTheme } from '@/lib/prefs/cookies';
 
 export const metadata: Metadata = {
   title: 'Orbit',
@@ -20,21 +22,44 @@ export const metadata: Metadata = {
  *
  * The two theme colours match `--bg` in each scheme so the browser chrome does
  * not sit as a bright band above a dark app.
+ *
+ * `generateViewport` rather than a constant, because the theme is now a choice.
+ * A person who has pinned dark and whose phone is in light mode would otherwise
+ * get a pale status bar above a dark app — the media-query form answers the OS,
+ * and once there is an override the OS is no longer the authority. Pinned, one
+ * colour is emitted and no media query; on "system" both are, exactly as
+ * before. The page is `force-dynamic` already, so reading a cookie here costs
+ * nothing that was not already being paid.
  */
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  viewportFit: 'cover',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f9fafb' },
-    { media: '(prefers-color-scheme: dark)', color: '#14161a' },
-  ],
-};
+export async function generateViewport(): Promise<Viewport> {
+  const theme = await readTheme();
+  const base = { width: 'device-width', initialScale: 1, viewportFit: 'cover' } as const;
+
+  if (theme === 'light' || theme === 'dark') {
+    return { ...base, themeColor: THEME_COLOUR[theme] };
+  }
+  return {
+    ...base,
+    themeColor: [
+      { media: '(prefers-color-scheme: light)', color: THEME_COLOUR.light },
+      { media: '(prefers-color-scheme: dark)', color: THEME_COLOUR.dark },
+    ],
+  };
+}
 
 export const dynamic = 'force-dynamic';
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   let body: React.ReactNode;
+
+  // Read before anything else, and rendered onto <html> below. This is the
+  // whole of "no flash on load": the attribute is in the markup the browser
+  // first parses, so the correct palette is resolved at first paint. There is
+  // deliberately no effect, no inline script and no `localStorage` read — each
+  // of those runs *after* something has already been painted, which is the
+  // flash. Reading it outside the try/catch keeps the database-down page on the
+  // chosen theme too.
+  const theme = themeAttribute(await readTheme());
 
   try {
     // getCurrentUser rather than requireUser: with a real provider, "nobody is
@@ -93,7 +118,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   }
 
   return (
-    <html lang="en-GB">
+    <html lang="en-GB" data-theme={theme}>
       <body>{body}</body>
     </html>
   );

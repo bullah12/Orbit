@@ -6,6 +6,8 @@ import { TaskRow } from '@/components/TaskRow';
 import { ComposeTask } from '@/components/ComposeTask';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { plural } from '@/lib/format';
+import { resolveDefaultSpace } from '@/lib/prefs';
+import { readDefaultSpaceRaw } from '@/lib/prefs/cookies';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,11 +23,24 @@ export default async function TaskListPage({
   if (!isSmartListKey(list)) notFound();
 
   const user = await requireUser();
-  const [spaces, categories, tasks] = await Promise.all([
+  const [spaces, categories, tasks, preferredSpaceRaw] = await Promise.all([
     listSpaces(user.id),
     categoriesBySpace(user.id),
     listTasks(user.id, list, { spaceId: spaceId ?? null }),
+    readDefaultSpaceRaw(),
   ]);
+
+  // Standing in a space wins over the preference: `?space=` means somebody
+  // opened that space's own list, and a new task there belongs there. The
+  // preference is the fallback for the nine smart lists, which span spaces and
+  // so have nothing better to offer than "the first writable one".
+  //
+  // Re-validated on every read against the spaces this caller can *write*, so a
+  // cookie naming a space they have since left falls back rather than failing.
+  const preferredSpace = resolveDefaultSpace(
+    preferredSpaceRaw,
+    spaces.filter((s) => s.canWrite).map((s) => s.id),
+  );
 
   const meta = SMART_LISTS[list];
   const activeSpace = spaces.find((s) => s.id === spaceId);
@@ -41,7 +56,11 @@ export default async function TaskListPage({
         <p className="muted mt-0.5 text-xs">{meta.blurb}</p>
       </header>
 
-      <ComposeTask spaces={spaces} categories={categories} defaultSpaceId={spaceId} />
+      <ComposeTask
+        spaces={spaces}
+        categories={categories}
+        defaultSpaceId={spaceId ?? preferredSpace ?? undefined}
+      />
 
       {tasks.length === 0 ? (
         <p className="faint px-5 py-10 text-sm">Nothing here.</p>

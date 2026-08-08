@@ -16,6 +16,8 @@ import {
 import { formatDate, plural, type DateOnly } from '@/lib/format';
 import { DayColumns } from '@/components/calendar/DayColumns';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
+import { type WeekStart } from '@/lib/prefs';
+import { readWeekStart } from '@/lib/prefs/cookies';
 import { ComposeEvent } from '@/components/ComposeEvent';
 import { Icon } from '@/components/Icon';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
@@ -47,7 +49,9 @@ export default async function CalendarPage({
   const today = todayFor();
   const anchor = normaliseDate(date) ?? today;
 
-  const { from, to } = viewRange(view, anchor);
+  const weekStart = await readWeekStart();
+
+  const { from, to } = viewRange(view, anchor, weekStart);
   const [spaces, items, categories, calendars] = await Promise.all([
     listSpaces(user.id),
     listCalendarItems(user.id, from, to),
@@ -55,7 +59,10 @@ export default async function CalendarPage({
     listCalendarsBySpace(user.id),
   ]);
 
-  const days = view === 'month' ? monthGrid(anchor).flat() : view === 'week' ? weekDays(anchor) : [anchor];
+  const days =
+    view === 'month' ? monthGrid(anchor, weekStart).flat()
+    : view === 'week' ? weekDays(anchor, weekStart)
+    : [anchor];
   const opaque = spaces.filter((s) => !s.canRead);
   const busyCount = items.filter((i) => i.isBusy).length;
 
@@ -63,7 +70,7 @@ export default async function CalendarPage({
     <div className="flex h-screen flex-col">
       <header className="hairline flex flex-wrap items-center gap-3 border-b px-5 py-3">
         <div>
-          <h1 className="text-lg font-semibold">{titleFor(view, anchor)}</h1>
+          <h1 className="text-lg font-semibold">{titleFor(view, anchor, weekStart)}</h1>
           <p className="muted mt-0.5 text-xs">
             {plural(items.length - busyCount, 'event')}
             {busyCount > 0 && `, ${plural(busyCount, 'busy block')}`}
@@ -145,7 +152,7 @@ export default async function CalendarPage({
       )}
 
       {view === 'month' ? (
-        <MonthGrid anchor={anchor} items={items} today={today} />
+        <MonthGrid anchor={anchor} items={items} today={today} weekStart={weekStart} />
       ) : (
         <DayColumns days={days} items={items} today={today} view={view} />
       )}
@@ -186,14 +193,14 @@ function PeriodLink({
   );
 }
 
-function titleFor(view: CalendarView, anchor: DateOnly): string {
+function titleFor(view: CalendarView, anchor: DateOnly, weekStart: WeekStart): string {
   if (view === 'day') return formatDate(anchor);
   if (view === 'month') {
     return new Intl.DateTimeFormat('en-GB', {
       timeZone: 'UTC', month: 'long', year: 'numeric',
     }).format(new Date(`${anchor}T00:00:00Z`));
   }
-  const days = weekDays(anchor);
+  const days = weekDays(anchor, weekStart);
   const fmt = (iso: DateOnly, withYear: boolean) =>
     new Intl.DateTimeFormat('en-GB', {
       timeZone: 'UTC', day: 'numeric', month: 'short',

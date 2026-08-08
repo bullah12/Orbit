@@ -24,6 +24,7 @@ import {
   startOfWeekISO,
   type DateOnly,
 } from '@/lib/format';
+import { DEFAULT_WEEK_START, type WeekStart } from '@/lib/prefs';
 
 export const CALENDAR_VIEWS = ['day', 'week', 'month'] as const;
 export type CalendarView = (typeof CALENDAR_VIEWS)[number];
@@ -45,23 +46,37 @@ export type TimedItem = {
 // Ranges
 // ---------------------------------------------------------------------------
 
-/** Monday-first, UK convention (decision: UK conventions throughout). */
-export function weekDays(anchor: DateOnly): DateOnly[] {
-  const monday = startOfWeekISO(anchor);
-  return Array.from({ length: 7 }, (_, i) => addDaysISO(monday, i));
+/**
+ * The seven days of the anchor's week.
+ *
+ * Monday-first by default — UK conventions throughout, a settled decision — and
+ * the `start` parameter is a *layout* preference read from a cookie, nothing
+ * more. It changes where a grid is cut, never what a stored event does.
+ *
+ * That distinction is the reason this takes a parameter rather than reading the
+ * preference itself. `src/lib/recurrence.ts` has its own `weekStart`, driven by
+ * the rule's `WKST` — an RFC 5545 property of the rule, which decides which
+ * occurrences a weekly rule actually has. If a viewer's preference reached that
+ * code, changing this setting would silently move somebody's repeating events,
+ * which is not a display change at all. The two are kept apart by construction:
+ * recurrence never calls this.
+ */
+export function weekDays(anchor: DateOnly, start: WeekStart = DEFAULT_WEEK_START): DateOnly[] {
+  const first = startOfWeekISO(anchor, start);
+  return Array.from({ length: 7 }, (_, i) => addDaysISO(first, i));
 }
 
 /**
- * Six Monday-first weeks covering the anchor's month.
+ * Six weeks covering the anchor's month, cut on the preferred start day.
  *
  * Always six rows, never five: a grid that changes height as you page through
  * the year makes the whole view jump, and a dense interface should sit still.
  */
-export function monthGrid(anchor: DateOnly): DateOnly[][] {
+export function monthGrid(anchor: DateOnly, start: WeekStart = DEFAULT_WEEK_START): DateOnly[][] {
   const first = `${anchor.slice(0, 7)}-01`;
-  const start = startOfWeekISO(first);
+  const from = startOfWeekISO(first, start);
   return Array.from({ length: 6 }, (_, w) =>
-    Array.from({ length: 7 }, (_, d) => addDaysISO(start, w * 7 + d)),
+    Array.from({ length: 7 }, (_, d) => addDaysISO(from, w * 7 + d)),
   );
 }
 
@@ -69,16 +84,27 @@ export function monthOf(iso: DateOnly): string {
   return iso.slice(0, 7);
 }
 
-/** The instants a view covers, as [from, to). What the query asks Postgres for. */
-export function viewRange(view: CalendarView, anchor: DateOnly): { from: Date; to: Date } {
+/**
+ * The instants a view covers, as [from, to). What the query asks Postgres for.
+ *
+ * Takes the same week start as the grid it is fetching for, and must: a range
+ * cut on Monday behind a grid drawn from Sunday would query six days the view
+ * never shows and miss the one it does, so the first column of a Sunday-first
+ * week would be permanently empty.
+ */
+export function viewRange(
+  view: CalendarView,
+  anchor: DateOnly,
+  start: WeekStart = DEFAULT_WEEK_START,
+): { from: Date; to: Date } {
   if (view === 'day') {
     return { from: londonMidnight(anchor), to: londonMidnight(addDaysISO(anchor, 1)) };
   }
   if (view === 'week') {
-    const days = weekDays(anchor);
+    const days = weekDays(anchor, start);
     return { from: londonMidnight(days[0]!), to: londonMidnight(addDaysISO(days[6]!, 1)) };
   }
-  const grid = monthGrid(anchor);
+  const grid = monthGrid(anchor, start);
   return {
     from: londonMidnight(grid[0]![0]!),
     to: londonMidnight(addDaysISO(grid[5]![6]!, 1)),

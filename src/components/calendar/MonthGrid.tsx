@@ -1,12 +1,17 @@
 import Link from 'next/link';
 import { byDay, monthGrid, monthOf } from '@/lib/calendar';
 import { plural, type DateOnly } from '@/lib/format';
+import { DEFAULT_WEEK_START, type WeekStart } from '@/lib/prefs';
 import type { CalendarItem } from '@/lib/queries/events';
 import { EventBlock } from './EventBlock';
 
 /**
- * The month view. Six Monday-first rows, always — a grid that changes height
- * as you page through the year makes the whole page jump.
+ * The month view. Six rows, always — a grid that changes height as you page
+ * through the year makes the whole page jump.
+ *
+ * `weekStart` cuts the rows and rotates the column headings together, from one
+ * value, so the labels cannot end up describing a different grid from the one
+ * drawn beneath them.
  *
  * A cell shows at most three blocks and then says how many more there are,
  * linking to that day. Truncating without saying so is how a calendar quietly
@@ -18,17 +23,21 @@ export function MonthGrid({
   anchor,
   items,
   today,
+  weekStart = DEFAULT_WEEK_START,
 }: {
   anchor: DateOnly;
   items: CalendarItem[];
   today: DateOnly;
+  weekStart?: WeekStart;
 }) {
-  const weeks = monthGrid(anchor);
+  const weeks = monthGrid(anchor, weekStart);
   const days = weeks.flat();
   const grouped = byDay(items, days);
   const thisMonth = monthOf(anchor);
 
-  const headings = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  // Rotated rather than written twice: one list, cut where the week is cut.
+  const NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const headings = weekStart === 'sunday' ? [NAMES[6]!, ...NAMES.slice(0, 6)] : NAMES;
 
   return (
     <div className="flex flex-1 flex-col overflow-auto">

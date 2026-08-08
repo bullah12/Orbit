@@ -27,51 +27,41 @@ const css = readFileSync(
 );
 
 /**
- * Every `@media (prefers-color-scheme: dark)` region, by brace matching.
+ * Both halves of every `light-dark()` pair.
  *
- * The tokens are declared in several passes — base colours, then category
- * colours, each with its own dark override — so "everything after the first
- * media query is dark" is wrong. The ranges have to be found properly.
+ * Session 12 merged the `:root` block and its
+ * `@media (prefers-color-scheme: dark)` counterpart into one declaration per
+ * token — `light-dark(<light>, <dark>)` — so that the manual theme override is
+ * a `color-scheme` line rather than a second copy of the palette. This used to
+ * brace-match the media query and treat every `oklch()` outside it as a light
+ * value; now the pair *is* the source of both themes, which is the simpler
+ * reading the review predicted.
+ *
+ * The danger of this shape is the opposite of the old one: a parse that quietly
+ * returned the same half twice would still produce two passing themes and check
+ * nothing. `both halves are really different` below is the guard against that,
+ * and `no token escapes the pair` is the guard against a token being added
+ * later in the old single-value style and being silently read as both.
  */
-function darkRanges(source: string): [number, number][] {
-  const ranges: [number, number][] = [];
-  const marker = '@media (prefers-color-scheme: dark)';
-  let from = 0;
-  for (;;) {
-    const at = source.indexOf(marker, from);
-    if (at === -1) break;
-    const open = source.indexOf('{', at);
-    let depth = 0;
-    let i = open;
-    for (; i < source.length; i += 1) {
-      if (source[i] === '{') depth += 1;
-      else if (source[i] === '}') {
-        depth -= 1;
-        if (depth === 0) break;
-      }
-    }
-    ranges.push([open, i]);
-    from = i;
-  }
-  return ranges;
-}
-
-const DARK = darkRanges(css);
-
-function tokensFor(theme: 'light' | 'dark'): Record<string, string> {
-  const out: Record<string, string> = {};
-  const re = /(--[a-z0-9-]+):\s*(oklch\([^)]*\))/gi;
+function tokenPairs(source: string): { light: Record<string, string>; dark: Record<string, string> } {
+  const light: Record<string, string> = {};
+  const dark: Record<string, string> = {};
+  const re = /(--[a-z0-9-]+):\s*light-dark\(\s*(oklch\([^)]*\))\s*,\s*(oklch\([^)]*\))\s*\)/gi;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(css)) !== null) {
-    const inDark = DARK.some(([a, b]) => m!.index > a && m!.index < b);
+  while ((m = re.exec(source)) !== null) {
     // Later declarations win, which is how the cascade would resolve them.
-    if (theme === 'dark' ? inDark : !inDark) out[m[1]!] = m[2]!;
+    light[m[1]!] = m[2]!;
+    dark[m[1]!] = m[3]!;
   }
-  return out;
+  return { light, dark };
 }
 
-const light = tokensFor('light');
-const dark = tokensFor('dark');
+/** A colour token declared as a single value, which `light-dark()` would skip. */
+function unpairedTokens(source: string): string[] {
+  return [...source.matchAll(/(--[a-z0-9-]+):\s*oklch\([^)]*\)\s*;/gi)].map((m) => m[1]!);
+}
+
+const { light, dark } = tokenPairs(css);
 
 const THEMES: [string, Record<string, string>][] = [
   ['light', light],
@@ -111,6 +101,50 @@ describe('both themes define every token', () => {
 
   it.each(THEMES)('%s', (_name, tokens) => {
     for (const key of REQUIRED) expect(tokens).toHaveProperty(key);
+  });
+
+  it('declares exactly the same token names in each', () => {
+    expect(Object.keys(light).sort()).toEqual(Object.keys(dark).sort());
+  });
+});
+
+/**
+ * The guard on the merge itself.
+ *
+ * Everything below measures `light` against `light` and `dark` against `dark`.
+ * If the parse ever returned the same half twice — a regex that dropped the
+ * second argument, a token written with one value instead of a pair — every
+ * ratio would still be computed and every assertion would still pass, while the
+ * suite silently checked one theme twice. That is worse than having no contrast
+ * test, because it reads as coverage. These two are what make the rest mean
+ * something.
+ */
+describe('the two themes are really two themes', () => {
+  it('found a pair for every token', () => {
+    expect(Object.keys(light).length).toBeGreaterThan(40);
+  });
+
+  it('both halves are really different', () => {
+    const same = Object.keys(light).filter((k) => light[k] === dark[k]);
+    expect(same, 'tokens whose light and dark values are identical').toEqual([]);
+  });
+
+  it('no token escapes the pair into a single value', () => {
+    // A `--x: oklch(...)` added later would be invisible to `tokenPairs` and so
+    // would be checked in neither theme.
+    expect(unpairedTokens(css)).toEqual([]);
+  });
+
+  it('the manual override pins color-scheme rather than redeclaring the palette', () => {
+    expect(css).toContain("[data-theme='light'] { color-scheme: only light; }");
+    expect(css).toContain("[data-theme='dark']  { color-scheme: only dark; }");
+    // The old shape is gone: no media query may redeclare a colour token, or
+    // the override would not reach it. Checked against the stylesheet with its
+    // comments stripped, because the comment above the merged tokens names the
+    // media query it replaced.
+    expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain(
+      '@media (prefers-color-scheme: dark)',
+    );
   });
 });
 

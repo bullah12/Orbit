@@ -5,6 +5,8 @@
  * being formatted anywhere else in the codebase, that is the bug.
  */
 
+import { DEFAULT_WEEK_START, weekStartOffset, type WeekStart } from '@/lib/prefs';
+
 export const TZ = 'Europe/London';
 export const LOCALE = 'en-GB';
 
@@ -176,10 +178,16 @@ export function weekdayOf(iso: DateOnly): number {
   return new Date(`${iso.slice(0, 10)}T00:00:00Z`).getUTCDay();
 }
 
-/** Monday-first, UK convention. Returns the ISO date of that week's Monday. */
-export function startOfWeekISO(iso: DateOnly): DateOnly {
-  const back = (weekdayOf(iso) + 6) % 7; // Monday = 0
-  return addDaysISO(iso, -back);
+/**
+ * The ISO date that week began on.
+ *
+ * Monday-first by default — UK convention, and every existing caller relies on
+ * that, including the natural-language "next Monday" in capture, where the word
+ * means Monday whatever anybody's calendar preference says. Only the calendar's
+ * two grid functions pass anything else.
+ */
+export function startOfWeekISO(iso: DateOnly, start: WeekStart = DEFAULT_WEEK_START): DateOnly {
+  return addDaysISO(iso, -weekStartOffset(weekdayOf(iso), start));
 }
 
 export function addDaysISO(iso: DateOnly, days: number): DateOnly {
