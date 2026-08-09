@@ -1,6 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import { asUser } from '@/lib/db';
+import { getCurrentUser } from '@/lib/auth';
 import type { SpaceRef } from '@/components/SpaceIndicator';
 
 export type SpaceSummary = SpaceRef & {
@@ -76,30 +77,51 @@ async function _listSpaces(userId: string): Promise<SpaceSummary[]> {
 }
 
 /**
- * Give an account its Personal and Work spaces, if it has none.
+ * Make an account whole: a profile if it has none, then Personal and Work.
  *
  * A no-op for anybody already in a space, so it is safe to call on every render
- * where the list came back empty — which is the only time it is called. The
- * decision about *when* somebody has none belongs to the caller; the decision
- * about what they get belongs to `0015_default_spaces.sql`, where the two are
- * created in one transaction with the profile for anybody signing up fresh.
+ * where the list came back empty — which is the only time it is called. What an
+ * account gets is decided in `0015_default_spaces.sql`; adopting one that has no
+ * profile at all is `0016_adopt_existing_accounts.sql`.
  *
- * This exists for the two cases the sign-up trigger cannot cover: an account
- * that predates the migration, and the dev provider, which has no `auth.users`
- * row to fire a trigger on.
+ * Three states reach this, and the sign-up trigger covers none of them: an
+ * account created in Supabase Auth before Orbit's migrations were applied, an
+ * account that predates 0015, and the dev provider, which has no `auth.users`
+ * row for a trigger to fire on.
  *
- * Returns how many were made. A failure here is deliberately not fatal — the
- * pages below it render an account with no spaces perfectly well, and saying
- * "Orbit can't reach its database" because provisioning failed would be a lie
- * about a database that just answered a query.
+ * Returns how many spaces were made.
  */
 export async function ensureDefaultSpaces(userId: string): Promise<number> {
   try {
-    const rows = await asUser(userId, async (tx) => {
-      return tx<{ made: number }[]>`select app.ensure_default_spaces() as made`;
-    });
+    // The account may have no profile either — Supabase Auth exists before
+    // Orbit's migrations are applied to it, so people are already signed up
+    // when the schema arrives and no trigger ever fired for them. The database
+    // will not take an email as an argument (it would be a way to claim
+    // somebody else's invitations), so the verified session's address is passed
+    // as a JWT claim instead, which is where it would come from if the caller
+    // were PostgREST. See supabase/migrations/0016.
+    //
+    // Asked for only on this path, which runs at most once per account: it can
+    // cost a round trip to the auth provider, and every other reader of this
+    // list needs nothing but the id.
+    const session = await getCurrentUser().catch(() => null);
+    const identity =
+      session && session.id === userId
+        ? { email: session.email, displayName: session.displayName }
+        : undefined;
+
+    const rows = await asUser(
+      userId,
+      async (tx) => tx<{ made: number }[]>`select app.ensure_default_spaces() as made`,
+      identity,
+    );
     return rows[0]?.made ?? 0;
   } catch {
+    // Not fatal. The pages below render an account with no spaces perfectly
+    // well, and "Orbit can't reach its database" would be a lie about a
+    // database that just answered a query. The one case that lands here and
+    // deserves words is a duplicate email address, which the space form
+    // reports when somebody tries to make one by hand.
     return 0;
   }
 }

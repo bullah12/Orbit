@@ -68,42 +68,52 @@ delete from orbit.spaces where id = 'cccccccc-0000-0000-0000-000000000001';
 
 -- ===========================================================================
 -- What the function does instead.
+--
+-- Since 0016 it also adopts an account that has no profile or no spaces before
+-- making the one that was asked for, so the count below is three: Personal,
+-- Work, and Fell household. That is the surrounding behaviour, not this
+-- function's; what is being proved here is still the pair of writes 0014
+-- exists for.
 -- ===========================================================================
 select lives_ok(
   $$select app.create_space('Fell household', null, 'household', 'emerald', 'house')$$,
   'app.create_space() makes the space and the membership together');
 
 select is(
-  (select count(*)::int from orbit.spaces),
+  (select count(*)::int from orbit.spaces s where s.name = 'Fell household'),
   1,
   'and the space is one the creator can see');
 
 select is(
   (select m.role::text from orbit.space_members m
-   where m.user_id = '11111111-1111-1111-1111-111111111111'),
+   join orbit.spaces s on s.id = m.space_id
+   where m.user_id = '11111111-1111-1111-1111-111111111111'
+     and s.name = 'Fell household'),
   'owner',
   'they are its owner');
 
 select is(
   (select m.status from orbit.space_members m
-   where m.user_id = '11111111-1111-1111-1111-111111111111'),
+   join orbit.spaces s on s.id = m.space_id
+   where m.user_id = '11111111-1111-1111-1111-111111111111'
+     and s.name = 'Fell household'),
   'active',
   'and active, so every policy keyed on membership lets them through');
 
 select is(
-  (select s.owner_id from orbit.spaces s limit 1),
+  (select s.owner_id from orbit.spaces s where s.name = 'Fell household'),
   '11111111-1111-1111-1111-111111111111'::uuid,
   'owner_id is auth.uid(), which the caller has no parameter to influence');
 
 select is(
-  (select s.is_default from orbit.spaces s limit 1),
-  true,
-  'the first space is the default one, so every compose surface preselects it');
+  (select s.name from orbit.spaces s where s.is_default),
+  'Personal',
+  'the first space the account got is the default one, so every compose surface preselects it');
 
 -- The point of all of it: a write that RLS refused a moment ago now succeeds.
 insert into orbit.tasks (space_id, owner_id, title)
 select s.id, '11111111-1111-1111-1111-111111111111', 'Put the bins out'
-from orbit.spaces s limit 1;
+from orbit.spaces s where s.name = 'Fell household';
 
 select is(
   (select count(*)::int from orbit.tasks where title = 'Put the bins out'),
@@ -113,9 +123,11 @@ select is(
 -- ===========================================================================
 -- Second and subsequent spaces.
 -- ===========================================================================
+-- Not called "Work": since 0016 the account already has one by that name, and
+-- an assertion that cannot tell two rows apart is not an assertion.
 select lives_ok(
-  $$select app.create_space('Work')$$,
-  'a second space needs no arguments beyond its name');
+  $$select app.create_space('Allotment')$$,
+  'a further space needs no arguments beyond its name');
 
 select is(
   (select count(*)::int from orbit.spaces where is_default),
@@ -123,7 +135,7 @@ select is(
   'and it does not become the default — that stays where it was');
 
 select is(
-  (select s.kind::text from orbit.spaces s where s.name = 'Work'),
+  (select s.kind::text from orbit.spaces s where s.name = 'Allotment'),
   'personal',
   'an unstated kind is personal');
 

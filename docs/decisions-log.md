@@ -1826,3 +1826,99 @@ instruction that goes with it.
 - A real browser on a profile with no spaces: first page load lands with
   Personal and Work in the sidebar and capture already usable; Personal offers
   a rename and no delete; Work deletes only after its name is typed exactly.
+
+---
+
+## Session 13, third pass — accounts that existed before Orbit did
+
+Reported from a real Supabase project:
+
+> There is no profile for the signed-in account (c9905550-…).
+
+on trying to create a space. The message was accurate and useless. It named the
+thing that was missing and offered no way to get it.
+
+### Why it happens, and why it is the ordinary case
+
+0012 creates a profile when an auth user is created; 0015 gives that profile two
+spaces. Both are triggers on `insert into auth.users`, and a trigger cannot fire
+for a row that is already there.
+
+That is not an edge case on a real project — it is the normal order of events.
+Supabase Auth exists before Orbit's migrations are applied to it: people sign
+up, or get invited from the dashboard, or are carried over from something else,
+and *then* the schema arrives. Every one of those accounts signs in fine (the
+provider falls back to the JWT's own claims, so the app renders and says who you
+are) and then nothing works, because `auth.uid()` names a profile that does not
+exist and every policy correctly sees a stranger.
+
+So the fix is not a better error. It is adoption, reachable three ways: per
+request when such an account next loads a page, project-wide for an operator,
+and once at the bottom of `0016_adopt_existing_accounts.sql` for everybody
+already waiting.
+
+### The email is never an argument, and that is the whole design
+
+The obvious version — let the application pass the address it just verified —
+is a privilege escalation. `orbit.profiles.email` is what `app.space_invite()`
+matches `invited_email` against, so an account that could choose its own address
+could redeem an invitation addressed to somebody else. And a function granted to
+`authenticated` is callable by anyone holding a JWT, not only by this server.
+
+So `app.identity_of()` reads the address, in order, from:
+
+1. `request.jwt.claims ->> 'email'`, **and only when `sub` names the account
+   being asked about**. Signed by the issuer when the caller is PostgREST; set
+   by `asUser()` from a GoTrue-verified session when the caller is the Next app.
+   Neither can be chosen by the person holding the token.
+2. `auth.users`, by id — correct by definition, guarded, because a project may
+   not grant this function's owner anything on that table.
+3. `<uuid>@no-email.invalid`, 0012's placeholder. The account works; only
+   invitation-by-address does not, until a real claim turns up.
+
+There is exactly one path that overwrites an existing profile's email: a
+placeholder being replaced once a token proves a real address, never over an
+address somebody actually has, and never one another profile holds. A collision
+raises rather than adopting one account into another — the same argument 0012
+makes at greater length, and the one case here that cannot be automated.
+
+`asUser()` gained an optional identity for this, and one caller passes it. It is
+not a new trust boundary: that connection already asserts who the caller is, and
+a server that could lie about the email could lie about the id. What matters is
+that the value comes from a verified session and never from a form field.
+
+### Two things that changed underneath
+
+- **`app.create_space()` no longer refuses an account with no profile.** That
+  was the right refusal when a missing profile meant identity had come apart. It
+  is the wrong one now that it is an ordinary, fixable state.
+- **`app.provision_missing_accounts()` inspects by default.** `select * from
+  app.provision_missing_accounts();` reports what it would do and changes
+  nothing; `(false)` does it. A function that rewrites every account in a
+  project the moment somebody types its name to see what it does is one that
+  gets run once by accident. It is not granted to `authenticated` — it acts on
+  everybody.
+
+### Two older tests were asserting the old surroundings
+
+`space_creation_test.sql` expected one space after `create_space` on a fresh
+account; it is three now, because the account is adopted first. And two spaces
+were both called Work, which is an assertion that cannot tell two rows apart.
+Both fixed in place rather than deleted: what they prove about 0014's
+chicken-and-egg is unchanged.
+
+### Verified against
+
+- `./scripts/db-test.sh` — **175/175**, including 23 new assertions: adoption
+  from `auth.users`, adoption from a token when there is no `auth.users` row,
+  a claims blob naming a different subject being ignored, the collision being
+  refused with the other profile untouched, the placeholder repair firing only
+  over a placeholder, and `provision_missing_accounts` being uncallable by a
+  signed-in user.
+- The reported failure reproduced against the exact account id and then fixed:
+  `create_space` on an account with no profile now returns a space and leaves
+  Personal, Work and the requested space behind.
+- **Not verified in a browser.** The dev provider resolves its cookie through
+  `orbit.profiles`, so a profile-less account falls back to the first seeded
+  one; the JWT-claims fallback that makes this reachable at all is the Supabase
+  provider's, which still has never run here.
