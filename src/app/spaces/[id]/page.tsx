@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/lib/auth';
-import { listSpaces } from '@/lib/queries/spaces';
+import { listSpaces, spaceContents, type SpaceContents } from '@/lib/queries/spaces';
 import { listInvites, listMembers } from '@/lib/queries/invites';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
@@ -17,7 +17,13 @@ import {
   invitePath,
   isInviteRole,
 } from '@/lib/invites';
-import { createSpaceInvite, removeSpaceMember, revokeSpaceInvite } from '@/app/actions';
+import {
+  createSpaceInvite,
+  deleteSpaceAction,
+  removeSpaceMember,
+  renameSpaceAction,
+  revokeSpaceInvite,
+} from '@/app/actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,10 +45,12 @@ export default async function SpacePage({
     joined?: string;
     revoked?: string;
     removed?: string;
+    delete?: string;
+    renamed?: string;
   }>;
 }) {
   const { id } = await params;
-  const { token, error, joined, revoked, removed } = await searchParams;
+  const { token, error, joined, revoked, removed, renamed, delete: del } = await searchParams;
   const user = await requireUser();
 
   const space = (await listSpaces(user.id)).find((s) => s.id === id);
@@ -51,9 +59,16 @@ export default async function SpacePage({
   if (!space) notFound();
 
   const isAdmin = space.role === 'owner' || space.role === 'admin';
-  const [members, invites] = await Promise.all([
+  // Only counted when the confirmation is actually on screen: six counts on
+  // every visit to a page about membership would be six queries nobody asked
+  // for.
+  const confirmingDelete = del === '1' && space.role === 'owner' && !space.isProtected;
+  const [members, invites, contents] = await Promise.all([
     listMembers(user.id, id),
     isAdmin ? listInvites(user.id, id) : Promise.resolve([]),
+    confirmingDelete
+      ? spaceContents(user.id, id)
+      : Promise.resolve({ tasks: 0, notes: 0, events: 0, people: 0, places: 0, members: 0 }),
   ]);
 
   const host = (await headers()).get('host');
@@ -108,6 +123,11 @@ export default async function SpacePage({
         <p role="status" className="hairline muted border-b px-5 py-2 text-xs">
           That invitation has been revoked. Its link stops working immediately;
           the row stays here as the record of what was offered.
+        </p>
+      )}
+      {renamed && (
+        <p role="status" className="hairline muted border-b px-5 py-2 text-xs">
+          Renamed. The indicator changes everywhere it appears.
         </p>
       )}
       {removed && (
@@ -321,6 +341,154 @@ export default async function SpacePage({
           </section>
         </>
       )}
+
+      {isAdmin && (
+        <section className="hairline border-t px-5 py-4" aria-labelledby="rename-space">
+          <h2 id="rename-space" className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
+            Name
+          </h2>
+          <form action={renameSpaceAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="spaceId" value={id} />
+            <div className="flex flex-col gap-1">
+              <label htmlFor="space-rename" className="faint text-2xs">
+                What it is called
+              </label>
+              <input
+                id="space-rename"
+                name="name"
+                type="text"
+                required
+                maxLength={80}
+                defaultValue={space.name}
+                className="input"
+                style={{ width: '16rem' }}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="space-relabel" className="faint text-2xs">
+                On the chip
+              </label>
+              <input
+                id="space-relabel"
+                name="shortLabel"
+                type="text"
+                maxLength={12}
+                defaultValue={space.shortLabel}
+                className="input"
+                style={{ width: '8rem' }}
+              />
+            </div>
+            <button type="submit" className="hairline rounded border px-3 py-1.5 text-xs">
+              Save the name
+            </button>
+          </form>
+          {space.isProtected && (
+            <p className="faint mt-2 max-w-2xl text-2xs">
+              This one cannot be deleted, but it is yours to name. Call it
+              anything.
+            </p>
+          )}
+        </section>
+      )}
+
+      {space.role === 'owner' && (
+        <section className="hairline border-t px-5 py-4" aria-labelledby="delete-space">
+          <h2 id="delete-space" className="faint mb-2 text-2xs font-semibold uppercase tracking-wider">
+            Delete
+          </h2>
+
+          {space.isProtected ? (
+            <p className="muted max-w-2xl text-xs">
+              <Icon name="lock" size={11} className="inline" /> {space.name} cannot
+              be deleted. It is the space that guarantees you always have
+              somewhere to write, so the database refuses it — not the button.
+              You can rename it, recolour it, share it and move anything in it
+              elsewhere; what you cannot do is end up with nowhere to put the
+              next thing you think of.
+            </p>
+          ) : confirmingDelete ? (
+            <div className="max-w-2xl">
+              <p className="text-xs" style={{ color: 'var(--danger)' }}>
+                Deleting {space.name} deletes everything in it. There is no undo
+                and nothing is archived.
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {contentLines(contents).map((line) => (
+                  <li key={line} className="hairline rounded border px-2 py-1 text-2xs">
+                    {line}
+                  </li>
+                ))}
+              </ul>
+              {contents.members > 1 && (
+                <p className="mt-2 text-2xs" style={{ color: 'var(--warning)' }}>
+                  {contents.members - 1} other{' '}
+                  {contents.members === 2 ? 'person is' : 'people are'} in this
+                  space. They lose all of it too, and they are not asked.
+                </p>
+              )}
+
+              {/* Typing the name, for the same reason the move confirmation
+                  lists who gains and loses access: a destructive step needs an
+                  action nobody performs by accident. */}
+              <form action={deleteSpaceAction} className="mt-3 flex flex-wrap items-end gap-2">
+                <input type="hidden" name="spaceId" value={id} />
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="confirm-name" className="faint text-2xs">
+                    Type <strong>{space.name}</strong> to confirm
+                  </label>
+                  <input
+                    id="confirm-name"
+                    name="confirmName"
+                    type="text"
+                    autoComplete="off"
+                    className="input"
+                    style={{ width: '14rem' }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="hairline rounded border px-3 py-1.5 text-xs font-medium"
+                  style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                >
+                  Delete {space.name} and everything in it
+                </button>
+                <Link href={`/spaces/${id}`} className="faint text-xs">
+                  Keep it
+                </Link>
+              </form>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href={`/spaces/${id}?delete=1`}
+                className="hairline rounded border px-3 py-1.5 text-xs font-medium"
+                style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+              >
+                Delete this space
+              </Link>
+              <span className="faint text-xs">
+                Permanent, and it takes everything in it with it. You will be
+                shown what that is first.
+              </span>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
+}
+
+/** The counts, as phrases, with the empty ones left out. */
+function contentLines(c: SpaceContents): string[] {
+  const parts: [number, string, string][] = [
+    [c.tasks, 'task', 'tasks'],
+    [c.notes, 'note', 'notes'],
+    [c.events, 'event', 'events'],
+    [c.people, 'person', 'people'],
+    [c.places, 'place', 'places'],
+  ];
+  const lines = parts
+    .filter(([n]) => n > 0)
+    .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+  return lines.length > 0 ? lines : ['nothing in it yet'];
 }

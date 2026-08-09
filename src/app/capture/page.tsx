@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { resolveSpaceHint } from '@/lib/queries/capture';
@@ -51,7 +52,20 @@ export default async function CapturePage({
   const hinted = await resolveSpaceHint(user.id, capture.spaceHint);
   const chosenSpaceId = space || hinted || spaces[0]?.id || '';
   const chosenKind = (kind || capture.kind) as 'task' | 'note' | 'event';
-  const ready = capture.title.length > 0 && chosenSpaceId !== '';
+
+  // Two reasons the button is off, and they used to share one sentence: "There
+  // is nothing here but a date." That is true of a line that parsed to no
+  // title, and completely wrong for somebody whose account has no space to
+  // write to — which is every real account until it makes one, since a profile
+  // is created at sign-up and a space is not. Being told to type more words
+  // when the words were never the problem is the whole of the bug.
+  const blocked =
+    capture.title.length === 0
+      ? ('no-title' as const)
+      : chosenSpaceId === ''
+        ? ('no-space' as const)
+        : null;
+  const ready = blocked === null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -77,6 +91,24 @@ export default async function CapturePage({
           style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
         >
           {error}
+        </p>
+      )}
+
+      {/* Said before anything is typed, because somebody arriving on a fresh
+          account would otherwise write the line first and find out after. The
+          version under the button says it again with the line in hand, and
+          carries it back here afterwards. */}
+      {spaces.length === 0 && (
+        <p
+          role="status"
+          className="hairline border-b px-5 py-2 text-xs"
+          style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
+        >
+          You are not in a space you can write to, so nothing can be created yet.{' '}
+          <Link href="/spaces?next=%2Fcapture" className="underline">
+            Make a space first
+          </Link>
+          .
         </p>
       )}
 
@@ -195,6 +227,12 @@ export default async function CapturePage({
                     <SpaceIndicator space={s} />
                   </label>
                 ))}
+                {spaces.length === 0 && (
+                  <span className="muted text-xs">
+                    nowhere yet — everything lives in a space, and you are not in
+                    one you can write to
+                  </span>
+                )}
               </fieldset>
 
               <div>
@@ -207,9 +245,26 @@ export default async function CapturePage({
                   <Icon name="plus" size={13} />
                   Create it
                 </button>
-                {!ready && (
+                {blocked === 'no-title' && (
                   <p className="faint mt-1 text-2xs">
                     There is nothing here but a date. Type what it is as well.
+                  </p>
+                )}
+                {blocked === 'no-space' && (
+                  <p className="mt-1 text-2xs" style={{ color: 'var(--c-amber)' }}>
+                    The line is fine — there is just nowhere to put it. Everything
+                    in Orbit lives in a space and you are not in one you can write
+                    to yet.{' '}
+                    <Link
+                      href={`/spaces?next=${encodeURIComponent(
+                        `/capture?text=${encodeURIComponent(text)}`,
+                      )}`}
+                      className="underline"
+                    >
+                      Make a space
+                    </Link>{' '}
+                    and you will come straight back here with this line still
+                    typed.
                   </p>
                 )}
               </div>

@@ -1645,3 +1645,184 @@ while production ran against `orbit` would have proved nothing about production.
   anything is applied. The general lesson is that "the migrations are done" and
   "the tables are where I expect" are two claims, and only one of them was being
   checked.
+
+---
+
+## Session 13 — a real account could not create anything, and capture was a page you had to go to
+
+Two problems, reported together and connected: the **Create it** button on
+`/capture` was disabled on a real account, and it explained itself with the
+wrong sentence.
+
+### The bug: a profile is created at sign-up and a space is not
+
+`0012_auth_user_profiles.sql` gives every new auth user a profile by trigger.
+Nothing gives them a **space** — and a space is what every space-scoped table
+takes, so with none of them the account can create nothing at all. `/capture`
+rendered its **Into** fieldset empty, disabled the button, and printed *"There
+is nothing here but a date."* The line was fine. There was nowhere to put it.
+
+The only route into a space was an invitation from somebody who already had one,
+which for a deployment's first user is no route at all.
+
+### Why creating one needed a `SECURITY DEFINER` function
+
+Two inserts, and only the first is allowed:
+
+- `spaces_insert` permits inserting a space whose `owner_id` is `auth.uid()`.
+- `space_members_insert` requires `app.is_space_admin(space_id)` — and a space
+  created one statement ago has no members, so its creator is not an admin of
+  it. The insert that would make them one is the insert being refused.
+
+Left there, the space exists and nobody, including its owner, is in it.
+
+Widening `space_members_insert` to "…or you own the space" would work and is the
+wrong fix: `owner_id` is a column an insert chooses, so that policy would let
+anybody add themselves to any space they could name as owner. So
+`0014_space_creation.sql` adds `app.create_space()`, which does both writes
+together, for `auth.uid()` and nobody else. It is the same argument 0012 made
+for `app.space_invite()`, and the same narrow grant: revoked from `public`,
+granted to `authenticated`.
+
+There is no owner parameter, because there is nothing an owner parameter could
+be for except naming somebody else.
+
+### The first space is the default one
+
+`listSpaces` orders by `is_default desc`, and every compose surface preselects
+the first row, so the first space somebody creates is marked default and later
+ones are not. Choosing to have a second space is not choosing to make it your
+default.
+
+### The message was wrong, and that was most of the bug
+
+`ready` was one boolean over two conditions, so both failures printed the
+sentence written for the other one. It is two now: *no title* keeps the original
+sentence, and *no space* says the line is fine, says there is nowhere to put it,
+and links to the space form carrying the typed line back — so making a space
+returns you to the preview rather than to an empty field.
+
+### Capture is a bar at the top, not a page you navigate to
+
+It was a link in the rail and a tab at the bottom, which means leaving what you
+are reading before you can write down what you just remembered. The cost of that
+is the ideas that do not get written down. It is now a field and a button above
+every page, `GET`ting `/capture` with the line as `text` — exactly what the
+capture page's own form does, so there is still one parse of one string, and
+still no client JavaScript on the path.
+
+It renders nothing on `/capture` itself, where it would be the same field twice
+with the lower one holding what you typed. A layout cannot ask which page is
+beneath it, and the usual answer — a client component calling `usePathname()` —
+would ship JavaScript for one comparison, so `middleware.ts` forwards the path
+as a request header instead. Absent, the bar renders.
+
+### Verified against
+
+- `./scripts/db-test.sh` — **131/131**, including the new
+  `space_creation_test.sql`: the refused membership insert, the function that
+  replaces it, the first-space default, that a second person's call touches
+  nothing of the first's, and that a task can be written afterwards where it
+  could not before.
+- `pnpm test` **828** (was 816), build clean, typecheck clean, `pnpm smoke`
+  **455/455**.
+- A real browser, acting as a profile with no spaces: blocked capture → make a
+  space → back on the preview with the line still typed → created.
+
+---
+
+## Session 13, second pass — two spaces on arrival, and one that cannot be deleted
+
+0014 made it possible to create a space. This makes it unnecessary: an account
+arrives with **Personal** and **Work**, and the empty-handed state that 0014's
+form exists to rescue somebody from is one almost nobody will ever be in. The
+form stays — it is how the third space gets made, and it is the fallback if
+provisioning ever fails — but it is no longer the first thing a new account has
+to understand.
+
+### Two, not one
+
+The first decision Orbit asks of a person is the one it is worst at explaining:
+a space is an *audience*, not a folder. One space teaches nobody that. Two
+teaches it the first time something is filed in the wrong one. Personal and Work
+is the split most people already have in their heads, and the household space —
+the one that needs a second person in it — is better made deliberately, on the
+screen that also offers the invitation.
+
+### Personal cannot be deleted, and that is a trigger, not a button
+
+Deleting a space deletes everything in it: every `space_id` column in the schema
+is `on delete cascade`. That is right — a space *is* its contents — but it means
+the last space standing holds everything somebody has, and an account with no
+space can create nothing at all, which is the bug 0014 was written for. So one
+space carries `protected` and the database refuses to delete it.
+
+Enforced in three places, and only one of them is a guarantee:
+
+- the page does not render a delete control for it;
+- the server action refuses, and checks the typed name for everything else;
+- **`spaces_refuse_protected_delete`, a `before delete` trigger on the table.**
+
+The first two are courtesies. The trigger is the boundary, because a definer
+function runs past the policy and a migration runs past both. The policy was
+narrowed to `owner_id = auth.uid() and not protected` as well, so an ordinary
+delete matches no row and reports nothing deleted rather than raising — the
+readable version of the same fact.
+
+`protected` cannot be turned off either (`spaces_refuse_protected_change`), or
+it would be a way to delete the space in two statements instead of one.
+
+**Protected means exactly and only "cannot be deleted".** It can be renamed,
+shared, filled and emptied. So renaming had to exist — it did not, anywhere —
+and now does, for admins, on the space page. A promise the interface cannot
+keep is worse than no promise.
+
+### Where the provisioning is called from, and why not the layout
+
+Signing up provisions both in the same transaction as the profile: 0012's
+trigger function was replaced rather than a second trigger added, because "in
+alphabetical order of trigger name" is a true fact about Postgres that nobody
+should have to know to read the file.
+
+That leaves two cases no trigger on `auth.users` can reach — an account that
+predates the migration, and the dev provider, which has no `auth.users` row —
+so `listSpaces()` provisions when it reads an empty list.
+
+It is in the query, not the layout, because of `cache()`. Every page and several
+server actions share one memoised list per request. Provisioning in the layout
+would leave that memo holding the empty array it read a moment *before* the
+write, so the sidebar would show two spaces and the page beneath it would still
+say there were none. Inside the cached function, every reader in the request
+gets the same, correct answer. It costs nothing in the ordinary case: a
+non-empty list returns immediately.
+
+The condition is "has no active membership", not "has no space called Work", so
+a Work somebody deliberately deleted stays deleted.
+
+### The smoke suite runs in sections now
+
+`scripts/smoke.mjs` is one long script because it drives a real browser through
+a real app and later checks depend on earlier state. That is still true, but a
+full pass is several minutes and the loop that matters when something breaks is
+*fix, re-run the thing that broke*. So every block is now guarded by
+`runs('<section>')`, each run writes `.smoke-last.json`, and `pnpm smoke
+--failed` re-runs only the sections that failed — plus anything they depend on,
+which `PREREQS` declares for the three module-level variables that cross section
+boundaries.
+
+A filtered run keeps the previous verdict for the sections it skipped, so fixing
+one failure cannot mark the others green, and it never prints "all checks
+passed" — it says how many sections it skipped. `CLAUDE.md` is the standing
+instruction that goes with it.
+
+### Verified against
+
+- `./scripts/db-test.sh` — **152/152**, including the new `default_spaces_test.sql`:
+  that signing up produces both spaces in one transaction, that
+  `ensure_default_spaces()` is a no-op the second time, and that the protected
+  space survives a delete as its owner, a delete as the *table owner*, and an
+  attempt to unprotect it first.
+- `pnpm smoke` **455/455** full, and `--failed` / `--section=` exercised.
+- A real browser on a profile with no spaces: first page load lands with
+  Personal and Work in the sidebar and capture already usable; Personal offers
+  a rename and no delete; Work deletes only after its name is typed exactly.

@@ -27,8 +27,23 @@ import { NextResponse, type NextRequest } from 'next/server';
  *    it wants, and the first two deliberately send `no-store` themselves so a
  *    new worker can replace an old one promptly.
  */
-export function middleware(_request: NextRequest) {
-  const response = NextResponse.next();
+/**
+ * The path, forwarded to the server components that render it.
+ *
+ * A layout has no way to ask which page is underneath it — that is by design,
+ * and the usual answer is a client component calling `usePathname()`. The
+ * capture bar in the root layout needs it for one decision (do not render a
+ * second copy of the field on the capture page itself) and that is not worth
+ * shipping JavaScript for, so the path arrives as a request header instead.
+ * Absent, everything falls back to rendering the bar.
+ */
+export const PATH_HEADER = 'x-orbit-path';
+
+export function middleware(request: NextRequest) {
+  const headers = new Headers(request.headers);
+  headers.set(PATH_HEADER, request.nextUrl.pathname);
+
+  const response = NextResponse.next({ request: { headers } });
   response.headers.set('Cache-Control', 'no-store, must-revalidate');
   return response;
 }

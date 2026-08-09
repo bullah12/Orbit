@@ -6,3 +6,4 @@ node_modules/
 .DS_Store
 next-env.d.ts
 tsconfig.tsbuildinfo
+.smoke-last.json

@@ -54,6 +54,7 @@ import {
   SYNC_ENTITY_KINDS,
 } from '@/lib/queries/sync';
 import { isThemeChoice, parseWeekStart, resolveDefaultSpace } from '@/lib/prefs';
+import { shortLabelFrom, spaceKindPreset } from '@/lib/spaces';
 import { writeDefaultSpace, writeTheme, writeWeekStart } from '@/lib/prefs/cookies';
 import {
   isSyncEntityKind,
@@ -63,7 +64,7 @@ import {
 } from '@/lib/sync/conflict';
 import { normaliseDeviceLabel, type FlushOutcome } from '@/lib/sync/outbox';
 import { setThisDeviceLabel } from '@/lib/sync/device';
-import { listSpaces } from '@/lib/queries/spaces';
+import { createSpace, deleteSpace, listSpaces, renameSpace } from '@/lib/queries/spaces';
 import {
   acceptInvite,
   createInvite,
@@ -2423,6 +2424,118 @@ export async function rewindDevice(formData: FormData) {
 // that in TypeScript. Accepting is the one operation that cannot be, and it
 // goes through `app.space_invite()`; see supabase/migrations/0012 for why.
 // ---------------------------------------------------------------------------
+
+/**
+ * Create a space.
+ *
+ * The first thing a real account can do, and until migration 0014 the thing it
+ * could not: a profile with no space has nowhere to put a task, so capture, the
+ * compose bars and everything else refuse. `next` carries where the person was
+ * when they found out — usually the capture page, which sends them here with
+ * the line they had typed still on the URL, so creating a space puts them back
+ * in front of it rather than at the start again.
+ */
+export async function createSpaceAction(formData: FormData) {
+  const user = await requireUser();
+  const name = String(formData.get('name') ?? '').trim();
+  // The kind decides the colour and the icon, from one table both this and the
+  // form read. A form that posted its own colour would be a form that could
+  // post one no stylesheet defines.
+  const preset = spaceKindPreset(String(formData.get('kind') ?? ''));
+
+  // Only ever back into Orbit. `next` arrives on a URL, and a redirect that
+  // will follow anything it is handed is an open redirect.
+  const raw = String(formData.get('next') ?? '');
+  const next = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/spaces';
+
+  const fail = (message: string) =>
+    redirect(`/spaces?error=${encodeURIComponent(message)}`);
+
+  if (!name) fail('A space needs a name.');
+
+  const result = await createSpace(user.id, {
+    name,
+    shortLabel: shortLabelFrom(name),
+    kind: preset.kind,
+    colour: preset.colour,
+    icon: preset.icon,
+  });
+  if ('error' in result) fail(result.error);
+
+  revalidatePath('/', 'layout');
+  redirect(next as never);
+}
+
+/**
+ * Rename a space.
+ *
+ * The counterpart to the protected space's refusal: what it will not do is
+ * disappear, and everything else about it is ordinary. An admin can rename any
+ * space they administer, protected or not.
+ */
+export async function renameSpaceAction(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const name = String(formData.get('name') ?? '');
+  const rawLabel = String(formData.get('shortLabel') ?? '').trim();
+  if (!spaceId) redirect('/spaces');
+
+  const result = await renameSpace(
+    user.id,
+    spaceId,
+    name,
+    rawLabel || shortLabelFrom(name),
+  );
+
+  revalidatePath('/', 'layout');
+  if ('error' in result) {
+    redirect(`/spaces/${spaceId}?error=${encodeURIComponent(result.error)}`);
+  }
+  redirect(`/spaces/${spaceId}?renamed=1`);
+}
+
+/**
+ * Delete a space, and everything in it.
+ *
+ * Every `space_id` in the schema cascades, so this is the most destructive
+ * operation Orbit has — more so than deleting a task, and more so than removing
+ * somebody from a space, which deletes nothing at all. Hence the typed name:
+ * the confirmation screen has already said what will go, and this refuses to
+ * act on anything but an exact match.
+ *
+ * The protected space is not defended here. It is defended by a policy and a
+ * trigger in the database (migration 0015), and this is the third line: the
+ * page does not offer the button, this checks the name, and the database would
+ * refuse both of them anyway.
+ */
+export async function deleteSpaceAction(formData: FormData) {
+  const user = await requireUser();
+  const spaceId = String(formData.get('spaceId') ?? '');
+  const typed = String(formData.get('confirmName') ?? '').trim();
+  if (!spaceId) redirect('/spaces');
+
+  const space = (await listSpaces(user.id)).find((s) => s.id === spaceId);
+  if (!space) redirect('/spaces');
+
+  const back = (message: string) =>
+    redirect(`/spaces/${spaceId}?delete=1&error=${encodeURIComponent(message)}`);
+
+  if (space.isProtected) {
+    back(`“${space.name}” cannot be deleted. It is the one that guarantees you have somewhere to write.`);
+  }
+  if (space.role !== 'owner') {
+    back('Only the person who created a space can delete it.');
+  }
+  if (typed.toLowerCase() !== space.name.trim().toLowerCase()) {
+    back(`Type the space's name exactly — “${space.name}” — to confirm.`);
+  }
+
+  const result = await deleteSpace(user.id, spaceId);
+  if ('error' in result) back(result.error);
+
+  revalidatePath('/', 'layout');
+  redirect(`/spaces?deleted=${encodeURIComponent(space.name)}`);
+}
 
 /**
  * Create an invitation and show its link once.

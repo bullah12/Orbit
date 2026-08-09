@@ -22,6 +22,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const BASE = process.env.ORBIT_URL ?? 'http://localhost:3000';
@@ -43,6 +44,98 @@ let tripUrl;
 let failures = 0;
 const results = [];
 
+// ---------------------------------------------------------------------------
+// Sections, and running only some of them.
+//
+// The suite is one long script on purpose — it drives a real browser through a
+// real app and later checks depend on earlier state. But a full pass is several
+// minutes, and the loop that matters when something breaks is *fix, re-run the
+// thing that broke*. So every block is a named section, `--failed` re-runs only
+// the sections that failed last time, and a filtered run says loudly that it
+// was not a full one.
+//
+// `.smoke-last.json` is where the last run's verdict lives. It is written on
+// every full or filtered run and is not committed.
+// ---------------------------------------------------------------------------
+const LAST_RUN = new URL('../.smoke-last.json', import.meta.url);
+
+/**
+ * Sections that need state a different section produces.
+ *
+ * Three module-level variables are set in one section and read in another — a
+ * place's URL, a private place's URL, a trip's URL. Selecting a reader without
+ * its writer would fail on `undefined` and blame the wrong section, so the
+ * writer is pulled in with it. This map is the complete list; if a fourth
+ * shared variable ever appears, it belongs here the same day.
+ */
+const PREREQS = {
+  "places: an event's place": ['places'],
+  'places: the partner and the outsider': ['places'],
+  'travel: partner and outsider': ['travel'],
+};
+
+const argv = process.argv.slice(2);
+const wantFailed = argv.includes('--failed');
+const wantedSections = argv
+  .filter((a) => a.startsWith('--section='))
+  .flatMap((a) => a.slice('--section='.length).split(','))
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function selectionFromLastRun() {
+  if (!existsSync(LAST_RUN)) {
+    console.log(
+      '\x1b[1;33m!\x1b[0m --failed, but there is no .smoke-last.json to read. Running everything.',
+    );
+    return null;
+  }
+  const previous = JSON.parse(readFileSync(LAST_RUN, 'utf8'));
+  const failed = [...new Set((previous.checks ?? []).filter((c) => !c.ok).map((c) => c.section))];
+  if (failed.length === 0) {
+    console.log(
+      '\x1b[1;33m!\x1b[0m --failed, but nothing failed in the last run. Nothing to re-run.',
+    );
+    return [];
+  }
+  return failed;
+}
+
+/** The sections to run, or null for all of them. */
+const selected = (() => {
+  const chosen = wantFailed ? selectionFromLastRun() : null;
+  const named = wantedSections.length > 0 ? wantedSections : null;
+  if (chosen === null && named === null) return null;
+
+  const wanted = new Set([...(chosen ?? []), ...(named ?? [])]);
+  // Substring matching for --section, so `--section=places` takes all three of
+  // the places sections without anybody typing the em dashes.
+  const all = Object.keys(PREREQS);
+  for (const name of [...wanted]) {
+    for (const prereq of PREREQS[name] ?? []) wanted.add(prereq);
+    for (const known of all) {
+      if (known.includes(name)) for (const prereq of PREREQS[known] ?? []) wanted.add(prereq);
+    }
+  }
+  return wanted;
+})();
+
+const skipped = new Set();
+let section = 'start-up';
+
+/**
+ * Open a section. Returns whether its block should run.
+ *
+ * Called in the `if` that guards every block, so the section name is set for
+ * the checks inside it whether or not they run.
+ */
+function runs(name) {
+  section = name;
+  if (selected === null) return true;
+  const wanted = [...selected].some((s) => name === s || name.includes(s));
+  if (!wanted) skipped.add(name);
+  return wanted;
+}
+
 /**
  * One day on from a `yyyy-mm-dd`, in UTC.
  *
@@ -58,7 +151,7 @@ function addDays(iso, n) {
 }
 
 function check(name, ok, detail = '') {
-  results.push({ name, ok, detail });
+  results.push({ name, ok, detail, section });
   if (!ok) failures += 1;
   const mark = ok ? '[1;32m✓[0m' : '[1;31m✗[0m';
   console.log(`${mark} ${name}${detail ? `  [2m${detail}[0m` : ''}`);
@@ -117,7 +210,7 @@ async function firstEventId() {
 
 try {
   // ------------------------------------------------------------ Priya: reads
-  {
+  if (runs("Priya: reads")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/');
@@ -147,7 +240,7 @@ try {
 
   // -------------------------------------------------- Priya: edit round-trip
   let taskId;
-  {
+  if (runs("Priya: edit round-trip")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/tasks/all');
     const href = await page.locator('main ul li a[href^="/tasks/item/"]').first().getAttribute('href');
@@ -184,7 +277,7 @@ try {
   }
 
   // ------------------------------------------------------- the move preview
-  {
+  if (runs("the move preview")) {
     const { ctx, page } = await pageAs(PRIYA);
     // A Home task, so there is a partner to lose access.
     await page.goto(`/tasks/all?space=${S_HOME}`);
@@ -213,7 +306,7 @@ try {
   }
 
   // ------------------------------------------------ Danny: the partner's view
-  {
+  if (runs('Danny: the partner\'s view')) {
     const { ctx, page } = await pageAs(DANNY);
 
     await page.goto(`/tasks/all?space=${S_WORK}`);
@@ -241,12 +334,23 @@ try {
   }
 
   // ------------------------------------------------------------ the outsider
-  {
+  if (runs("the outsider")) {
     const { ctx, page } = await pageAs(OUTSIDER);
 
     await page.goto('/');
-    const spaceLinks = await page.locator('nav a[href^="/tasks/all?space="]').count();
-    check('the outsider is in no space', spaceLinks === 0);
+    // Since migration 0015 nobody is in no space at all: an account with none
+    // is given Personal and Work the first time it loads a page. So the
+    // outsider's isolation is no longer "has nothing" — it is "has only their
+    // own two, both empty, and no sight of anybody else's". That is a stronger
+    // check than the old one, and it is what a real new account looks like.
+    const spaceLabels = await page
+      .locator('nav[aria-label="Primary"] span[title^="Space:"]')
+      .allInnerTexts();
+    check(
+      'the outsider is in no space but the two of their own',
+      spaceLabels.length === 2 && spaceLabels.every((l) => /Personal|Work/.test(l)),
+      spaceLabels.join(', '),
+    );
 
     for (const [label, url] of [
       ['Today', '/'],
@@ -271,7 +375,7 @@ try {
 
   // ------------------------------------------------- people, linked not merged
   let homeIqbal;
-  {
+  if (runs("people, linked not merged")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/people');
     const rows = await page.locator('main ul li').count();
@@ -304,7 +408,7 @@ try {
   }
 
   // ------------------------------------------- people: create, edit, link, move
-  {
+  if (runs("people: create, edit, link, move")) {
     const { ctx, page } = await pageAs(PRIYA);
     const stamp = `Smoke Test ${Date.now()}`;
 
@@ -401,7 +505,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("people: create, edit, link, move")) {
     const { ctx, page } = await pageAs(DANNY);
     await page.goto(`/people?space=${S_WORK}`);
     check('the partner sees no people in Work', (await page.locator('main ul li').count()) === 0);
@@ -418,7 +522,7 @@ try {
   }
 
   // ------------------------------------------------------------ keyboard
-  {
+  if (runs("keyboard")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/');
     await page.keyboard.press('Tab');
@@ -477,7 +581,7 @@ try {
 
 
   // ------------------------------------------------------- moving a note
-  {
+  if (runs("moving a note")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/notes');
     const noteHref = await page.locator('main a[href^="/notes/"]').first().getAttribute('href');
@@ -502,7 +606,7 @@ try {
   // the running app that a free_busy participant reaches times and never
   // titles, and that the merged calendar is merged by *policy* rather than by
   // a filter somebody could delete.
-  {
+  if (runs("calendar")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/calendar/week');
@@ -554,7 +658,7 @@ try {
   }
 
   // ---------------------------------------------- calendar: the partner
-  {
+  if (runs("calendar: the partner")) {
     const { ctx, page } = await pageAs(DANNY);
     await page.goto('/calendar/week');
 
@@ -670,7 +774,7 @@ try {
   }
 
   // ---------------------------------------------- calendar: the outsider
-  {
+  if (runs("calendar: the outsider")) {
     const { ctx, page } = await pageAs(OUTSIDER);
     await page.goto('/calendar/week');
     const blocks = await page.locator('main a[href^="/calendar/event/"]').count();
@@ -686,7 +790,7 @@ try {
   }
 
   // ------------------------------------------------------- ICS import
-  {
+  if (runs("ICS import")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/calendar/import');
 
@@ -783,7 +887,7 @@ try {
   // The CalendarProvider interface, exercised through the fake. The real
   // Google implementation runs this same code path and has never been executed
   // here — what this proves is the plumbing, not Google.
-  {
+  if (runs("calendar provider: connect and pull")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/calendar/import');
 
@@ -859,7 +963,7 @@ try {
   }
 
   // ------------------------------------------- calendar: editing and moving
-  {
+  if (runs("calendar: editing and moving")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/calendar/week?date=2026-03-23');
     await page.locator('main a[href^="/calendar/event/"]', { hasText: 'Monday assembly' }).first().click();
@@ -910,7 +1014,7 @@ try {
   }
 
   // -------------------------------------------------------------- places
-  {
+  if (runs("places")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/places');
@@ -1014,7 +1118,7 @@ try {
   }
 
   // ------------------------------------------------- places: an event's place
-  {
+  if (runs('places: an event\'s place')) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/calendar/month');
     // Places are seeded into Home only, and the picker offers a place from the
@@ -1050,7 +1154,7 @@ try {
   }
 
   // ------------------------------------ places: the partner and the outsider
-  {
+  if (runs("places: the partner and the outsider")) {
     // A place in Priya's own space. Created idempotently — the unique
     // constraint on (space_id, name) makes a second run a no-op.
     const { ctx, page } = await pageAs(PRIYA);
@@ -1066,7 +1170,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("places: the partner and the outsider")) {
     const { ctx, page } = await pageAs(DANNY);
     await page.goto('/places');
     const rows = await page.locator('main ul li').count();
@@ -1080,7 +1184,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("places: the partner and the outsider")) {
     const { ctx, page } = await pageAs(OUTSIDER);
     await page.goto('/places');
     const rows = await page.locator('main ul li').count();
@@ -1094,7 +1198,7 @@ try {
   //
   // 2026-07-29 is the seed's travel day: three Home events at three different
   // places, arranged so one hop has room and the next does not.
-  {
+  if (runs("travel")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto(`/travel?day=${TRAVEL_DAY}`);
@@ -1341,7 +1445,7 @@ try {
   }
 
   // ------------------------------------------- travel: partner and outsider
-  {
+  if (runs("travel: partner and outsider")) {
     const { ctx, page } = await pageAs(DANNY);
     await page.goto(`/travel?day=${TRAVEL_DAY}`);
     const titles = await page.locator('ul[aria-label="Trips"] li').allInnerTexts();
@@ -1363,7 +1467,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("travel: partner and outsider")) {
     const { ctx, page } = await pageAs(OUTSIDER);
     const res = await page.goto(tripUrl);
     check(
@@ -1386,7 +1490,7 @@ try {
   // did. Nothing here selects by index and nothing is left behind — the rule
   // this section creates is deleted at the end of it, so the suite passes
   // twice in a row against the same database.
-  {
+  if (runs("rules")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/rules');
@@ -1657,7 +1761,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("rules")) {
     const { ctx, page } = await pageAs(DANNY);
     await page.goto('/rules');
     const text = await page.locator('main').innerText();
@@ -1669,7 +1773,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("rules")) {
     const { ctx, page } = await pageAs(OUTSIDER);
     await page.goto('/rules');
     check(
@@ -1688,7 +1792,7 @@ try {
   // row against the same database. What it asserts is the *bargain*: the parse
   // is shown before anything is created, and what gets created is what the
   // preview said.
-  {
+  if (runs("capture")) {
     const { ctx, page } = await pageAs(PRIYA);
     const stamp = `smoke capture ${Date.now()}`;
 
@@ -1815,17 +1919,40 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("capture")) {
+    // Before 0015 this checked that the outsider had nowhere to capture into
+    // and that the button was therefore disabled. Now everybody is given
+    // Personal and Work on first sight of a page, so the truth is the other
+    // way round and is a better test of the same thing: they can capture, into
+    // their own spaces, and only into those.
     const { ctx, page } = await pageAs(OUTSIDER);
     await page.goto('/capture?text=something%20tomorrow');
+
+    const offered = await page
+      .locator('form[aria-label="Create what was captured"] span[title^="Space:"]')
+      .allInnerTexts();
     check(
-      'the outsider has no space to capture into',
-      (await page.locator('form[aria-label="Create what was captured"] input[name="spaceId"]').count()) === 0,
+      'the outsider is offered only their own spaces to capture into',
+      offered.length === 2 && offered.every((l) => /Personal|Work/.test(l)),
+      offered.join(', '),
     );
     check(
-      'so capture is refused rather than offered',
-      await page.getByRole('button', { name: 'Create it' }).isDisabled(),
+      'so capture works for an account that has only just arrived',
+      await page.getByRole('button', { name: 'Create it' }).isEnabled(),
     );
+
+    // The part that has not changed and must not: none of somebody else's
+    // spaces is on offer, whatever the line says.
+    await page.goto('/capture?text=something%20tomorrow%20%23home');
+    const hinted = await page
+      .locator('form[aria-label="Create what was captured"] span[title^="Space:"]')
+      .allInnerTexts();
+    check(
+      'and naming somebody else’s space in the line does not conjure it up',
+      hinted.every((l) => !/Home/.test(l)),
+      hinted.join(', '),
+    );
+
     await ctx.close();
   }
 
@@ -1836,7 +1963,7 @@ try {
   // *relationship* between what three different people get back for the same
   // query — not a count, which would rot the moment the seed changes.
   let priyaHrefs = [];
-  {
+  if (runs("search")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/');
@@ -1915,7 +2042,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("search")) {
     const { ctx, page } = await pageAs(DANNY);
     await page.goto('/search?q=bins');
     const dannyHrefs = await page
@@ -1950,7 +2077,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("search")) {
     const { ctx, page } = await pageAs(OUTSIDER);
     await page.goto('/search?q=bins');
     check(
@@ -1970,7 +2097,7 @@ try {
   // and that a locked item never happens at all. Both are driven here, in
   // order, through the running app — and the consent is switched back off at
   // the end, so the suite passes twice against the same database.
-  {
+  if (runs("AI")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/');
@@ -2075,7 +2202,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("AI")) {
     const { ctx, page } = await pageAs(DANNY);
     await page.goto('/ai');
     const text = await page.locator('main').innerText();
@@ -2099,7 +2226,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("AI")) {
     const { ctx, page } = await pageAs(OUTSIDER);
     await page.goto('/ai');
     check(
@@ -2118,7 +2245,7 @@ try {
   // Until now only note_summary had a surface: task_breakdown and weekly_review
   // had consent rows, disclosure text and prompts, and nothing called them.
   // Both are switched on and back off again here, so the suite runs twice.
-  {
+  if (runs("AI: the other two features")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     // ---- break a task into steps ----
@@ -2235,7 +2362,7 @@ try {
   //
   // Everything it creates it deletes, and everything it switches it switches
   // back, so the suite still passes twice against the same database.
-  {
+  if (runs("sync")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/');
@@ -2542,7 +2669,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("sync")) {
     const { ctx, page } = await pageAs(DANNY);
     await page.goto('/sync');
     const text = await page.locator('main').innerText();
@@ -2556,7 +2683,7 @@ try {
     await ctx.close();
   }
 
-  {
+  if (runs("sync")) {
     const { ctx, page } = await pageAs(OUTSIDER);
     await page.goto('/sync');
     check(
@@ -2576,7 +2703,7 @@ try {
   // pushed a local edit back to a provider — is_dirty was set and never
   // cleared, and 'pull' was the only direction ever written — and there was no
   // way at all to *create* a repeat from the UI.
-  {
+  if (runs("calendar: the two Phase 2 gaps")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     // ---- push back ----
@@ -2838,7 +2965,7 @@ try {
   // it makes are expired at the end, and the membership it grants is set back
   // to 'left' — which is exactly what running it a second time produces too, so
   // the suite still passes twice in a row against the same database.
-  {
+  if (runs("spaces, invites, roles")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/spaces');
@@ -2943,9 +3070,14 @@ try {
         (await sam.getByRole('button', { name: /^Accept/ }).count()) === 0,
       );
       await sam.goto('/tasks/all');
+      // Not "the word Work is absent from the page": since 0015 he has a space
+      // of his own called Work, and the seeded space he was not invited to is
+      // also called Work. What is being asserted is that he joined nothing —
+      // his own two spaces are empty, so any row at all would be somebody
+      // else's.
       check(
-        'and he is still a member of nothing',
-        !(await sam.locator('main').innerText()).includes('Work'),
+        'and he is still a member of nothing of theirs',
+        (await sam.locator('main ul li a[href^="/tasks/item/"]').count()) === 0,
       );
 
       // ---- the bearer link, which he does hold ----
@@ -3055,7 +3187,7 @@ try {
       );
       await sam.goto('/calendar/week');
       check(
-        'and the removed member sees nothing again, in a sidebar with no spaces in it',
+        'and the removed member sees nothing again, with no space of theirs in his sidebar',
         !(await sam.locator('nav[aria-label="Primary"]:visible').innerText()).includes('free/busy'),
       );
       await samCtx.close();
@@ -3063,7 +3195,7 @@ try {
   }
 
   // --------------------------------------------------------- dev auth is dev
-  {
+  if (runs("dev auth is dev")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/');
@@ -3102,7 +3234,7 @@ try {
   // `calendar:google`. What is asserted is the part that does not need one:
   // that identity stops being a cookie, that the switcher is unreachable, and
   // that a missing credential is a sentence rather than a 500.
-  {
+  if (runs("dev auth is dev")) {
     const port = Number(process.env.ORBIT_ALT_PORT ?? 3101);
     const altBase = `http://127.0.0.1:${port}`;
     const server = spawn('pnpm', ['exec', 'next', 'start', '--port', String(port)], {
@@ -3197,7 +3329,7 @@ try {
   // interface", and until now the app had one addEventListener in src/ and it
   // was listening for `online`. The two checks that matter most here are the
   // ones about what a shortcut must *not* do.
-  {
+  if (runs("keyboard shortcuts")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/');
 
@@ -3253,7 +3385,7 @@ try {
   // standing in a kitchen holding a phone. Every check here failed before the
   // responsive work, and none of them was visible to a suite that only ever
   // opened a desktop-sized window — which is why they are here now.
-  {
+  if (runs("on a phone")) {
     const { ctx, page } = await pageAs(PRIYA, PHONE);
     await page.goto('/');
 
@@ -3319,7 +3451,7 @@ try {
   }
 
   // ------------------------------------------------------------- dark mode
-  {
+  if (runs("dark mode")) {
     const { ctx, page } = await pageAs(PRIYA);
     const seen = {};
     for (const scheme of ['light', 'dark']) {
@@ -3344,7 +3476,7 @@ try {
   //
   // The override, driven the way somebody would: pin a theme while the
   // operating system is asking for the other one.
-  {
+  if (runs("settings: theme")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.emulateMedia({ colorScheme: 'light' });
 
@@ -3413,7 +3545,7 @@ try {
   }
 
   // -------------------------------------------------- settings: week start
-  {
+  if (runs("settings: week start")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/calendar/week');
@@ -3462,7 +3594,7 @@ try {
   // ever writing it. What makes revoking more than a label is that a revoked
   // device stops advancing its sync cursor — asserted here rather than assumed,
   // by pressing the button that advances it and checking that it did not.
-  {
+  if (runs("settings: revoking a device")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/sync');
@@ -3539,7 +3671,7 @@ try {
   }
 
   // ------------------------------------------ the health check and the guard
-  {
+  if (runs("the health check and the guard")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     const health = await page.request.get(`${BASE}/health`);
@@ -3570,7 +3702,7 @@ try {
   }
 
   // --------------------------------------- edge 32: assignment from the row
-  {
+  if (runs("edge 32: assignment from the row")) {
     const { ctx, page } = await pageAs(PRIYA);
     await page.goto('/tasks/all');
 
@@ -3674,7 +3806,7 @@ try {
   // What is checked here is the part only a browser can show: that dismissing
   // keeps a record, that the record is reachable from /sync, and that it can be
   // put back.
-  {
+  if (runs("edge 7: a dismissal keeps a record")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     await page.goto('/tasks/all');
@@ -3764,7 +3896,7 @@ try {
   //
   // Driven with the network actually disabled in the browser context, rather
   // than by asserting that a file exists.
-  {
+  if (runs("the offline shell")) {
     const { ctx, page } = await pageAs(PRIYA);
 
     const sw = await page.request.get(`${BASE}/sw.js`);
@@ -3916,9 +4048,57 @@ try {
   await browser.close();
 }
 
+// The verdict, kept so `--failed` has something to read. Written whether the
+// run passed or failed, and whether it was full or filtered: a filtered run
+// that fixes two of three failures has to leave the third behind.
+//
+// A filtered run only knows about the sections it ran, so the sections it
+// skipped keep whatever the previous run said about them. Otherwise re-running
+// one failing section would quietly mark every other failure as fixed.
+const previous = existsSync(LAST_RUN)
+  ? (JSON.parse(readFileSync(LAST_RUN, 'utf8')).checks ?? [])
+  : [];
+const ran = new Set(results.map((c) => c.section));
+const merged = [...previous.filter((c) => !ran.has(c.section)), ...results];
+
+writeFileSync(
+  LAST_RUN,
+  `${JSON.stringify(
+    { at: new Date().toISOString(), full: selected === null, checks: merged },
+    null,
+    2,
+  )}\n`,
+);
+
 console.log('');
-if (failures > 0) {
+
+const failedChecks = results.filter((c) => !c.ok);
+if (failedChecks.length > 0) {
+  const sections = [...new Set(failedChecks.map((c) => c.section))];
   console.log(`[1;31m✗[0m ${failures} of ${results.length} checks failed`);
+  console.log(
+    `  in ${sections.length} section${sections.length === 1 ? '' : 's'}: ${sections.join(', ')}`,
+  );
+  console.log('  re-run just those with: pnpm smoke --failed');
   process.exit(1);
 }
+
+if (selected !== null) {
+  // Never the words "all checks passed" for a partial run. A filtered pass says
+  // the sections it ran are fixed; it says nothing at all about the rest, and
+  // the last line of a test run is the one people quote.
+  const stillFailing = merged.filter((c) => !c.ok);
+  console.log(
+    `[1;32m✓[0m ${results.length} checks passed in ${ran.size} section${ran.size === 1 ? '' : 's'}` +
+      ` — ${skipped.size} skipped, so this was not a full run`,
+  );
+  if (stillFailing.length > 0) {
+    const left = [...new Set(stillFailing.map((c) => c.section))];
+    console.log(`  still failing from earlier runs: ${left.join(', ')}`);
+    process.exit(1);
+  }
+  console.log('  nothing is left failing — run `pnpm smoke` in full before calling it done');
+  process.exit(0);
+}
+
 console.log(`[1;32m✓[0m all ${results.length} smoke checks passed`);
