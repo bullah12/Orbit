@@ -54,6 +54,7 @@ import {
   SYNC_ENTITY_KINDS,
 } from '@/lib/queries/sync';
 import { isThemeChoice, parseWeekStart, resolveDefaultSpace } from '@/lib/prefs';
+import { shortLabelFrom, spaceKindPreset } from '@/lib/spaces';
 import { writeDefaultSpace, writeTheme, writeWeekStart } from '@/lib/prefs/cookies';
 import {
   isSyncEntityKind,
@@ -63,7 +64,7 @@ import {
 } from '@/lib/sync/conflict';
 import { normaliseDeviceLabel, type FlushOutcome } from '@/lib/sync/outbox';
 import { setThisDeviceLabel } from '@/lib/sync/device';
-import { listSpaces } from '@/lib/queries/spaces';
+import { createSpace, listSpaces } from '@/lib/queries/spaces';
 import {
   acceptInvite,
   createInvite,
@@ -2423,6 +2424,47 @@ export async function rewindDevice(formData: FormData) {
 // that in TypeScript. Accepting is the one operation that cannot be, and it
 // goes through `app.space_invite()`; see supabase/migrations/0012 for why.
 // ---------------------------------------------------------------------------
+
+/**
+ * Create a space.
+ *
+ * The first thing a real account can do, and until migration 0014 the thing it
+ * could not: a profile with no space has nowhere to put a task, so capture, the
+ * compose bars and everything else refuse. `next` carries where the person was
+ * when they found out — usually the capture page, which sends them here with
+ * the line they had typed still on the URL, so creating a space puts them back
+ * in front of it rather than at the start again.
+ */
+export async function createSpaceAction(formData: FormData) {
+  const user = await requireUser();
+  const name = String(formData.get('name') ?? '').trim();
+  // The kind decides the colour and the icon, from one table both this and the
+  // form read. A form that posted its own colour would be a form that could
+  // post one no stylesheet defines.
+  const preset = spaceKindPreset(String(formData.get('kind') ?? ''));
+
+  // Only ever back into Orbit. `next` arrives on a URL, and a redirect that
+  // will follow anything it is handed is an open redirect.
+  const raw = String(formData.get('next') ?? '');
+  const next = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/spaces';
+
+  const fail = (message: string) =>
+    redirect(`/spaces?error=${encodeURIComponent(message)}`);
+
+  if (!name) fail('A space needs a name.');
+
+  const result = await createSpace(user.id, {
+    name,
+    shortLabel: shortLabelFrom(name),
+    kind: preset.kind,
+    colour: preset.colour,
+    icon: preset.icon,
+  });
+  if ('error' in result) fail(result.error);
+
+  revalidatePath('/', 'layout');
+  redirect(next as never);
+}
 
 /**
  * Create an invitation and show its link once.

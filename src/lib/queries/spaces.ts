@@ -40,6 +40,50 @@ async function _listSpaces(userId: string): Promise<SpaceSummary[]> {
   });
 }
 
+/** What a new space is called and how its indicator looks. */
+export type NewSpace = {
+  name: string;
+  shortLabel?: string;
+  kind?: string;
+  colour?: string;
+  icon?: string;
+};
+
+/**
+ * Create a space, with the caller as its owner.
+ *
+ * Through `app.create_space()` rather than two inserts, because the second of
+ * those two inserts is refused: `space_members_insert` asks whether you are an
+ * admin of the space, and a space one statement old has no members to be an
+ * admin of. Migration 0014 has the whole argument. It still runs under
+ * `asUser`, so the function sees the caller's `auth.uid()` and can create a
+ * space for nobody else.
+ */
+export async function createSpace(
+  userId: string,
+  space: NewSpace,
+): Promise<{ id: string } | { error: string }> {
+  try {
+    const rows = await asUser(userId, async (tx) => {
+      return tx<{ id: string }[]>`
+        select app.create_space(
+          ${space.name},
+          ${space.shortLabel ?? null},
+          ${space.kind ?? 'personal'},
+          ${space.colour ?? 'slate'},
+          ${space.icon ?? 'circle'}
+        ) as id
+      `;
+    });
+    return rows[0] ?? { error: 'That space was not created.' };
+  } catch (err) {
+    // The function raises with a sentence meant for a person — "A space needs a
+    // name.", "Unknown space kind blue." — so it is carried through rather than
+    // replaced with a generic failure.
+    return { error: err instanceof Error ? err.message : 'That space was not created.' };
+  }
+}
+
 export type SpaceMember = {
   id: string;
   displayName: string;

@@ -4,6 +4,8 @@ import { listSpaces } from '@/lib/queries/spaces';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { ROLE_LABEL, ROLE_MEANING, isInviteRole } from '@/lib/invites';
+import { createSpaceAction } from '@/app/actions';
+import { SPACE_KINDS } from '@/lib/spaces';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +16,12 @@ export const dynamic = 'force-dynamic';
  * every space-scoped table — so this is the only screen where "who can see my
  * things" is a question with an answer on it.
  */
-export default async function SpacesPage() {
+export default async function SpacesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; next?: string }>;
+}) {
+  const { error, next } = await searchParams;
   const user = await requireUser();
   const spaces = await listSpaces(user.id);
 
@@ -27,6 +34,83 @@ export default async function SpacesPage() {
           in one, and the people in that space are the people who can see it.
         </p>
       </header>
+
+      {error && (
+        <p
+          role="alert"
+          className="hairline border-b px-5 py-2 text-xs"
+          style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
+        >
+          {error}
+        </p>
+      )}
+
+      {/* First, not last. An account with no space cannot create a task, a note
+          or an event anywhere in Orbit — capture has nowhere to write and says
+          so — so on an empty account this form is the whole page and everything
+          below it is explanation. */}
+      <section className="hairline border-b px-5 py-4" aria-labelledby="new-space-heading">
+        <h2 id="new-space-heading" className="text-sm font-semibold">
+          {spaces.length === 0 ? 'Make your first space' : 'New space'}
+        </h2>
+        <p className="muted mt-0.5 max-w-2xl text-xs">
+          {spaces.length === 0
+            ? 'Everything in Orbit lives in a space, so nothing can be created until there is one. Make one for yourself now — you can invite people to it, or make another for the household, whenever you like.'
+            : 'A second space is a second audience, not a second folder. Make one when a different set of people should see what is in it.'}
+        </p>
+
+        <form action={createSpaceAction} className="mt-3 flex flex-col gap-3">
+          {next && <input type="hidden" name="next" value={next} />}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="space-name" className="sr-only">
+              What is this space called?
+            </label>
+            <input
+              id="space-name"
+              name="name"
+              type="text"
+              required
+              maxLength={80}
+              autoFocus={spaces.length === 0}
+              placeholder={spaces.length === 0 ? 'Home' : 'Weekend cottage'}
+              className="input"
+              style={{ width: '18rem' }}
+            />
+            <button
+              type="submit"
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm"
+              style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+            >
+              <Icon name="plus" size={13} />
+              Create the space
+            </button>
+          </div>
+
+          <fieldset className="flex flex-wrap items-center gap-3">
+            <legend className="faint text-2xs font-semibold uppercase tracking-wider">
+              Who it is for
+            </legend>
+            {SPACE_KINDS.map((k, i) => (
+              <label key={k.kind} className="flex items-center gap-1.5 text-xs">
+                <input type="radio" name="kind" value={k.kind} defaultChecked={i === 0} />
+                <span
+                  className="inline-flex items-center"
+                  style={{ color: `var(--c-${k.colour})` }}
+                >
+                  <Icon name={k.icon} size={12} />
+                </span>
+                {k.label}
+              </label>
+            ))}
+          </fieldset>
+          <p className="faint text-2xs">
+            You will be its owner. The kind picks the colour and icon of its
+            indicator, and nothing else — who can see the space is decided by who
+            you invite to it.
+          </p>
+        </form>
+      </section>
 
       <section className="px-5 py-4">
         <ul className="surface divide-y" style={{ borderColor: 'var(--line)' }}>
@@ -51,8 +135,8 @@ export default async function SpacesPage() {
         </ul>
         {spaces.length === 0 && (
           <p className="muted text-xs">
-            You are not in any space yet. Somebody with a space can send you an
-            invitation link.
+            You are not in any space yet. Make one above, or ask somebody who has
+            one to send you an invitation link.
           </p>
         )}
       </section>

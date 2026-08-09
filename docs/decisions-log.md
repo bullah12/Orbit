@@ -1645,3 +1645,86 @@ while production ran against `orbit` would have proved nothing about production.
   anything is applied. The general lesson is that "the migrations are done" and
   "the tables are where I expect" are two claims, and only one of them was being
   checked.
+
+---
+
+## Session 13 — a real account could not create anything, and capture was a page you had to go to
+
+Two problems, reported together and connected: the **Create it** button on
+`/capture` was disabled on a real account, and it explained itself with the
+wrong sentence.
+
+### The bug: a profile is created at sign-up and a space is not
+
+`0012_auth_user_profiles.sql` gives every new auth user a profile by trigger.
+Nothing gives them a **space** — and a space is what every space-scoped table
+takes, so with none of them the account can create nothing at all. `/capture`
+rendered its **Into** fieldset empty, disabled the button, and printed *"There
+is nothing here but a date."* The line was fine. There was nowhere to put it.
+
+The only route into a space was an invitation from somebody who already had one,
+which for a deployment's first user is no route at all.
+
+### Why creating one needed a `SECURITY DEFINER` function
+
+Two inserts, and only the first is allowed:
+
+- `spaces_insert` permits inserting a space whose `owner_id` is `auth.uid()`.
+- `space_members_insert` requires `app.is_space_admin(space_id)` — and a space
+  created one statement ago has no members, so its creator is not an admin of
+  it. The insert that would make them one is the insert being refused.
+
+Left there, the space exists and nobody, including its owner, is in it.
+
+Widening `space_members_insert` to "…or you own the space" would work and is the
+wrong fix: `owner_id` is a column an insert chooses, so that policy would let
+anybody add themselves to any space they could name as owner. So
+`0014_space_creation.sql` adds `app.create_space()`, which does both writes
+together, for `auth.uid()` and nobody else. It is the same argument 0012 made
+for `app.space_invite()`, and the same narrow grant: revoked from `public`,
+granted to `authenticated`.
+
+There is no owner parameter, because there is nothing an owner parameter could
+be for except naming somebody else.
+
+### The first space is the default one
+
+`listSpaces` orders by `is_default desc`, and every compose surface preselects
+the first row, so the first space somebody creates is marked default and later
+ones are not. Choosing to have a second space is not choosing to make it your
+default.
+
+### The message was wrong, and that was most of the bug
+
+`ready` was one boolean over two conditions, so both failures printed the
+sentence written for the other one. It is two now: *no title* keeps the original
+sentence, and *no space* says the line is fine, says there is nowhere to put it,
+and links to the space form carrying the typed line back — so making a space
+returns you to the preview rather than to an empty field.
+
+### Capture is a bar at the top, not a page you navigate to
+
+It was a link in the rail and a tab at the bottom, which means leaving what you
+are reading before you can write down what you just remembered. The cost of that
+is the ideas that do not get written down. It is now a field and a button above
+every page, `GET`ting `/capture` with the line as `text` — exactly what the
+capture page's own form does, so there is still one parse of one string, and
+still no client JavaScript on the path.
+
+It renders nothing on `/capture` itself, where it would be the same field twice
+with the lower one holding what you typed. A layout cannot ask which page is
+beneath it, and the usual answer — a client component calling `usePathname()` —
+would ship JavaScript for one comparison, so `middleware.ts` forwards the path
+as a request header instead. Absent, the bar renders.
+
+### Verified against
+
+- `./scripts/db-test.sh` — **131/131**, including the new
+  `space_creation_test.sql`: the refused membership insert, the function that
+  replaces it, the first-space default, that a second person's call touches
+  nothing of the first's, and that a task can be written afterwards where it
+  could not before.
+- `pnpm test` **828** (was 816), build clean, typecheck clean, `pnpm smoke`
+  **455/455**.
+- A real browser, acting as a profile with no spaces: blocked capture → make a
+  space → back on the preview with the line still typed → created.

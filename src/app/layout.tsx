@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 import './globals.css';
+import { PATH_HEADER } from '@/middleware';
 import { devAuthRefusal, getCurrentUser, listSelectableUsers, usesDevAuth } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
 import { Sidebar } from '@/components/Sidebar';
+import { CaptureBar } from '@/components/CaptureBar';
 import { Shortcuts } from '@/components/Shortcuts';
 import { THEME_COLOUR, themeAttribute } from '@/lib/prefs';
 import { readTheme } from '@/lib/prefs/cookies';
@@ -120,6 +123,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               underneath it. `--tabbar` is that height plus the home indicator,
               and it is zero from `md` up where the bar is not rendered. */}
           <main id="main" tabIndex={-1} className="min-w-0 flex-1 pb-[var(--tabbar)]">
+            {/* Above every page rather than inside one: capturing is the thing
+                somebody does most and it should never be a navigation first.
+                It is a plain GET to /capture, so it behaves identically to the
+                field on that page — and it is rendered here, once, so no page
+                has to remember to offer it. */}
+            <CaptureBar
+              spaceCount={spaces.filter((s) => s.canWrite).length}
+              pathname={(await headers()).get(PATH_HEADER) ?? ''}
+            />
             {children}
           </main>
           <Shortcuts />
