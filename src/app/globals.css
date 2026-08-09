@@ -129,7 +129,10 @@
      ten category pins have to sit on top of them and stay legible. */
   --map-water:    light-dark(oklch(97% 0.008 235), oklch(12% 0.012 235));
   --map-land:     light-dark(oklch(93.7% 0.004 265), oklch(25.5% 0.008 265));
-  --map-line:     light-dark(oklch(84.5% 0.006 265), oklch(38.5% 0.010 265));
+  /* The coastline needs 1.5:1 on the land it is drawn on, or it disappears at
+     1px. The light half was 84.5% and came in at 1.336; 80% lands at 1.553,
+     which is about where the dark half (1.608) already sat. */
+  --map-line:     light-dark(oklch(80% 0.006 265), oklch(38.5% 0.010 265));
 }
 
 /* The manual override, and the whole of what it costs.
@@ -149,28 +152,50 @@
    are fixed. What changed is their spacing: hues are now 27-40 degrees apart
    instead of clustering (violet and indigo were 20 apart), and the pairs that
    collapse under deuteranopia - emerald/lime, rose/orange, indigo/violet - also
-   differ in lightness, so they stay told apart when hue stops helping. */
+   differ in lightness, so they stay told apart when hue stops helping.
+
+   Solved against their own chip fill, not against --bg: a value that clears
+   4.5:1 on --bg fails on --c-X-bg by construction, since the chip is darker
+   than --bg. Solving against the chip passes both.
+
+   The three pairs that collapse under deuteranopia are pinned ~0.06 OKLCH L
+   apart, in the direction that ADDS background contrast, same ordering in both
+   themes: rose > orange, lime > emerald, violet > indigo.
+
+   Chroma is clamped to the sRGB gamut per hue — amber and sky are necessarily
+   less saturated at these lightnesses.
+
+   ARTWORK: the app icons in public/icons/src/*.svg carry literal hex copies of
+   --accent and --bg-raised, because a manifest icon is rasterised outside the
+   browser and cannot read a custom property. If --accent moves, re-export:
+   node scripts/icons.mjs
+   Dark halves are solved against the repo's real dark --bg,
+   oklch(0.165 0.008 265) (#0d0e12). --bg itself is unchanged. */
 :root {
-  --c-rose:       light-dark(oklch(50% 0.17 18), oklch(75.5% 0.14 18));
-  --c-rose-bg:    light-dark(oklch(94.5% 0.035 18), oklch(31.5% 0.055 18));
-  --c-orange:     light-dark(oklch(51.5% 0.145 52), oklch(80% 0.12 52));
-  --c-orange-bg:  light-dark(oklch(95% 0.045 52), oklch(32.5% 0.055 52));
-  --c-amber:      light-dark(oklch(50.5% 0.125 88), oklch(83.5% 0.13 88));
-  --c-amber-bg:   light-dark(oklch(95% 0.05 88), oklch(33% 0.06 88));
-  --c-lime:       light-dark(oklch(50.5% 0.14 128), oklch(85.5% 0.16 128));
-  --c-lime-bg:    light-dark(oklch(95% 0.05 128), oklch(33% 0.06 128));
-  --c-emerald:    light-dark(oklch(47.5% 0.12 162), oklch(77.5% 0.135 162));
-  --c-emerald-bg: light-dark(oklch(94.5% 0.04 162), oklch(31% 0.05 162));
-  --c-sky:        light-dark(oklch(50.5% 0.13 228), oklch(79% 0.11 228));
-  --c-sky-bg:     light-dark(oklch(94.5% 0.04 228), oklch(30.5% 0.05 228));
-  --c-indigo:     light-dark(oklch(46.5% 0.16 268), oklch(73.5% 0.13 268));
-  --c-indigo-bg:  light-dark(oklch(94.5% 0.04 268), oklch(30% 0.055 268));
-  --c-violet:     light-dark(oklch(52.5% 0.17 300), oklch(78.5% 0.13 300));
-  --c-violet-bg:  light-dark(oklch(94.5% 0.04 300), oklch(31.5% 0.055 300));
-  --c-fuchsia:    light-dark(oklch(50.5% 0.19 338), oklch(77% 0.15 338));
-  --c-fuchsia-bg: light-dark(oklch(94.5% 0.045 338), oklch(32% 0.06 338));
-  --c-slate:      light-dark(oklch(48.5% 0.018 265), oklch(73.5% 0.018 265));
-  --c-slate-bg:   light-dark(oklch(93.5% 0.006 265), oklch(28.5% 0.008 265));
+  --c-rose:    light-dark(oklch(0.557 0.155 15),  oklch(0.683 0.155 15));
+  --c-orange:  light-dark(oklch(0.496 0.135 45),  oklch(0.622 0.135 45));
+  --c-amber:   light-dark(oklch(0.542 0.114 80),  oklch(0.615 0.115 80));
+  --c-lime:    light-dark(oklch(0.532 0.125 128), oklch(0.660 0.125 128));
+  --c-emerald: light-dark(oklch(0.473 0.112 158), oklch(0.601 0.115 158));
+  --c-sky:     light-dark(oklch(0.534 0.110 232), oklch(0.607 0.115 232));
+  --c-indigo:  light-dark(oklch(0.491 0.155 268), oklch(0.617 0.155 268));
+  --c-violet:  light-dark(oklch(0.552 0.145 295), oklch(0.678 0.145 295));
+  --c-fuchsia: light-dark(oklch(0.555 0.150 328), oklch(0.627 0.150 328));
+  --c-slate:   light-dark(oklch(0.539 0.022 250), oklch(0.612 0.022 250));
+
+  /* Chip fills: one lightness for all ten (0.962 light / 0.225 dark), the hue's
+     own angle, chroma clamped to gamut. Chip:bg lands 1.057-1.082 / 1.110-1.140. */
+
+  --c-rose-bg:    light-dark(oklch(0.962 0.019 15),  oklch(0.225 0.050 15));
+  --c-orange-bg:  light-dark(oklch(0.962 0.020 45),  oklch(0.225 0.047 45));
+  --c-amber-bg:   light-dark(oklch(0.962 0.034 80),  oklch(0.225 0.040 80));
+  --c-lime-bg:    light-dark(oklch(0.962 0.037 128), oklch(0.225 0.044 128));
+  --c-emerald-bg: light-dark(oklch(0.962 0.034 158), oklch(0.225 0.040 158));
+  --c-sky-bg:     light-dark(oklch(0.962 0.022 232), oklch(0.225 0.040 232));
+  --c-indigo-bg:  light-dark(oklch(0.962 0.018 268), oklch(0.225 0.050 268));
+  --c-violet-bg:  light-dark(oklch(0.962 0.020 295), oklch(0.225 0.050 295));
+  --c-fuchsia-bg: light-dark(oklch(0.962 0.032 328), oklch(0.225 0.050 328));
+  --c-slate-bg:   light-dark(oklch(0.962 0.007 250), oklch(0.225 0.008 250));
 }
 
 /* From `md` up the bottom bar is not rendered, so nothing has to be cleared. */

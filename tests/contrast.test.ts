@@ -263,6 +263,67 @@ describe('category and space colours', () => {
   });
 });
 
+/**
+ * The three pairs that collapse under deuteranopia.
+ *
+ * rose/orange, lime/emerald and violet/indigo are told apart by hue for most
+ * people and by nothing at all for some, so each pair also carries a lightness
+ * step. The ratios above cannot see this: a set where rose and orange had swapped
+ * lightness would pass every contrast assertion in this file and still lose a
+ * distinction for the readers who most need it. The order is asserted rather
+ * than the gap alone, in both themes, because the point is that a space keeps
+ * its relative weight when the OS switches at sunset.
+ *
+ * 0.04 is a floor, not the target — the palette is solved to ~0.06.
+ */
+describe('the deuteranopia pairs stay apart on lightness', () => {
+  const PAIRS: [string, string][] = [
+    ['rose', 'orange'],
+    ['lime', 'emerald'],
+    ['violet', 'indigo'],
+  ];
+
+  const lightnessOf = (token: string): number => {
+    const parsed = parseOklch(token);
+    if (!parsed) throw new Error(`not an oklch() value: ${token}`);
+    return parsed.l;
+  };
+
+  it.each(THEMES)('%s: the lighter of each pair leads by at least 0.04 L', (_name, t) => {
+    for (const [lighter, darker] of PAIRS) {
+      const gap = lightnessOf(t[`--c-${lighter}`]!) - lightnessOf(t[`--c-${darker}`]!);
+      expect(gap, `--c-${lighter} minus --c-${darker}`).toBeGreaterThanOrEqual(0.04);
+    }
+  });
+});
+
+/**
+ * The map, which is the one surface with no text on it.
+ *
+ * Every other colour here is pinned by something a person has to read, so it
+ * cannot drift far without a body-text assertion catching it. Land, water and
+ * the coastline carry no such anchor: they could be tuned to any three greys
+ * and the suite would stay green while a place marker vanished into the sea.
+ *
+ * The marker is `--accent`, deliberately and not a token of its own — the ten
+ * category hues belong to user data, so a marker in one of them would claim a
+ * colour a space can be assigned. That makes `--accent` load-bearing on this
+ * surface too: if one of these fails, the fills move, never the accent.
+ */
+describe('map surfaces', () => {
+  it.each(THEMES)('%s: the coastline is visible on the land it borders', (_name, t) => {
+    const ratio = contrastOfOklch(t['--map-line']!, t['--map-land']!);
+    expect(ratio, '--map-line on --map-land').toBeGreaterThanOrEqual(1.5);
+  });
+
+  it.each(THEMES)('%s: a place marker clears 3:1 on both map fills', (_name, t) => {
+    for (const fill of ['--map-land', '--map-water']) {
+      const ratio = contrastOfOklch(t['--accent']!, t[fill]!);
+      expect(ratio, `--accent on ${fill}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
+
 describe('hairlines', () => {
   it.each(THEMES)('%s: --line is visible against --bg without shouting', (_name, t) => {
     const ratio = contrastOfOklch(t['--line']!, t['--bg']!);
