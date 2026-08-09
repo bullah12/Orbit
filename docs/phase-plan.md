@@ -180,8 +180,11 @@ changes nothing about how anything already here works.
       It verifies the session server-side against GoTrue's REST API and hands
       the JWT's `sub` to the **existing** `asUser()`. No SDK, no service-role
       client, no local signature checking, and not one line of
-      `src/lib/queries/` changed. **Written, never run** — there is no project
-      and no credential here
+      `src/lib/queries/` changed. ~~**Written, never run** — there is no project
+      and no credential here~~ **Corrected session 14: it runs in production.**
+      There is a real Supabase project and Orbit is deployed on Vercel against
+      it. Signing in has run; the refresh path, magic links and a real
+      invitation redeemed by a second account have not been watched by anybody
 - [x] `AUTH_PROVIDER=dev` remains the default and remains fully working: 692
       Vitest tests and 382 smoke checks still run with zero credentials
 - [x] Sign-in, sign-up, sign-out and magic-link callback screens, from the
@@ -213,8 +216,12 @@ changes nothing about how anything already here works.
 - [x] `space_invites` out of the pgTAP known-empty ledger. plan(83) → plan(106)
 - [x] `output: 'standalone'`, a Dockerfile that builds it, and `docs/deploy.md`
       as commands somebody can follow — migration order, the three gotchas and
-      the `prepare: false` pooler note. **Nothing was deployed and no account
-      was created**
+      the `prepare: false` pooler note. ~~**Nothing was deployed and no account
+      was created**~~ — true of *that* session. **Corrected session 14:** the
+      deployment happened later, on **Vercel**, which `docs/deploy.md` had ruled
+      out. Serverless is a supported shape with `DATABASE_POOL_MAX=1` and
+      `DATABASE_PREPARE=false` against the transaction pooler; see
+      `docs/deployment-and-android.md` §3
 
 ## Session 10 — the review, and the phone
 

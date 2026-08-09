@@ -14,10 +14,17 @@ import {
 /**
  * Supabase Auth, written against the published GoTrue REST API.
  *
- * **Written, never run.** There is no Supabase project and no credential in
- * this repository, so not one line below has ever sent a request — exactly like
- * `calendar:google` and `ai:anthropic`. Do not let `AUTH_PROVIDER=dev` passing
- * stand in for it.
+ * **Running in production, and mostly unwatched.** This said "written, never
+ * run" for four sessions and that is no longer true: Orbit is deployed against
+ * a real Supabase project and this provider is what serves it. Signing in has
+ * run — it is how two of session 13's bugs were reported.
+ *
+ * What nobody has watched execute: `refreshSession` (named for four sessions as
+ * the part most likely to be wrong), `sendMagicLink`/`verifyEmailToken`, and a
+ * sign-up against a project with email confirmation on. There is still no
+ * project and no credential *in this repository*, so nothing here exercises any
+ * of it — do not let `AUTH_PROVIDER=dev` passing stand in for it, and do not
+ * read "deployed" as "tested".
  *
  * Three things this provider deliberately does not do:
  *

@@ -3,6 +3,14 @@
 Last rewritten: **session 12**, 2026-08-08. Branch:
 `claude/brief-c-settings-offline-shell-0l1q6x`.
 
+**Corrected in session 14, 2026-08-09**, on `claude/orbit-docs-refresh`, without
+rewriting: **Orbit is deployed on Vercel against a real Supabase project and
+`AUTH_PROVIDER=supabase` is the provider serving it.** The sections below that
+said otherwise are fixed in place and each correction is marked. This file has
+not been rewritten since session 12, so **its counts are session 12's**; session
+13's are noted beside them. Nothing else was upgraded: every provider still
+without a credential is *written, never run*, and the Android client is unbuilt.
+
 This file takes precedence over your assumptions about what is done. Read it,
 then `docs/design-review.md`, then `docs/decisions-log.md`, then get the
 database up and pick from **Next three things** at the bottom.
@@ -25,7 +33,7 @@ answered from disk. That was not on any edge list, and it was only found because
 the check drives a real browser with the network really off rather than
 asserting that a file exists.
 
-**Five commands are the whole truth about this repo.** All five were run at the
+**Five commands were the whole truth about this repo.** All five were run at the
 end of session 12, and all five were green:
 
 ```
@@ -35,6 +43,23 @@ pnpm typecheck         clean (needs the build first on a fresh clone)
 pnpm test              816 Vitest tests in 21 files   (was 735)
 pnpm smoke             455/455 against the running app   (was 402; needs pnpm start)
 ```
+
+**Corrected in session 14.** Two things have moved since that block was written.
+
+*The counts are out of date*, because session 13 added three migrations
+(0014–0016) and did not rewrite this file. Its recorded figures:
+`./scripts/db-test.sh` **175/175**, `pnpm test` **828**, `pnpm smoke`
+**455/455**, build and typecheck clean.
+
+*The rule changed.* `CLAUDE.md` is now the authority on what to run: **`pnpm
+build` then `pnpm smoke`**, and nothing else unless asked. `pnpm build`
+type-checks, so a separate `pnpm typecheck` is redundant on a change that
+builds; `./scripts/db-test.sh` and `pnpm test` cover what smoke structurally
+cannot see — policies and definer functions, and the pure modules in
+`src/lib/` — and are run on request. Session 14 ran `pnpm build` (clean) and
+`pnpm smoke` in full (**456/456**, one more than session 13 recorded) and did
+not run the other three. It changed no behaviour — two doc comments in
+`src/lib/auth/` that still said this provider had never run, and documents.
 
 `pnpm smoke` was also run **twice in a row without a reseed**, which is edge 3's
 standing rule, and passed both times.
@@ -64,14 +89,32 @@ that say `public` and are *not* the schema, each of which had to be left alone.
 
 ## The one thing to understand before you touch anything
 
-**`AUTH_PROVIDER=supabase` has never run.** Unchanged from session 9 and still
-the most important sentence in this file. There is no Supabase project, no
-credential and no network in this container. The provider is a complete
-implementation of Supabase's GoTrue REST API and not one line of it has ever
-sent a request — exactly like `calendar:google` and `ai:anthropic`.
+**Corrected in session 14. This section said `AUTH_PROVIDER=supabase` had never
+run. It has.**
 
-Nothing in session 12 touched authentication. **"Signing in to Supabase works"
-is still proven by nothing.**
+**Orbit is deployed on Vercel against a real Supabase project, and
+`AUTH_PROVIDER=supabase` is the provider serving it.** The claim that there is
+no project and no credential was true for four sessions and is now false. It was
+already falsified inside this repository before session 14 said so: two of
+session 13's bugs were **reported from a real project**, one of them naming a
+real account id, and migrations 0014–0016 exist because of them.
+
+**What has run, and what has not.** Signing in has run — that is what produced
+those reports — and so has the profile/adoption path underneath it. Nobody has
+yet watched **the refresh path**, a **magic link**, a sign-up with email
+confirmation on, or **an invitation redeemed by a second real account**. The
+refresh path is the one this file has named for four sessions as most likely to
+be wrong, and it is still unwatched.
+
+So the honest label is **running in production, not acceptance-tested** — which
+is neither "never run" nor "works". `docs/remaining-work.md` §5 is the prompt
+for the session that closes the gap, and §6 of
+`docs/deployment-and-android.md` lists what is left by hand.
+
+**Nothing else moved with it.** `calendar:google`, `ics:http`,
+`geocoding:nominatim`, `travel:openrouteservice`, `push:webpush` and
+`ai:anthropic` are still *written, never run* — a deployment is not a
+credential — and the Android client is still unbuilt.
 
 ---
 
@@ -276,7 +319,7 @@ value is a hard error rather than a silent fall back.
 
 | Interface | Default (runs here) | Real |
 |---|---|---|
-| `AuthProvider` | `auth:dev` | `auth:supabase` — **written, never run** |
+| `AuthProvider` | `auth:dev` | `auth:supabase` — **running in production, not acceptance-tested** (corrected session 14) |
 | `CalendarProvider` | `calendar:fake` | `calendar:google` — **written, never run** |
 | `IcsProvider` | `ics:fake` | `ics:http` — **written, never run** |
 | `GeocodingProvider` | `geocoding:fake` | `geocoding:nominatim` — **written, never run** |
@@ -284,9 +327,11 @@ value is a hard error rather than a silent fall back.
 | `PushProvider` | `push:fake` | `push:webpush` — **written, never run** |
 | `AiProvider` | `ai:fake` | `ai:anthropic` — **written, never run** |
 
-**"Written, never run" means exactly that.** No real provider here has ever sent
-a request. Do not describe one as working, and do not let a fake stand in for
-one in a "Works" claim.
+**"Written, never run" means exactly that.** None of the six providers still
+carrying the label has ever sent a request. Do not describe one as working, and
+do not let a fake stand in for one in a "Works" claim. `auth:supabase` left the
+label by being deployed and signed into, not by being improved — and it has not
+reached "Works", which in this file means *executed and watched*.
 
 Also still fixture-backed or absent: **locked items** have no client-side
 crypto; **there is no scheduler**; **`AUTH_COOKIE_SECRET` still signs nothing.**
@@ -300,8 +345,18 @@ page says so and links to `/sync`.
 
 ## Not started
 
-- **Nothing was deployed.** No hosting account, no Supabase project, nothing
-  bought. `docs/deploy.md` is instructions and says so at the top.
+- ~~**Nothing was deployed.**~~ **Corrected in session 14: Orbit is deployed**,
+  on Vercel, against a real Supabase project. `docs/runbook.md` §4 is the
+  current sequence and `docs/deployment-and-android.md` §3 explains why
+  serverless is now a supported shape rather than a warning — the pool is an
+  asset in a process that outlives the request and a liability in one that does
+  not, and against Supabase's transaction pooler with `DATABASE_POOL_MAX=1` and
+  `DATABASE_PREPARE=false` the app stops pooling for itself. `docs/deploy.md`
+  still opens with "nothing in this file has been run"; that line is now about
+  the *commands*, not the outcome.
+- **The acceptance pass has not happened.** Deployed is not tested: the refresh
+  path, magic links and a real invitation redeemed by a second account are all
+  still unwatched. This is the first item under **Next three things**.
 - **The Android client (Brief B)** has not been started, and session 10 weakened
   the case considerably: the web app is usable on a phone and installable, which
   was most of what Brief B was for. Session 12 weakens it further — an installed
@@ -330,8 +385,11 @@ documents. Two are new.
 
 ### Carried over
 
-1. **The `supabase` provider has never run**, and the refresh path is the part
-   most likely to be wrong.
+1. **The `supabase` provider's refresh path has never been watched**, and it is
+   still the part most likely to be wrong. *Corrected in session 14: the
+   provider itself has run — it is what serves the deployment — so this entry is
+   now about the one path inside it that nobody has seen execute, not about the
+   whole of it.*
 2. **A raw invitation token lands in the browser's history.**
 3. **`pnpm smoke` leaves invitation rows behind** — two per run. `pnpm seed`
    clears them. The suite is checked to pass **twice in a row without a
@@ -495,13 +553,17 @@ steps, with what to check after each and what going wrong looks like. Its step 0
 matters: migration `0013` was written *after* the migrations were applied by
 hand, so it still needs running.
 
-1. **Somebody has to do the by-hand steps** — create the Supabase project, run
-   the migrations, create `orbit_app`, deploy, and sign up once.
-   `docs/deploy.md` is the list, and `docs/remaining-work.md` §5 is the prompt
-   for the session that follows it. **Until that happens the supabase provider
-   stays "written, never run" and no session can change that.** Unchanged since
-   session 9 and still first by a distance. Everything below improves an app
-   nobody can reach yet.
+1. **Corrected in session 14 — the by-hand steps are done; the acceptance pass
+   is not.** The project exists, the migrations are applied, the app is deployed
+   on Vercel and somebody has signed up: that is what closed the loop, and what
+   surfaced the bugs migrations 0014–0016 fix. What remains is **driving real
+   authentication end to end and writing down what happened** — sign in, sign
+   out, a magic link, and letting a session expire so **the refresh path**
+   runs, then a second account and an invitation with each offerable role
+   including `free_busy`, accepted, declined, expired and revoked.
+   `docs/remaining-work.md` §5 is the prompt for exactly that session, and its
+   two placeholders can now be filled in. Still first by a distance: everything
+   below improves an app whose riskiest path is still unproven.
 2. **Edge 13 — a push does not delete**, and **edge 16 — nothing runs a
    `schedule` rule on a schedule.** With 7 closed, 13 is the one with the most
    teeth: a provider push that cannot delete means a cancelled event stays in
