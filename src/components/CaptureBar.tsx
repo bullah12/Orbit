@@ -43,7 +43,7 @@ export function CaptureBar({
         <span className="muted">Nothing can be captured until you are in a space.</span>
         <Link
           href="/spaces"
-          className="hairline inline-flex items-center gap-1 rounded border px-2 py-0.5"
+          className="btn hairline inline-flex items-center gap-1 rounded border px-2 py-0.5"
         >
           <Icon name="plus" size={11} />
           Make one
@@ -73,8 +73,7 @@ export function CaptureBar({
       />
       <button
         type="submit"
-        className="inline-flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1.5 text-sm"
-        style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1.5 text-sm btn-primary"
       >
         <Icon name="plus" size={13} />
         Capture

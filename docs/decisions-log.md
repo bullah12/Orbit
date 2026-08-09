@@ -1922,3 +1922,82 @@ chicken-and-egg is unchanged.
   `orbit.profiles`, so a profile-less account falls back to the first seeded
   one; the JWT-claims fallback that makes this reachable at all is the Supabase
   provider's, which still has never run here.
+
+---
+
+## Session 13, fourth pass — buttons that answer, and a brief for the icon
+
+Reported: *"when I press or hover over them, I can't tell, and it looks like I
+haven't pressed it when I do."* Three separate faults wearing one complaint.
+
+### 1. There was no hover state, anywhere
+
+Not a weak one — none. `globals.css` styled `.input:hover` and `.row-hover` and
+stopped there; every button in the app had exactly one appearance. The base rule
+is now on the **element**, not a class, so all of them answer without thirty call
+sites being edited, and the two variants exclude themselves by name rather than
+by out-specifying it, because a specificity race is a thing somebody loses later.
+
+### 2. The filled button could not have one
+
+`background: var(--accent)` was in a `style` attribute at 30 call sites, and an
+inline style beats a stylesheet — so no `:hover` rule could ever have reached
+it. They are `.btn-primary` now. That is the entire reason the change touches 23
+files; the interesting part is about eighty lines of CSS.
+
+### 3. The gap after the click, which is not a CSS problem
+
+Every write is a server action, so between the click and the new HTML there is a
+round trip in which a plain button looks exactly as it did before. Locally that
+is 80ms and invisible. On a phone on a train it is long enough to press again —
+and pressing "Create it" twice makes two tasks.
+
+`SubmitButton` uses `useFormStatus` to disable, mark `aria-busy` and turn a
+spinner while the action is in flight. It is a Client Component and the forms
+around it are not; with JavaScript off it is a plain submit button. It is on the
+seven controls where the wait is real (capture, create/rename/delete a space,
+save/delete a task, add a task) rather than everywhere, because the rest are
+`GET` forms where `useFormStatus` never reports pending anyway.
+
+**The label does not change while pending.** "Create it" → "Saving…" moves under
+the pointer and reads as a different control; the spinner says it without the
+layout shifting, and every smoke check that finds a button by name keeps working.
+
+### What the states are, and what they cost
+
+Hover strengthens the edge *and* the fill; pressed darkens further and drops the
+control 1px. The 1px is the one that reads as mechanical rather than decorative,
+and it survives colour-blindness, dark mode, and a phone that renders `:hover`
+permanently.
+
+Three new tokens, because reusing `--bg-hover` would have made pressing a button
+look identical to hovering a row — that token is deliberately faint, since a
+list of sixty rows cannot flash. Both accent steps move *away* from the surface
+in their own theme, darker in light and lighter in dark, so contrast against
+`--accent-text` goes **up** when a button is pressed. `contrast.test.ts` now
+measures all three and asserts the pressed ratio is never below the resting one.
+
+**No shadow**, deliberately: the elevation note in `globals.css` says box-shadow
+appears on exactly two things and neither is decorative. A pressed-in inset on
+every control in a dense app would be a third. Colour and position do it instead.
+
+### The icon brief
+
+`docs/design-brief-icons.md`, self-contained so it can be handed over without
+reading the repository first: the palette as `oklch()` triples, the constraint
+that there is no new brand colour, the maskable safe zone, the deliverables
+including the exact `icons` array to paste into `manifest.ts`, and the three
+obvious answers it may not come back with (a checkmark, a clock, a calendar
+page) without arguing for them. The manifest still declares no icons, and the
+comment saying why is the thing the answer deletes.
+
+### Verified against
+
+- Measured in a real browser rather than eyeballed: computed `background-color`,
+  `border-color` and `translate` at rest, on hover and while held down, in both
+  themes, for a filled button, an outlined one, and a plain `<button>` carrying
+  no class at all.
+- The pending state with the action held for 2.5s: `aria-busy`, disabled,
+  spinner turning, label unchanged.
+- `pnpm test tests/contrast.test.ts` — the one suite outside the smoke rule that
+  a palette change must not skip.

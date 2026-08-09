@@ -107,12 +107,10 @@ export function SubmitButton({
     <button
       type="submit"
       formAction={formAction}
-      className="hairline w-full rounded border px-3 py-1.5 text-sm font-medium"
-      style={
-        quiet
-          ? { background: 'var(--bg-raised)' }
-          : { background: 'var(--accent)', color: 'var(--accent-text)', borderColor: 'transparent' }
-      }
+      className={`hairline w-full rounded border px-3 py-1.5 text-sm font-medium${
+        quiet ? '' : ' btn-primary'
+      }`}
+      style={quiet ? { background: 'var(--bg-raised)' } : undefined}
     >
       {children}
     </button>

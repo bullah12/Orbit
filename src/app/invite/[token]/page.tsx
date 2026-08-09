@@ -119,8 +119,7 @@ export default async function InvitePage({
                 <input type="hidden" name="token" value={token} />
                 <button
                   type="submit"
-                  className="hairline rounded border px-3 py-1.5 text-sm"
-                  style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+                  className="hairline rounded border px-3 py-1.5 text-sm btn-primary"
                 >
                   Accept and join {view.spaceName}
                 </button>

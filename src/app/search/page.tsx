@@ -81,8 +81,7 @@ export default async function SearchPage({
             />
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm"
-              style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm btn-primary"
             >
               <Icon name="search" size={13} />
               Search

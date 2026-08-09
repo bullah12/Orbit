@@ -6,6 +6,7 @@ import { SpaceIndicator } from './SpaceIndicator';
 import { Icon } from './Icon';
 import type { SpaceSummary } from '@/lib/queries/spaces';
 import type { CategoryOption } from '@/lib/queries/tasks';
+import { SubmitButton } from '@/components/SubmitButton';
 
 /**
  * The compose surface.
@@ -121,13 +122,9 @@ export function ComposeTask({
         ))}
       </fieldset>
 
-      <button
-        type="submit"
-        className="rounded px-2 py-1 text-xs font-medium"
-        style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
-      >
+      <SubmitButton className="rounded px-2 py-1 text-xs font-medium btn-primary">
         Add
-      </button>
+      </SubmitButton>
     </form>
   );
 }

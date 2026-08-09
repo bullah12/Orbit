@@ -185,8 +185,7 @@ export default async function PlacePage({
             <div>
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-xs font-medium"
-                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+                className="rounded px-3 py-1.5 text-xs font-medium btn-primary"
               >
                 Save changes
               </button>
@@ -589,8 +588,7 @@ function PlaceMoveSection({
               <input type="hidden" name="targetSpaceId" value={target.id} />
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-xs font-medium"
-                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+                className="rounded px-3 py-1.5 text-xs font-medium btn-primary"
               >
                 Move to {target.name}
               </button>

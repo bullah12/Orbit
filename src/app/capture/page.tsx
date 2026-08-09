@@ -6,6 +6,7 @@ import { parseCapture, describeCapture, type CaptureMatch } from '@/lib/capture'
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { captureCreate } from '@/app/actions';
+import { SubmitButton } from '@/components/SubmitButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -236,15 +237,13 @@ export default async function CapturePage({
               </fieldset>
 
               <div>
-                <button
-                  type="submit"
+                <SubmitButton
+                  icon="plus"
                   disabled={!ready}
-                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm disabled:opacity-50"
-                  style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm disabled:opacity-50 btn-primary"
                 >
-                  <Icon name="plus" size={13} />
                   Create it
-                </button>
+                </SubmitButton>
                 {blocked === 'no-title' && (
                   <p className="faint mt-1 text-2xs">
                     There is nothing here but a date. Type what it is as well.
