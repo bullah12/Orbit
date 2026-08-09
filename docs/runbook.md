@@ -161,7 +161,7 @@ grant execute on function app.identity_profiles() to orbit_app;
 SQL
 ```
 
-**Check what it is not.** These three are the assertions, not the creation:
+**Check what it is not.** These four are the assertions, not the creation:
 
 ```sh
 # 1. Not a superuser, and no BYPASSRLS. Either one makes every policy advisory.
@@ -176,18 +176,40 @@ psql "$ADMIN_URL" -c "\
   where schemaname in ('orbit','app') and tableowner = 'orbit_app'"
 # expect: 0
 
-# 3. It can actually connect and RLS bites. Zero rows is correct here —
-#    there is no JWT on this connection, so auth.uid() is null and every
-#    policy declines. A number greater than zero means RLS is not applying.
-psql "postgresql://orbit_app:PASSWORD@db.YOUR-REF.supabase.co:5432/postgres" \
-  -c "select count(*) from orbit.tasks"
+# 3. It holds no table privileges of its own. `orbit_app` is created
+#    `noinherit`, so being a member of `authenticated` grants it nothing until
+#    it says SET ROLE — which is exactly what asUser() does, scoped to a
+#    transaction so a pooled connection cannot carry one request's identity
+#    into the next.
+#
+#    "ERROR: permission denied for table tasks" is the CORRECT answer.
+psql "$APP_URL" -c "select count(*) from orbit.tasks"
+
+# 4. And with the role it actually uses, RLS still declines: there is no JWT
+#    on this connection, so auth.uid() is null and every policy returns
+#    nothing. This is the half that proves the policies are switched on.
+psql "$APP_URL" -c "set role authenticated; select count(*) from orbit.tasks"
 # expect: 0
 ```
 
-> **If check 3 errors with "permission denied for schema orbit"**, the `grant
-> usage` did not take — re-run step 1. **If it returns a non-zero count**, stop:
-> the role is reading rows without a session, which means RLS is not applying to
-> it and nothing below is safe.
+where `$APP_URL` is `orbit_app`'s own connection string — the tenant-qualified
+role on the pooler, not the `postgres` one:
+
+```sh
+export APP_URL='postgresql://orbit_app.YOUR-REF:ORBIT-APP-PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres'
+```
+
+> **If check 3 succeeds instead of erroring**, `orbit_app` was created without
+> `noinherit` and is using privileges directly. Not fatal — the policies still
+> apply to `authenticated` — but it is a wider surface than the design intends.
+> `alter role orbit_app noinherit;` puts it back.
+>
+> **If check 3 says "permission denied for schema orbit"**, the `grant usage`
+> did not take — re-run step 1.
+>
+> **If check 4 returns a non-zero count, stop.** The role is reading rows with
+> no session behind it, which means RLS is not applying and nothing below is
+> safe.
 
 ---
 
