@@ -63,10 +63,29 @@ export type Tx = TransactionSql<Record<string, never>>;
  * scopes both settings to this transaction, so a pooled connection cannot carry
  * one request's identity into the next.
  */
-export async function asUser<T>(userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export async function asUser<T>(
+  userId: string,
+  fn: (tx: Tx) => Promise<T>,
+  identity?: { email?: string; displayName?: string },
+): Promise<T> {
+  // `sub` is the whole of the identity for every query in Orbit — the policies
+  // ask `auth.uid()` and nothing else. `identity` adds the two claims Supabase's
+  // own tokens carry, and exactly one caller passes them: the function that
+  // creates a profile for an account that has none, which needs an address to
+  // put on it (see supabase/migrations/0016).
+  //
+  // It is not a new trust boundary. This connection already asserts who the
+  // caller is; a server that could lie about the email could lie about the id.
+  // What matters is that nothing *outside* this server can choose it: the value
+  // comes from a session verified with GoTrue, never from a form field, and the
+  // database refuses to take an email as a function argument for that reason.
+  const claims: Record<string, unknown> = { sub: userId };
+  if (identity?.email) claims.email = identity.email;
+  if (identity?.displayName) claims.user_metadata = { display_name: identity.displayName };
+
   return pool.begin(async (tx) => {
     await tx.unsafe('set local role authenticated');
-    await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: userId })}, true)`;
+    await tx`select set_config('request.jwt.claims', ${JSON.stringify(claims)}, true)`;
     return fn(tx as Tx);
   }) as Promise<T>;
 }

@@ -233,6 +233,36 @@ psql "$ADMIN_URL" -c "\
 
 You cannot finish this check until somebody has signed up — that is step 5.
 
+### Accounts that were already there
+
+The trigger only fires on *new* auth users, and on a real project people are
+usually signed up **before** Orbit's migrations reach it. Those accounts have no
+profile, so they sign in, see nothing, and get
+
+```
+There is no profile for the signed-in account (c9905550-…).
+```
+
+if they try to make a space. `0016_adopt_existing_accounts.sql` fixes them, and
+leaves behind a function that answers "is anybody in that state?" at any time:
+
+```sh
+# Inspect. Changes nothing; this is the default.
+psql "$ADMIN_URL" -c "select * from app.provision_missing_accounts()"
+
+# Fix: a profile and the two default spaces for every account missing them.
+psql "$ADMIN_URL" -c "select * from app.provision_missing_accounts(false)"
+```
+
+`profile` in the result is `would_create`, `created`, `exists`,
+`email_repaired`, or `email_taken`. Only the last needs a person: it means
+another profile already holds that account's email address, and the two are not
+merged — decide which account keeps the address, then run it again.
+
+Accounts also repair themselves the next time they load a page, so in practice
+this is for checking, or for fixing everybody at once without waiting for them
+to visit.
+
 ---
 
 ## 3. Supabase Auth settings
@@ -425,8 +455,11 @@ psql "$ADMIN_URL" -c "\
   from auth.users u join public.profiles p on p.id = u.id"
 ```
 
-> **If this returns no rows**, the trigger did not fire — there is an
-> `auth.users` row and no `profiles` row. Back to step 2.
+> **If this returns no rows**, there is an `auth.users` row and no `profiles`
+> row. If the account was created *before* the migrations were applied that is
+> expected — run `select * from app.provision_missing_accounts(false)` (step 2,
+> "Accounts that were already there"). If it was created after, the trigger did
+> not fire: back to step 2.
 >
 > **If `ids_match` is not `t`, stop.** Every policy will return zero rows and
 > tell you nothing. The app will look like an empty account rather than a broken
