@@ -55,8 +55,8 @@ export async function listConsents(userId: string): Promise<ConsentRow[]> {
         c.space_id            as "spaceId",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.ai_feature_consents c
-      join public.spaces s on s.id = c.space_id
+      from orbit.ai_feature_consents c
+      join orbit.spaces s on s.id = c.space_id
       order by s.name, c.feature
     `;
   });
@@ -81,7 +81,7 @@ export async function setConsent(
   // happens, not only in a migration.
   const changed = await asUser(userId, async (tx) => {
     const result = await tx`
-      update public.ai_feature_consents
+      update orbit.ai_feature_consents
       set is_enabled   = ${enabled},
           consented_at = case when ${enabled} then coalesce(consented_at, now()) else consented_at end,
           revoked_at   = case when ${enabled} then null else now() end
@@ -124,8 +124,8 @@ export async function listNoteSubjects(userId: string, limit = 40): Promise<Subj
         n.space_id  as "spaceId",
         jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                            'colour', s.colour, 'icon', s.icon) as space
-      from public.notes n
-      join public.spaces s on s.id = n.space_id
+      from orbit.notes n
+      join orbit.spaces s on s.id = n.space_id
       where n.archived_at is null
       order by n.is_locked desc, n.updated_at desc
       limit ${limit}
@@ -169,7 +169,7 @@ async function readTaskSubject(userId: string, taskId: string): Promise<AiSubjec
     >`
       select t.id, t.space_id as "spaceId", t.is_locked as "isLocked",
              t.title, t.body_md as body
-      from public.tasks t
+      from orbit.tasks t
       where t.id = ${taskId}::uuid
     `;
     if (!row) return null;
@@ -191,13 +191,13 @@ async function readTaskSubject(userId: string, taskId: string): Promise<AiSubjec
 async function readWeekSubject(userId: string, spaceId: string): Promise<AiSubject | null> {
   return asUser(userId, async (tx) => {
     const [space] = await tx<{ id: string; name: string }[]>`
-      select id, name from public.spaces where id = ${spaceId}::uuid
+      select id, name from orbit.spaces where id = ${spaceId}::uuid
     `;
     if (!space) return null;
 
     const events = await tx<{ title: string; startsAt: string }[]>`
       select e.title, e.starts_at as "startsAt"
-      from public.events e
+      from orbit.events e
       where e.space_id = ${spaceId}::uuid
         and not e.is_locked
         and e.status <> 'cancelled'
@@ -208,7 +208,7 @@ async function readWeekSubject(userId: string, spaceId: string): Promise<AiSubje
     `;
     const tasks = await tx<{ title: string; dueOn: string | null }[]>`
       select t.title, t.due_on as "dueOn"
-      from public.tasks t
+      from orbit.tasks t
       where t.space_id = ${spaceId}::uuid
         and not t.is_locked
         and t.status in ('todo', 'doing', 'blocked')
@@ -243,7 +243,7 @@ async function readNoteSubject(userId: string, noteId: string): Promise<AiSubjec
     >`
       select n.id, n.space_id as "spaceId", n.is_locked as "isLocked",
              n.title, n.body_md as body
-      from public.notes n
+      from orbit.notes n
       where n.id = ${noteId}::uuid
     `;
     if (!row) return null;
@@ -408,7 +408,7 @@ type RunRecord = {
 async function recordRun(userId: string, spaceId: string, r: RunRecord): Promise<void> {
   await asUser(userId, async (tx) => {
     await tx`
-      insert into public.ai_runs
+      insert into orbit.ai_runs
         (space_id, owner_id, feature, provider, model, entity_kind, entity_id,
          input_tokens, output_tokens, status, error)
       values (${spaceId}::uuid, ${userId}::uuid, ${r.feature}, ${r.provider}, ${r.model},
@@ -436,8 +436,8 @@ export async function listAiRuns(userId: string, limit = 10): Promise<AiRunRow[]
              r.ran_at as "ranAt",
              jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                                 'colour', s.colour, 'icon', s.icon) as space
-      from public.ai_runs r
-      join public.spaces s on s.id = r.space_id
+      from orbit.ai_runs r
+      join orbit.spaces s on s.id = r.space_id
       order by r.ran_at desc
       limit ${limit}
     `;

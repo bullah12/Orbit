@@ -17,7 +17,7 @@
 -- It leads with space_id, like every unique constraint in this schema, and the
 -- pgTAP suite asserts that structurally.
 create unique index travel_legs_derived_identity_key
-  on public.travel_legs (space_id, from_place_id, to_place_id, arrive_at)
+  on orbit.travel_legs (space_id, from_place_id, to_place_id, arrive_at)
   where from_place_id is not null
     and to_place_id is not null
     and arrive_at is not null;

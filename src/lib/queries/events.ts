@@ -115,14 +115,14 @@ export async function listCalendarItems(
           ST_Y(pl.geom::geometry) as "placeLat",
           ST_X(pl.geom::geometry) as "placeLon",
           coalesce(att.n, 0) as "attendeeCount"
-        from public.events e
-        join public.spaces s on s.id = e.space_id
-        left join public.categories c on c.id = e.category_id
-        left join public.calendars cal on cal.id = e.calendar_id
-        left join public.places pl on pl.id = e.place_id
-        left join public.recurrence_rules r on r.id = e.recurrence_rule_id
+        from orbit.events e
+        join orbit.spaces s on s.id = e.space_id
+        left join orbit.categories c on c.id = e.category_id
+        left join orbit.calendars cal on cal.id = e.calendar_id
+        left join orbit.places pl on pl.id = e.place_id
+        left join orbit.recurrence_rules r on r.id = e.recurrence_rule_id
         left join lateral (
-          select count(*)::int as n from public.event_attendees a where a.event_id = e.id
+          select count(*)::int as n from orbit.event_attendees a where a.event_id = e.id
         ) att on true
         where e.status <> 'cancelled'
           and (
@@ -139,25 +139,91 @@ export async function listCalendarItems(
     // way to widen this into "all spaces": the function re-checks the grant.
     Promise.all(
       opaque.map(async (space) => {
-        const rows = await asUser(userId, async (tx) => {
-          return tx<{ startsAt: string; endsAt: string; allDay: boolean }[]>`
-            select starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay"
-            from app.free_busy_blocks(${space.id}::uuid, ${from}, ${to})
-          `;
-        });
-        return rows.map(
-          (r, i): BusyBlock => ({
-            key: `busy:${space.id}:${i}`,
-            startsAt: new Date(r.startsAt).toISOString(),
-            endsAt: new Date(r.endsAt).toISOString(),
-            allDay: r.allDay,
-            space: {
-              id: space.id, name: space.name, shortLabel: space.shortLabel,
-              colour: space.colour, icon: space.icon,
-            },
-            isBusy: true,
+        const ref = {
+          id: space.id, name: space.name, shortLabel: space.shortLabel,
+          colour: space.colour, icon: space.icon,
+        };
+
+        // Two calls, because a repeating event is stored once and expanded on
+        // read. Edge 35: `free_busy_blocks` filtered on the *stored* row's
+        // `starts_at`, so a weekly stand-up whose DTSTART was weeks earlier
+        // never overlapped the window and a grantee saw none of somebody's
+        // recurring commitments at all — an availability view saying "free"
+        // about the busiest hour of the week. Migration 0013 splits the two:
+        // one-offs here, series below, with no row in both.
+        const [singles, series] = await Promise.all([
+          asUser(userId, async (tx) => {
+            return tx<{ startsAt: string; endsAt: string; allDay: boolean }[]>`
+              select starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay"
+              from app.free_busy_blocks(${space.id}::uuid, ${from}, ${to})
+            `;
           }),
-        );
+          asUser(userId, async (tx) => {
+            return tx<
+              {
+                startsAt: string;
+                endsAt: string;
+                allDay: boolean;
+                rrule: string;
+                exdates: string[];
+              }[]
+            >`
+              select starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay",
+                     rrule, exdates
+              from app.free_busy_recurring(${space.id}::uuid, ${from}, ${to})
+            `;
+          }),
+        ]);
+
+        const blocks: BusyBlock[] = singles.map((r, i) => ({
+          key: `busy:${space.id}:${i}`,
+          startsAt: new Date(r.startsAt).toISOString(),
+          endsAt: new Date(r.endsAt).toISOString(),
+          allDay: r.allDay,
+          space: ref,
+          isBusy: true,
+        }));
+
+        // The rule is expanded here and goes no further. `BusyBlock` has no
+        // field it could live in, which is what keeps "anonymous" a property of
+        // the type rather than of somebody remembering — the same reason a
+        // busy block has no id and no title.
+        for (const row of series) {
+          const anchor = new Date(row.startsAt).toISOString();
+          const occurrences = (() => {
+            try {
+              return expandRecurrence({
+                rrule: row.rrule,
+                dtstart: anchor,
+                dtend: new Date(row.endsAt).toISOString(),
+                exdates: row.exdates,
+                from: from.toISOString(),
+                to: to.toISOString(),
+                maxOccurrences: 400,
+              });
+            } catch {
+              // A rule that will not parse must not take the calendar down. The
+              // anchor is a stored fact; showing it is the conservative answer,
+              // and over-reporting busy time is the safe direction here.
+              return [{ startsAt: anchor, endsAt: new Date(row.endsAt).toISOString() }];
+            }
+          })();
+
+          for (const o of occurrences) {
+            blocks.push({
+              // The occurrence's own start makes the key, so two series at the
+              // same minute cannot collide and React never reuses a block.
+              key: `busy:${space.id}:${anchor}:${o.startsAt}`,
+              startsAt: o.startsAt,
+              endsAt: o.endsAt,
+              allDay: row.allDay,
+              space: ref,
+              isBusy: true,
+            });
+          }
+        }
+
+        return blocks;
       }),
     ),
   ]);
@@ -276,12 +342,12 @@ export async function getEvent(userId: string, id: string): Promise<EventDetail 
           jsonb_build_object('name', c.name, 'colour', c.colour, 'icon', c.icon) end as category,
         cal.name as "calendarName", pl.name as "placeName",
         0 as "attendeeCount"
-      from public.events e
-      join public.spaces s on s.id = e.space_id
-      left join public.categories c on c.id = e.category_id
-      left join public.calendars cal on cal.id = e.calendar_id
-      left join public.places pl on pl.id = e.place_id
-      left join public.recurrence_rules r on r.id = e.recurrence_rule_id
+      from orbit.events e
+      join orbit.spaces s on s.id = e.space_id
+      left join orbit.categories c on c.id = e.category_id
+      left join orbit.calendars cal on cal.id = e.calendar_id
+      left join orbit.places pl on pl.id = e.place_id
+      left join orbit.recurrence_rules r on r.id = e.recurrence_rule_id
       where e.id = ${id}::uuid
     `;
   });
@@ -295,9 +361,9 @@ export async function getEvent(userId: string, id: string): Promise<EventDetail 
         coalesce(a.display_name, p.display_name, pr.display_name) as "displayName",
         a.email, a.response::text as response, a.is_organiser as "isOrganiser",
         a.person_id as "personId"
-      from public.event_attendees a
-      left join public.people p on p.id = a.person_id
-      left join public.profiles pr on pr.id = a.profile_id
+      from orbit.event_attendees a
+      left join orbit.people p on p.id = a.person_id
+      left join orbit.profiles pr on pr.id = a.profile_id
       where a.event_id = ${id}::uuid
       order by a.is_organiser desc, "displayName" nulls last
     `;
@@ -326,7 +392,7 @@ export async function listCalendarsBySpace(userId: string): Promise<Record<strin
   const rows = await asUser(userId, async (tx) => {
     return tx<CalendarOption[]>`
       select id, name, space_id as "spaceId", is_writable as "isWritable"
-      from public.calendars
+      from orbit.calendars
       order by sort_order, name
     `;
   });
@@ -339,7 +405,7 @@ export async function listCalendarsBySpace(userId: string): Promise<Record<strin
 export async function eventCountOn(userId: string, from: Date, to: Date): Promise<number> {
   const rows = await asUser(userId, async (tx) => {
     return tx<{ n: number }[]>`
-      select count(*)::int as n from public.events
+      select count(*)::int as n from orbit.events
       where status <> 'cancelled' and starts_at < ${to} and ends_at > ${from}
     `;
   });

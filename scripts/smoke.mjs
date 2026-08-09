@@ -631,25 +631,41 @@ try {
 
     const { ctx: pctx, page: ppage } = await pageAs(PRIYA);
     await ppage.goto('/calendar/week');
+    const priyaWork = (
+      await ppage.$$eval('main a[href^="/calendar/event/"]', (els) =>
+        els.map((e) => e.getAttribute('aria-label') ?? ''),
+      )
+    ).filter((l) => l.endsWith(', Work'));
+    await pctx.close();
+
     const workTitles = [
       ...new Set(
-        (
-          await ppage.$$eval('main a[href^="/calendar/event/"]', (els) =>
-            els.map((e) => e.getAttribute('aria-label') ?? ''),
-          )
-        )
-          .filter((l) => l.endsWith(', Work'))
+        priyaWork
           .map((l) => l.split(',')[0].trim())
           .filter((t) => t && !dannyTitles.has(t.toLowerCase())),
       ),
     ];
-    await pctx.close();
 
     const leaked = workTitles.filter((t) => html.toLowerCase().includes(t.toLowerCase()));
     check(
       'and no Work-only title from that week reaches the partner’s page',
       workTitles.length > 0 && leaked.length === 0,
       leaked.length ? `leaked: ${leaked.join(', ')}` : `${workTitles.length} titles withheld`,
+    );
+
+    // Edge 35. A repeating event is stored once, at its DTSTART, and expanded
+    // on read — and `app.free_busy_blocks()` filtered on the stored row, so a
+    // weekly stand-up that began weeks ago never overlapped the window and the
+    // partner saw none of it. His availability view said "free" about the
+    // busiest hour of the week.
+    //
+    // The check is that the two sides *agree*: one busy block for every event
+    // the owner has in that space that week. Counting blocks alone would have
+    // passed throughout the bug, because four of the nine were one-offs.
+    check(
+      'and every Work event that week is a busy block, recurring ones included',
+      blocks.length === priyaWork.length && priyaWork.length > 0,
+      `${blocks.length} busy blocks for ${priyaWork.length} events`,
     );
   }
 
@@ -3518,6 +3534,37 @@ try {
     // pass twice in a row without a reseed.
     await page.locator('form:has(input[name="deviceId"]) button:has-text("Rewind")').first().click();
     await settle(page);
+
+    await ctx.close();
+  }
+
+  // ------------------------------------------ the health check and the guard
+  {
+    const { ctx, page } = await pageAs(PRIYA);
+
+    const health = await page.request.get(`${BASE}/health`);
+    const body = await health.json();
+    check(
+      'the health check answers, and it touched the database',
+      health.status() === 200 && body.status === 'ok',
+      `HTTP ${health.status()} ${JSON.stringify(body)}`,
+    );
+    check(
+      'and it says nothing else — it is unauthenticated by necessity',
+      Object.keys(body).length === 1,
+      Object.keys(body).join(', '),
+    );
+
+    // Edge 22. The guard itself is a pure function with its own tests over the
+    // whole matrix; what is checked here is that this build is not the
+    // dangerous one — `pnpm start` sets the escape hatch, so dev auth is live
+    // and the switcher is reachable, which is exactly right locally and is the
+    // thing a deployment must not be.
+    await page.goto('/');
+    check(
+      'this build serves pages rather than refusing, because the hatch is set',
+      !(await page.locator('body').innerText()).includes('will not start'),
+    );
 
     await ctx.close();
   }

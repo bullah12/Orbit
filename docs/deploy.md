@@ -14,9 +14,15 @@ Railway for the second, because those are what §3 of
 
 ## 0. What you are signing up for
 
-- **A container, not a serverless function.** Every page is `force-dynamic` and
-  `src/lib/db/index.ts` holds a connection pool. Vercel's serverless runtime
-  would create and discard a pool per invocation.
+- **A container *or* a serverless function — this changed in session 12.** The
+  original note here said "not Vercel", because every page is `force-dynamic`
+  and `src/lib/db/index.ts` holds a connection pool, and a pool is a liability
+  in a process that does not outlive the request. That holds only while the app
+  pools for itself. Against Supabase's **transaction pooler** with
+  `DATABASE_POOL_MAX=1` and `DATABASE_PREPARE=false`, the pooling happens in
+  Supavisor and serverless is a good fit — a better one for an app opened a few
+  times a day that nobody wants to pay to keep warm. `docs/runbook.md` §4 has
+  the settings for all three hosts.
 - **`AUTH_PROVIDER=supabase` is written, never run.** It is a real
   implementation of the GoTrue REST API and no line of it has ever sent a
   request. The first sign-in on a real project is the first time any of it
@@ -31,7 +37,15 @@ Railway for the second, because those are what §3 of
 
 ## 1. The database
 
-Create a project at supabase.com, then, from a clone of this repository:
+**Orbit's tables live in a schema called `orbit`, not `public`.** That is what
+makes it safe to share a Postgres instance with another application — `profiles`
+alone exists in both, and two applications in one schema is a collision waiting
+to happen. Every reference in this repository is schema-qualified, so this is
+the name of the objects and not a `search_path` a different connection could
+resolve differently. The helper functions and the RLS generator live in `app`.
+
+Create a project at supabase.com — or reuse one, since the schema is Orbit's own
+— then, from a clone of this repository:
 
 ```sh
 # The connection string from Settings → Database → Connection string → URI.
@@ -46,10 +60,23 @@ psql "$ADMIN_URL" -c 'create extension if not exists postgis'
 psql "$ADMIN_URL" -c 'create extension if not exists vector'
 psql "$ADMIN_URL" -c 'create extension if not exists pgtap'   # optional
 
-# The migrations, in order. Filename order is the order — they are numbered.
-for f in supabase/migrations/*.sql; do
-  echo "▸ $f"
-  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f "$f" || break
+# 0000 runs SEPARATELY and is EXPECTED to fail partway — see gotcha 2 below.
+# Its `create or replace function auth.uid()` belongs to supabase_auth_admin on
+# Supabase and will be refused, which is fine; everything after it must succeed.
+# Running it under ON_ERROR_STOP=1 aborts before `create schema orbit` at line
+# 68, and then every later migration fails with `schema "orbit" does not exist`.
+psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -f supabase/migrations/0000_bootstrap.sql
+
+# Prove the shim landed before going on.
+psql "$ADMIN_URL" -c "select nspname from pg_namespace where nspname in ('orbit','app') order by 1"
+# expect two rows: app, orbit
+
+# The rest, in order, stopping at the first real error. 0001-0007 use plain
+# `create table`, so they are NOT re-runnable — if one fails halfway, fix the
+# cause and rebuild the schema rather than running it again.
+for f in supabase/migrations/000[1-9]_*.sql supabase/migrations/001[0-9]_*.sql; do
+  echo "▸ $(basename "$f")"
+  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f "$f" || { echo "STOPPED at $f"; break; }
 done
 ```
 
@@ -121,7 +148,7 @@ locally, and it is worthless if the deployed role is different.
 psql "$ADMIN_URL" <<'SQL'
 create role orbit_app login password 'PUT A REAL PASSWORD HERE' noinherit;
 grant connect on database postgres to orbit_app;
-grant usage on schema public, app, auth to orbit_app;
+grant usage on schema orbit, app, auth to orbit_app;
 grant authenticated, anon to orbit_app;
 
 -- The identity seam: two narrow functions, no table grants at all.
@@ -138,7 +165,7 @@ psql "$ADMIN_URL" -c "\
 # expect: orbit_app | f | f
 
 psql "$ADMIN_URL" -c "\
-  select count(*) from pg_tables where schemaname = 'public' and tableowner = 'orbit_app'"
+  select count(*) from pg_tables where schemaname = 'orbit' and tableowner = 'orbit_app'"
 # expect: 0
 ```
 
@@ -213,6 +240,11 @@ docker build -t orbit .
 docker run --rm -p 3000:3000 --env-file .env.production orbit
 ```
 
+The image runs `node server.js`, not `pnpm start`, which is what makes the dev-auth
+guard meaningful: nothing in `package.json` can put `ORBIT_ALLOW_DEV_AUTH` into a
+container. If you see *"Orbit will not start like this"* on every page, that is
+the guard working — set `AUTH_PROVIDER=supabase`.
+
 `.env.production` needs, at a minimum:
 
 ```sh
@@ -230,7 +262,10 @@ business in a running deployment.
 ### Fly.io
 
 ```sh
-fly launch --no-deploy --name orbit-yourname   # writes fly.toml; keep the Dockerfile
+# `fly.toml` is committed. Edit `app` and `primary_region`, then deploy — do not
+# let `fly launch` overwrite it: its defaults set auto_stop_machines = true and
+# internal_port = 8080, and both are wrong here for reasons written in the file.
+fly launch --no-deploy --copy-config --name orbit-yourname
 fly secrets set \
   DATABASE_URL='postgres://orbit_app:PASSWORD@db.YOUR-REF.supabase.co:5432/postgres' \
   AUTH_PROVIDER=supabase \
@@ -240,9 +275,11 @@ fly secrets set \
 fly deploy
 ```
 
-In `fly.toml`, set `internal_port = 3000` and **`auto_stop_machines = false`**:
-a machine that stops between requests is a serverless function wearing a
-container's clothes, and it throws the connection pool away every time.
+The committed `fly.toml` already sets `internal_port = 3000`,
+**`auto_stop_machines = false`** and a `/health` check. A machine that stops
+between requests is a serverless function wearing a container's clothes and it
+throws the connection pool away every time; a health check that only asks
+whether the port is open calls a machine with a broken `DATABASE_URL` healthy.
 
 ### Railway
 
@@ -254,10 +291,16 @@ railway variables set AUTH_PROVIDER=supabase SUPABASE_URL=… SUPABASE_ANON_KEY=
 railway domain              # gives you the URL for APP_URL and the redirect list
 ```
 
-Railway sets `PORT`; the Dockerfile already reads it.
+Railway sets `PORT`; the Dockerfile already reads it. Point its health check at
+**`/health`**, which runs `select 1` and answers `200` or `503` — it says
+nothing else on purpose, being unauthenticated by necessity.
 
 ### After the first deploy
 
+0. Open `/health`. `{"status":"ok"}` means the container can reach the database;
+   `503` means `DATABASE_URL` is wrong and nothing below will work. Check this
+   before anything else — it is the cheapest question with the most expensive
+   wrong answer.
 1. Open `/auth/signup` and create an account.
 2. Check `ids_match` (gotcha 1 above). This is the one moment worth stopping for.
 3. Create a space, then open **Spaces → People and invites** and make an
@@ -274,11 +317,27 @@ Honest list, none of it new:
 - **There is no scheduler.** A `schedule` rule runs when somebody presses "Run
   now, for real". A container does not change that; a worker would, and adding
   one is a separate decision.
-- **There is no service worker.** "Work offline" is a switch somebody flicks.
-- **`switchUser` still exists** and is still impersonation — it is unreachable
-  under `AUTH_PROVIDER=supabase` (the sidebar renders an account panel instead
-  and the action refuses), but if you deploy with `AUTH_PROVIDER=dev` you have
-  published a build where anybody can become anybody. Do not.
+- **`switchUser` still exists** and is still impersonation. **Since session 12
+  the app refuses to start rather than trusting you to remember**: on a
+  production build with `AUTH_PROVIDER` unset or set to `dev`, every page
+  returns a refusal naming what to set instead. The escape hatch is
+  `ORBIT_ALLOW_DEV_AUTH=1`, which `pnpm start` sets so the local zero-credential
+  run and `pnpm smoke` still work, and which the Dockerfile deliberately does
+  not — see `devAuthRefusal` in `src/lib/auth/session.ts`.
 - **The session cookies are `secure` only when `NODE_ENV=production`.** The
   Dockerfile sets it; a hand-rolled deployment that does not is one where the
   access token can travel over plain HTTP.
+- **The offline shell is a shell, not offline browsing.** Session 12 added a
+  service worker, so an installed Orbit shows a page explaining itself when the
+  signal drops rather than a browser error. It caches the offline page and the
+  build's static files and **deliberately caches no page rendered for anybody**
+  — every page is `force-dynamic` and RLS-scoped, so a stored copy could be
+  served to whoever opens the phone next. Offline *editing* is a different
+  mechanism and it is real; it lives in `src/lib/sync/`. The service worker
+  registers only on a **secure origin**, so over plain HTTP it is a silent
+  no-op and Orbit behaves exactly as it did before.
+- **A `free_busy` viewer does not see recurring events as busy blocks** (edge
+  35). `app.free_busy_blocks()` filters on the stored row's `starts_at`, so a
+  weekly stand-up whose DTSTART is weeks earlier never overlaps the requested
+  window. The direction is the safe one — it shows less, never more — but the
+  availability view under-reports. Confirmed, not yet fixed.

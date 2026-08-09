@@ -71,14 +71,14 @@ export async function listPlaces(
         ${tx.unsafe(PLACE_SELECT)},
         coalesce(v.n, 0) as "visitCount",
         coalesce(e.n, 0) as "eventCount"
-      from public.places pl
-      join public.spaces s on s.id = pl.space_id
-      left join public.categories c on c.id = pl.category_id
+      from orbit.places pl
+      join orbit.spaces s on s.id = pl.space_id
+      left join orbit.categories c on c.id = pl.category_id
       left join lateral (
-        select count(*)::int as n from public.place_visits x where x.place_id = pl.id
+        select count(*)::int as n from orbit.place_visits x where x.place_id = pl.id
       ) v on true
       left join lateral (
-        select count(*)::int as n from public.events x
+        select count(*)::int as n from orbit.events x
          where x.place_id = pl.id and x.status <> 'cancelled'
       ) e on true
       where ${includeArchived ? tx`true` : tx`pl.archived_at is null`}
@@ -139,9 +139,9 @@ export async function getPlace(
   return asUser(userId, async (tx) => {
     const rows = await tx<PlaceRow[]>`
       select ${tx.unsafe(PLACE_SELECT)}, 0 as "visitCount", 0 as "eventCount"
-      from public.places pl
-      join public.spaces s on s.id = pl.space_id
-      left join public.categories c on c.id = pl.category_id
+      from orbit.places pl
+      join orbit.spaces s on s.id = pl.space_id
+      left join orbit.categories c on c.id = pl.category_id
       where pl.id = ${id}::uuid
     `;
     const place = rows[0];
@@ -150,8 +150,8 @@ export async function getPlace(
     const visits = await tx<PlaceVisit[]>`
       select v.id, v.source, v.arrived_at as "arrivedAt", v.departed_at as "departedAt",
              v.notes_md as "notesMd", v.event_id as "eventId", e.title as "eventTitle"
-      from public.place_visits v
-      left join public.events e on e.id = v.event_id
+      from orbit.place_visits v
+      left join orbit.events e on e.id = v.event_id
       where v.place_id = ${id}::uuid
       order by v.arrived_at desc
       limit 50
@@ -161,8 +161,8 @@ export async function getPlace(
       select e.id, e.title, e.starts_at as "startsAt", e.all_day as "allDay",
              jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                                 'colour', s.colour, 'icon', s.icon) as space
-      from public.events e
-      join public.spaces s on s.id = e.space_id
+      from orbit.events e
+      join orbit.spaces s on s.id = e.space_id
       where e.place_id = ${id}::uuid and e.status <> 'cancelled'
       order by e.starts_at desc
       limit 25
@@ -170,8 +170,8 @@ export async function getPlace(
 
     const notes = await tx<PlaceNote[]>`
       select n.id, n.title, n.updated_at as "updatedAt"
-      from public.note_links nl
-      join public.notes n on n.id = nl.note_id
+      from orbit.note_links nl
+      join orbit.notes n on n.id = nl.note_id
       where nl.entity_kind = 'place' and nl.entity_id = ${id}::uuid
         and n.archived_at is null and not n.is_locked
       order by n.updated_at desc
@@ -182,10 +182,10 @@ export async function getPlace(
       select p.id, p.display_name as "displayName", count(*)::int as times,
              jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                                 'colour', s.colour, 'icon', s.icon) as space
-      from public.event_attendees a
-      join public.events e on e.id = a.event_id
-      join public.people p on p.id = a.person_id
-      join public.spaces s on s.id = p.space_id
+      from orbit.event_attendees a
+      join orbit.events e on e.id = a.event_id
+      join orbit.people p on p.id = a.person_id
+      join orbit.spaces s on s.id = p.space_id
       where e.place_id = ${id}::uuid and e.status <> 'cancelled'
         and not p.is_locked and p.archived_at is null
       group by p.id, p.display_name, s.id, s.name, s.short_label, s.colour, s.icon
@@ -207,7 +207,7 @@ export async function listPlaceOptions(
   return asUser(userId, async (tx) => {
     return tx<PlaceOption[]>`
       select id, name, ST_Y(geom::geometry) as lat, ST_X(geom::geometry) as lon
-      from public.places
+      from orbit.places
       where space_id = ${spaceId}::uuid and archived_at is null and not is_locked
       order by name
       limit 300
@@ -229,9 +229,9 @@ export async function listPlacesForPicker(userId: string): Promise<PlacePickerRo
              ST_Y(pl.geom::geometry) as lat, ST_X(pl.geom::geometry) as lon,
              jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                                 'colour', s.colour, 'icon', s.icon) as space
-      from public.places pl
-      join public.spaces s on s.id = pl.space_id
-      join public.space_members m
+      from orbit.places pl
+      join orbit.spaces s on s.id = pl.space_id
+      join orbit.space_members m
         on m.space_id = pl.space_id and m.user_id = ${userId}::uuid
        and m.status = 'active' and m.role in ('owner','admin','member')
       where pl.archived_at is null and not pl.is_locked

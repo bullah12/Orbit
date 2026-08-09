@@ -51,7 +51,7 @@ export async function upsertExternalEvent(
   event: ExternalEvent,
 ): Promise<{ id: string | null; inserted: boolean; wroteRule: boolean }> {
   const existing = await tx<{ id: string; ruleId: string | null }[]>`
-    select id, recurrence_rule_id as "ruleId" from public.events
+    select id, recurrence_rule_id as "ruleId" from orbit.events
     where space_id = ${ctx.spaceId}::uuid
       and calendar_id = ${ctx.calendarId}::uuid
       and external_id = ${event.externalId}
@@ -62,7 +62,7 @@ export async function upsertExternalEvent(
   if (event.rrule) {
     if (priorRuleId) {
       await tx`
-        update public.recurrence_rules
+        update orbit.recurrence_rules
         set rrule = ${event.rrule}, dtstart = ${event.startsAt}::timestamptz,
             until = ${untilOf(event.rrule)}, timezone = ${event.timezone},
             exdates = ${event.exdates}::timestamptz[]
@@ -71,7 +71,7 @@ export async function upsertExternalEvent(
       ruleId = priorRuleId;
     } else {
       const rows = await tx<{ id: string }[]>`
-        insert into public.recurrence_rules
+        insert into orbit.recurrence_rules
           (space_id, owner_id, rrule, dtstart, until, timezone, exdates)
         values (${ctx.spaceId}::uuid, ${ctx.userId}::uuid, ${event.rrule},
                 ${event.startsAt}::timestamptz, ${untilOf(event.rrule)},
@@ -83,7 +83,7 @@ export async function upsertExternalEvent(
   }
 
   const rows = await tx<{ id: string; inserted: boolean }[]>`
-    insert into public.events
+    insert into orbit.events
       (space_id, owner_id, calendar_id, title, body_md, location_text,
        starts_at, ends_at, all_day, timezone, status, external_id, external_etag,
        recurrence_rule_id)
@@ -113,17 +113,17 @@ export async function upsertExternalEvent(
 
   // A rule that is no longer on the event would otherwise be left behind.
   if (priorRuleId && ruleId !== priorRuleId) {
-    await tx`delete from public.recurrence_rules where id = ${priorRuleId}::uuid`;
+    await tx`delete from orbit.recurrence_rules where id = ${priorRuleId}::uuid`;
   }
 
   if (id) {
     // Attendees are replaced wholesale: the feed is the source of truth for its
     // own events, and a diff would leave a removed guest behind.
-    await tx`delete from public.event_attendees where event_id = ${id}::uuid`;
+    await tx`delete from orbit.event_attendees where event_id = ${id}::uuid`;
     for (const a of event.attendees) {
       if (!a.email && !a.displayName) continue;
       await tx`
-        insert into public.event_attendees
+        insert into orbit.event_attendees
           (space_id, owner_id, event_id, email, display_name, response, is_organiser)
         values (${ctx.spaceId}::uuid, ${ctx.userId}::uuid, ${id}::uuid,
                 ${a.email}, ${a.displayName}, ${a.response}, ${a.isOrganiser})
@@ -158,7 +158,7 @@ export async function connectProviderCalendar(
 ): Promise<string | null> {
   return asUser(userId, async (tx) => {
     const accounts = await tx<{ id: string }[]>`
-      insert into public.calendar_accounts
+      insert into orbit.calendar_accounts
         (space_id, owner_id, provider, display_name, external_id, status)
       values (${spaceId}::uuid, ${userId}::uuid, ${providerName},
               ${`${external.name}`}, ${external.externalId}, 'connected')
@@ -172,7 +172,7 @@ export async function connectProviderCalendar(
     if (!accountId) return null;
 
     const calendars = await tx<{ id: string }[]>`
-      insert into public.calendars
+      insert into orbit.calendars
         (space_id, owner_id, account_id, name, external_id, is_writable, icon, colour)
       values (${spaceId}::uuid, ${userId}::uuid, ${accountId}::uuid, ${external.name},
               ${external.externalId}, ${external.writable}, 'calendar', 'slate')
@@ -204,7 +204,7 @@ export async function pullCalendar(
     return tx<CalendarRow[]>`
       select id, space_id as "spaceId", external_id as "externalId",
              account_id as "accountId"
-      from public.calendars where id = ${calendarId}::uuid
+      from orbit.calendars where id = ${calendarId}::uuid
     `;
   });
   const calendar = calendars[0];
@@ -214,7 +214,7 @@ export async function pullCalendar(
 
   const state = await asUser(userId, async (tx) => {
     return tx<{ syncToken: string | null }[]>`
-      select sync_token as "syncToken" from public.calendar_sync_state
+      select sync_token as "syncToken" from orbit.calendar_sync_state
       where calendar_id = ${calendarId}::uuid and direction = 'pull'
     `;
   });
@@ -257,7 +257,7 @@ export async function pullCalendar(
     let removed = 0;
     if (page!.deletedIds.length > 0) {
       const rows = await tx<{ id: string }[]>`
-        update public.events
+        update orbit.events
         set status = 'cancelled'
         where calendar_id = ${calendar.id}::uuid
           and external_id = any(${page!.deletedIds}::text[])
@@ -313,7 +313,7 @@ export async function pushCalendar(userId: string, calendarId: string): Promise<
     return tx<CalendarRow[]>`
       select id, space_id as "spaceId", external_id as "externalId",
              account_id as "accountId"
-      from public.calendars where id = ${calendarId}::uuid
+      from orbit.calendars where id = ${calendarId}::uuid
     `;
   });
   if (!calendar?.externalId) {
@@ -341,7 +341,7 @@ export async function pushCalendar(userId: string, calendarId: string): Promise<
              title, body_md as "bodyMd", location_text as "locationText",
              starts_at as "startsAt", ends_at as "endsAt", all_day as "allDay",
              timezone, status::text as status, is_locked as "isLocked"
-      from public.events
+      from orbit.events
       where calendar_id = ${calendarId}::uuid and is_dirty
       order by updated_at
       limit 200
@@ -377,7 +377,7 @@ export async function pushCalendar(userId: string, calendarId: string): Promise<
       // so there is no window in which an event is clean and has no etag.
       await asUser(userId, async (tx) => {
         await tx`
-          update public.events
+          update orbit.events
              set is_dirty = false,
                  external_id = ${pushed.externalId},
                  external_etag = ${pushed.etag}
@@ -408,7 +408,7 @@ async function recordPushState(
 ): Promise<void> {
   await asUser(userId, async (tx) => {
     await tx`
-      insert into public.calendar_sync_state
+      insert into orbit.calendar_sync_state
         (space_id, owner_id, calendar_id, direction, last_run_at, last_status, last_error)
       values (${calendar.spaceId}::uuid, ${userId}::uuid, ${calendar.id}::uuid, 'push',
               ${at}, ${outcome.status}, ${outcome.error ?? null})
@@ -429,7 +429,7 @@ async function recordState(
 ): Promise<void> {
   await asUser(userId, async (tx) => {
     await tx`
-      insert into public.calendar_sync_state
+      insert into orbit.calendar_sync_state
         (space_id, owner_id, calendar_id, direction, sync_token,
          window_start, window_end, last_run_at, last_status, last_error)
       values (${calendar.spaceId}::uuid, ${userId}::uuid, ${calendar.id}::uuid, 'pull',
@@ -437,7 +437,7 @@ async function recordState(
               ${outcome.error ?? null})
       on conflict (space_id, calendar_id, direction) do update
         set -- A running/error update must not wipe the token we still hold.
-            sync_token = coalesce(excluded.sync_token, public.calendar_sync_state.sync_token),
+            sync_token = coalesce(excluded.sync_token, orbit.calendar_sync_state.sync_token),
             window_start = excluded.window_start,
             window_end = excluded.window_end,
             last_run_at = excluded.last_run_at,
@@ -446,7 +446,7 @@ async function recordState(
     `;
     if (calendar.accountId && outcome.status === 'ok') {
       await tx`
-        update public.calendar_accounts set last_synced_at = now()
+        update orbit.calendar_accounts set last_synced_at = now()
         where id = ${calendar.accountId}::uuid
       `;
     }
@@ -485,17 +485,17 @@ export async function listConnectedCalendars(userId: string): Promise<ConnectedC
         coalesce(ev.dirty, 0) as "dirtyCount",
         ps.last_status as "pushStatus",
         ps.last_run_at as "pushRunAt"
-      from public.calendars c
-      join public.spaces s on s.id = c.space_id
-      left join public.calendar_accounts a on a.id = c.account_id
-      left join public.calendar_sync_state st
+      from orbit.calendars c
+      join orbit.spaces s on s.id = c.space_id
+      left join orbit.calendar_accounts a on a.id = c.account_id
+      left join orbit.calendar_sync_state st
         on st.calendar_id = c.id and st.direction = 'pull'
-      left join public.calendar_sync_state ps
+      left join orbit.calendar_sync_state ps
         on ps.calendar_id = c.id and ps.direction = 'push'
       left join lateral (
         select count(*)::int as n,
                count(*) filter (where e.is_dirty)::int as dirty
-        from public.events e where e.calendar_id = c.id
+        from orbit.events e where e.calendar_id = c.id
       ) ev on true
       order by s.name, c.sort_order, c.name
     `;

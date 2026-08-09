@@ -1468,3 +1468,180 @@ below.
 - **Edge 3 held.** The revoke section marks a device caught up, which empties
   the "changed since" feed a later check reads, so it rewinds the cursor before
   it closes. `pnpm smoke` passes twice in a row without a reseed.
+
+## Session 12, second pass — the four things worth doing before a deployment
+
+The Supabase migrations had been applied by hand. These are the items that were
+worth closing before anything is public.
+
+### Edge 22 is enforced now, not warned about
+
+- **`AUTH_PROVIDER=dev` on a production build is refused.** `switchUser` is
+  impersonation by design — no password, and a switcher in the sidebar — and
+  the only thing standing between that and a public URL was a sentence in
+  `docs/deploy.md` saying "do not". **`dev` is also the default**, so the
+  dangerous case is not a typo: it is forgetting to set a variable at all.
+- **The escape hatch is where the whole design is.** `NODE_ENV=production`
+  alone would break the guarantee this repository is built on — `pnpm start`
+  *is* a production build and `pnpm smoke` drives it, both with zero
+  credentials. So `pnpm start` sets `ORBIT_ALLOW_DEV_AUTH=1`, and **the
+  Dockerfile does not** — it runs `node server.js` rather than `pnpm start`, so
+  nothing in `package.json` can leak into an image. A deployment has to set it
+  deliberately, in the same place it sets its database URL, having read the
+  name of the variable.
+- **Thrown from `authProvider()`, not only checked in the layout.** A server
+  action, a route handler and `requireUser()` all arrive through that function;
+  a guard that only guards the page somebody looks at is not a guard. The layout
+  checks it separately so the refusal gets its own page — the existing catch
+  would have reported it as *"Orbit can't reach its database"*, which is an
+  actively misleading sentence for a build refusing to serve impersonation to
+  the internet.
+- **Only the exact string `'1'` disarms it.** `'true'`, `'yes'` and `' 1'` all
+  leave the guard on. A safety switch that can be turned off by a plausible
+  near-miss is one that will be.
+- Verified against a real production server rather than only in unit tests:
+  with no hatch set, every page returns the refusal; under `pnpm start`, Today
+  renders exactly as before.
+
+### `/health`, and why it touches the database
+
+- **The single most likely production failure is a `DATABASE_URL` that does not
+  work**, and the default health check on both Fly and Railway is "did the port
+  open" — which is true of a container that cannot serve one page. So `/health`
+  runs `select 1`.
+- **It says `ok` or `unavailable` and nothing else.** It is unauthenticated by
+  necessity, and the text of a failed connection error is exactly the sort of
+  thing that names an internal host. The detail goes to the container's log,
+  which is where somebody debugging already is.
+
+### `fly.toml` is committed rather than generated
+
+- **Two `fly launch` defaults are wrong here and both fail quietly.**
+  `auto_stop_machines` makes a machine that stops between requests — a
+  serverless function wearing a container's clothes, throwing away the Postgres
+  pool every time — and `internal_port` defaults to 8080 while Next listens on
+  3000, which looks like a deploy that succeeded and a site that does not
+  answer. Committing the file with both fixed, and the reasons written beside
+  them, is cheaper than a paragraph telling somebody to remember.
+- `AUTH_PROVIDER` is deliberately **not** in `[env]`. It belongs with the
+  secrets, and leaving it out means the guard above is what greets a deployment
+  that forgot it.
+
+### Edge 35 — a recurring event is busy time too
+
+- **The cause, exactly.** `app.free_busy_blocks()` filtered on the stored row:
+  `e.starts_at < p_to and e.ends_at > p_from`. A repeating event is stored once,
+  at its DTSTART, and expanded on read — so a weekly stand-up that began in
+  March has `starts_at` in March, does not overlap "this week", and was dropped.
+  A `free_busy` grantee saw **none** of somebody's recurring commitments.
+  Observed: Priya had nine Work events in a week, five of them stand-up
+  occurrences; Danny saw four busy blocks and none of the five.
+- **The direction was the safe one and that is what hid it.** It showed less,
+  never more, so nothing looked wrong — while the availability view answered
+  "free" about the busiest hour of the week, which is the one question it exists
+  to answer. Decision 3 settled free/busy by name, so this was a correctness bug
+  in a settled feature.
+- **The fixture had rules and no event pointing at one.** Nothing in pgTAP
+  exercised the join, which is how this survived from Phase 2. There is now a
+  repeating event in the shared space that only the new function can answer for.
+- **Expansion stays in one place, and that is the departure worth arguing.**
+  The obvious fix is to expand in SQL so the function keeps returning nothing
+  but instants. Rejected: RFC 5545 expansion is COUNT, UNTIL, INTERVAL, BYDAY
+  with an nth, BYMONTHDAY including -1, EXDATE, and wall-clock time across a DST
+  boundary. `src/lib/recurrence.ts` implements all of it and is heavily tested;
+  a second implementation in PL/pgSQL would be a second answer to *which
+  occurrences exist*, and the two would disagree visibly — as busy blocks that
+  do not match the owner's own calendar.
+- **So `app.free_busy_recurring()` returns the rule and the app expands it.**
+  This does let a grantee's session obtain the rule text, where before it could
+  not, and that is a real departure from *"the shape of somebody's week is
+  content"* recorded in session 8. Taken deliberately, because: what is
+  **rendered** is unchanged; `BusyBlock` has no field a rule could live in, so
+  "anonymous" remains a property of the type rather than of somebody
+  remembering; the rule is discarded in the query layer, which already holds
+  every event title for the owner; and the alternative is two implementations of
+  recurrence. Still SECURITY DEFINER, still re-checking the grant itself, and
+  `revoke execute … from public` as `0008_identity_lookup.sql` does.
+- **`free_busy_blocks` is one-offs only now** (`recurrence_rule_id is null`), so
+  no row is in both functions and an anchor occurrence cannot be drawn twice.
+- **The smoke check asserts the two sides agree** — one busy block for every
+  event the owner has in that space that week — rather than counting blocks.
+  Counting alone passed throughout the bug, because four of the nine were
+  one-offs. plan(106) → plan(112).
+
+### Also
+
+- **`docs/deploy.md` §4 was stale.** It still said there was no service worker
+  and described offline as a switch somebody flicks. It now describes the shell,
+  its secure-origin requirement, the dev-auth guard, and edge 35 while it stood.
+
+## Session 12, third pass — Orbit's tables move to an `orbit` schema
+
+### The decision, and who made it
+
+- **Orbit's tables live in `orbit`, not `public`.** Asked for by the product
+  owner, because Orbit shares a Postgres instance with another application whose
+  tables are in `public`. Two applications in one schema is a namespace
+  collision waiting to happen: `profiles` alone exists in both, and Orbit's
+  `0001` would have failed on it.
+- **The helper schema stays `app`.** It was never the thing in question — the
+  earlier exchange about "orbit instead of app" was about the *table* schema.
+  `app` holds the RLS generator, the membership predicates and the identity
+  seam, and renaming it would buy nothing.
+
+### How it was done, and why not with a `sed`
+
+- **899 references**: 357 in `src/`, 346 in the migrations, 111 in the pgTAP
+  suite, 85 in the seed. Every one is schema-qualified — `from public.tasks`,
+  never a bare `tasks` — which is also why `search_path` could not have been
+  used as a shortcut. Postgres resolves a qualified name literally.
+- **Three things that say `public` and are not the schema**, each checked by
+  hand before anything was replaced:
+  - `revoke execute on function … from public` — the PUBLIC *role*, in six
+    places. Renaming it would have made every SECURITY DEFINER function callable
+    by anybody who could find its name.
+  - `public/` — the Next.js directory, in a comment.
+  - `public_key`, `publicKey` — column and variable names.
+  The transformation therefore matched `public.` only when followed by an
+  identifier, a `%I` placeholder or a `${` template expression, which excludes
+  all three.
+- **Comments were renamed too.** They describe the same objects; a comment
+  saying `public.profiles` about a table now called `orbit.profiles` is simply
+  wrong.
+- **`set search_path = public, pg_temp` became `orbit, public, pg_temp`.**
+  `public` stays in the list so PostGIS and pgcrypto still resolve.
+- **The catalogue sweeps moved with it.** The pgTAP known-empty ledger, the
+  seed's truncate and the RLS check all enumerate "every application table" by
+  querying `pg_tables where schemaname = …`. Left at `public` they would have
+  found nothing and passed vacuously — the worst outcome available, because a
+  sweep that checks zero tables reports success.
+- **`app.apply_standard_rls` generates policy DDL with `format()`**, and its
+  `public.%I` strings had to move or every policy would have been attached to a
+  table in the wrong schema. This is the one piece that would have failed
+  silently rather than loudly.
+
+### What it was verified against
+
+Not a diff read-through: the local database was rebuilt from the repository's
+own migrations and all five commands re-run against the new shape.
+
+- `./scripts/db-reset.sh` — **41 tables, 41/41 with RLS enabled**, and one table
+  left in `public` (PostGIS's `spatial_ref_sys`, which is not Orbit's).
+- pgTAP **112/112**, build clean, typecheck clean, **816** Vitest tests,
+  **455/455** smoke against the running app, which then served real rows.
+
+`scripts/db-reset.sh` grants `usage on schema orbit` and seeds through
+`all tables in schema orbit`, so the local database now has the same shape as
+the deployed one — which is the point. A test suite that ran against `public`
+while production ran against `orbit` would have proved nothing about production.
+
+### A mistake worth recording
+
+- **I concluded the migrations had not run, because I looked in `public`.** They
+  had run, into `orbit`, and the database also held a second application's
+  tables — so the evidence looked exactly like a wrong-project connection. The
+  fix in the runbook is not "look harder": it is a first step that prints
+  `current_database()` and which of `orbit`/`app` already exist, *before*
+  anything is applied. The general lesson is that "the migrations are done" and
+  "the tables are where I expect" are two claims, and only one of them was being
+  checked.

@@ -42,7 +42,7 @@ begin
   end if;
 
   return query execute format(
-    'select t.space_id from public.%I t where t.id = $1', v_table
+    'select t.space_id from orbit.%I t where t.id = $1', v_table
   ) using p_entity_id;
 end;
 $$;

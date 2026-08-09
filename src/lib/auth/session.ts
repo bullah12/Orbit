@@ -32,6 +32,61 @@ export function usesDevAuth(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
+ * The name of the escape hatch that lets dev auth run a production build.
+ *
+ * Set by `pnpm start` and by nothing else — deliberately not by the Dockerfile,
+ * which is the whole point. See {@link devAuthRefusal}.
+ */
+export const ALLOW_DEV_AUTH_ENV = 'ORBIT_ALLOW_DEV_AUTH';
+
+/**
+ * Why dev auth must not run here, or null if it may — edge 22, enforced.
+ *
+ * `switchUser` is impersonation by design: with `AUTH_PROVIDER=dev` the sidebar
+ * offers a list of accounts and becoming any of them is one click. That is
+ * exactly right in a container with three seeded profiles and no credentials,
+ * and it is a total compromise on a public URL. Until now the only thing
+ * standing between the two was a sentence in `docs/deploy.md` saying "do not",
+ * and **`dev` is the default**, so the dangerous case is not even a typo — it is
+ * forgetting to set a variable at all.
+ *
+ * The signal is `NODE_ENV=production`, which the Dockerfile sets and which
+ * every hosting platform sets. But that alone would break the thing this
+ * repository guarantees: `pnpm start` is a production build, `pnpm smoke`
+ * drives it, and both must keep running with zero credentials. So there is one
+ * escape hatch, and where it is set is the design:
+ *
+ *   - `pnpm start` sets `ORBIT_ALLOW_DEV_AUTH=1`, so the local production run
+ *     and the smoke suite are unaffected.
+ *   - **The Dockerfile does not**, and it runs `node server.js` rather than
+ *     `pnpm start`, so nothing in `package.json` can leak into an image.
+ *
+ * A deployment therefore has to set it *on purpose*, in the same place it sets
+ * its database URL, having read a variable named `ORBIT_ALLOW_DEV_AUTH`. That
+ * is a decision somebody made rather than one they defaulted into.
+ *
+ * Pure and env-injectable so the whole matrix is tested without a server.
+ */
+export function devAuthRefusal(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (!usesDevAuth(env)) return null;
+  if (env.NODE_ENV !== 'production') return null;
+  if (env[ALLOW_DEV_AUTH_ENV] === '1') return null;
+
+  const how = env.AUTH_PROVIDER?.trim()
+    ? 'AUTH_PROVIDER is set to `dev`'
+    : 'AUTH_PROVIDER is unset, and `dev` is the default';
+
+  return (
+    `Refusing to start: ${how}, in a production build. ` +
+    'The dev provider is a cookie naming a seeded profile — it has no password ' +
+    'and the sidebar offers a switcher, so anybody who can reach this URL can ' +
+    'become anybody. Set AUTH_PROVIDER=supabase and the SUPABASE_URL / ' +
+    'SUPABASE_ANON_KEY it needs. If you genuinely want the dev provider on a ' +
+    `production build — a local \`pnpm start\`, a demo nobody can reach — set ${ALLOW_DEV_AUTH_ENV}=1.`
+  );
+}
+
+/**
  * The payload of a JWT, without verifying it.
  *
  * Verification happens at Supabase — `getCurrentUser()` asks GoTrue who the

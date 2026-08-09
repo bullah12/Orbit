@@ -1,0 +1,59 @@
+# Fly.io configuration for Orbit.
+#
+# Committed rather than left to `fly launch`, because two of its defaults are
+# actively wrong for this app and both fail quietly:
+#
+#   auto_stop_machines — a machine that stops between requests is a serverless
+#     function wearing a container's clothes. Every page is `force-dynamic` and
+#     src/lib/db/index.ts holds a Postgres connection pool; stopping the machine
+#     throws that pool away and pays the reconnect on somebody's next tap.
+#
+#   internal_port — Next listens on 3000 (the Dockerfile sets PORT), and Fly
+#     defaults to 8080. The mismatch looks like a deploy that succeeded and a
+#     site that does not answer.
+#
+# Nothing here has been run: there is no Fly account attached to this
+# repository. Set `app` to your own name, then `fly deploy`. Secrets go in
+# `fly secrets set`, never here — see docs/deploy.md §3.
+
+app = "orbit-CHANGE-ME"
+primary_region = "lhr"          # London. Match your Supabase region if you can.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  # AUTH_PROVIDER is deliberately NOT set here. `dev` is the default and it is
+  # impersonation by design, so the app refuses to start on a production build
+  # unless a real provider is chosen — see src/lib/auth/session.ts. Set
+  # AUTH_PROVIDER=supabase with `fly secrets set`, alongside its two keys.
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false    # see above; this is the one that matters
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    # One process with one Postgres pool. These are deliberately modest: the
+    # ceiling is the pool, not the event loop.
+    soft_limit = 40
+    hard_limit = 60
+
+  [[http_service.checks]]
+    # /health runs `select 1`, so a machine with a broken DATABASE_URL is taken
+    # out of rotation instead of serving errors. A check that only asks whether
+    # the port is open would call that machine healthy.
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

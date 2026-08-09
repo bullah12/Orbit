@@ -198,9 +198,9 @@ const TAGS = ['urgent', 'waiting', 'errand', 'phone-call', 'weekend', 'money', '
 async function truncateAll() {
   const rows = await sql<{ tablename: string }[]>`
     select tablename from pg_tables
-    where schemaname = 'public' and tablename <> 'spatial_ref_sys'
+    where schemaname = 'orbit' and tablename <> 'spatial_ref_sys'
   `;
-  const list = rows.map((r) => `public.${r.tablename}`).join(', ');
+  const list = rows.map((r) => `orbit.${r.tablename}`).join(', ');
   await sql.unsafe(`truncate ${list} restart identity cascade`);
 }
 
@@ -211,7 +211,7 @@ async function main() {
   // -- profiles -------------------------------------------------------------
   console.log('▸ profiles');
   await sql`
-    insert into public.profiles (id, email, display_name, timezone, locale) values
+    insert into orbit.profiles (id, email, display_name, timezone, locale) values
       (${PRIYA}, 'priya@orbit.test', 'Priya Raghavan', 'Europe/London', 'en-GB'),
       (${DANNY}, 'danny@orbit.test', 'Danny Whitehouse', 'Europe/London', 'en-GB'),
       (${OUTSIDER}, 'sam@orbit.test', 'Sam Okafor (outsider)', 'Europe/London', 'en-GB')
@@ -220,7 +220,7 @@ async function main() {
   // -- spaces ---------------------------------------------------------------
   console.log('▸ spaces');
   await sql`
-    insert into public.spaces (id, owner_id, name, kind, short_label, colour, icon, is_default) values
+    insert into orbit.spaces (id, owner_id, name, kind, short_label, colour, icon, is_default) values
       (${S_PRIYA}, ${PRIYA}, 'Priya',  'personal',  'Priya', 'indigo',  'user',      true),
       (${S_HOME},  ${PRIYA}, 'Home',   'household', 'Home',  'emerald', 'house',     false),
       (${S_WORK},  ${PRIYA}, 'Work',   'work',      'Work',  'sky',     'briefcase', false),
@@ -228,7 +228,7 @@ async function main() {
   `;
 
   await sql`
-    insert into public.space_members (space_id, user_id, role) values
+    insert into orbit.space_members (space_id, user_id, role) values
       (${S_PRIYA}, ${PRIYA}, 'owner'),
       (${S_HOME},  ${PRIYA}, 'owner'),
       (${S_WORK},  ${PRIYA}, 'owner'),
@@ -240,7 +240,7 @@ async function main() {
   `;
 
   await sql`
-    insert into public.free_busy_shares (space_id, owner_id, grantee_id, granularity)
+    insert into orbit.free_busy_shares (space_id, owner_id, grantee_id, granularity)
     values (${S_WORK}, ${PRIYA}, ${DANNY}, 'block')
   `;
 
@@ -254,7 +254,7 @@ async function main() {
   // the same reason. What it demonstrates is the pending state on the Spaces
   // screen, which is exactly what a seeded row is for.
   await sql`
-    insert into public.space_invites
+    insert into orbit.space_invites
       (space_id, owner_id, token_hash, role, invited_email, expires_at)
     values (
       ${S_HOME}, ${PRIYA}, encode(gen_random_bytes(32), 'hex'),
@@ -277,7 +277,7 @@ async function main() {
       const id = uid();
       catId[space]![c.slug] = id;
       await sql`
-        insert into public.categories (id, space_id, owner_id, name, slug, colour, icon, sort_order)
+        insert into orbit.categories (id, space_id, owner_id, name, slug, colour, icon, sort_order)
         values (${id}, ${space}, ${owner}, ${c.name}, ${c.slug}, ${c.colour}, ${c.icon}, ${order++})
       `;
     }
@@ -292,7 +292,7 @@ async function main() {
     placeIds.push(id);
     placeByName[p.name] = id;
     await sql`
-      insert into public.places
+      insert into orbit.places
         (id, space_id, owner_id, category_id, name, address_text, postcode, city,
          geom, geocoded_at, geocode_source)
       values (
@@ -310,7 +310,7 @@ async function main() {
   const WORK_PLACE = uid();
   placeByName['Office — Colmore Row'] = WORK_PLACE;
   await sql`
-    insert into public.places
+    insert into orbit.places
       (id, space_id, owner_id, category_id, name, address_text, postcode, city,
        geom, geocoded_at, geocode_source)
     values (
@@ -338,7 +338,7 @@ async function main() {
     peopleIds.push(id);
 
     await sql`
-      insert into public.people (id, space_id, owner_id, category_id, display_name, notes_md)
+      insert into orbit.people (id, space_id, owner_id, category_id, display_name, notes_md)
       values (${id}, ${space}, ${PRIYA}, ${catId[space]![cat]!}, ${name},
               ${chance(0.3) ? `Met through ${pick(['the school', 'choir', 'work', 'the street WhatsApp', 'book club'])}.` : ''})
     `;
@@ -346,13 +346,13 @@ async function main() {
     if (chance(0.7)) {
       const handle = name.toLowerCase().replace(/[^a-z]+/g, '.');
       await sql`
-        insert into public.person_contacts (space_id, owner_id, person_id, kind, label, value, is_primary)
+        insert into orbit.person_contacts (space_id, owner_id, person_id, kind, label, value, is_primary)
         values (${space}, ${PRIYA}, ${id}, 'email', 'personal', ${`${handle}@example.com`}, true)
       `;
     }
     if (chance(0.5)) {
       await sql`
-        insert into public.person_contacts (space_id, owner_id, person_id, kind, label, value, is_primary)
+        insert into orbit.person_contacts (space_id, owner_id, person_id, kind, label, value, is_primary)
         values (${space}, ${PRIYA}, ${id}, 'phone', 'mobile',
                 ${`07${int(100, 999)} ${int(100000, 999999)}`}, false)
       `;
@@ -360,7 +360,7 @@ async function main() {
     if (chance(0.45)) {
       const d = dayOffset(int(-180, 180));
       await sql`
-        insert into public.person_dates (space_id, owner_id, person_id, kind, on_date, year_known)
+        insert into orbit.person_dates (space_id, owner_id, person_id, kind, on_date, year_known)
         values (${space}, ${PRIYA}, ${id}, 'birthday',
                 ${isoDate(new Date(Date.UTC(int(1955, 2005), d.getUTCMonth(), d.getUTCDate())))},
                 ${chance(0.8)})
@@ -373,7 +373,7 @@ async function main() {
   const drHome = uid();
   const drWork = uid();
   await sql`
-    insert into public.people (id, space_id, owner_id, category_id, display_name, notes_md) values
+    insert into orbit.people (id, space_id, owner_id, category_id, display_name, notes_md) values
       (${drHome}, ${S_HOME}, ${PRIYA}, ${catId[S_HOME]!.health!}, 'Dr Iqbal',
        'GP at the Kings Heath surgery.'),
       (${drWork}, ${S_WORK}, ${PRIYA}, ${catId[S_WORK]!.work!}, 'Dr Iqbal',
@@ -382,7 +382,7 @@ async function main() {
   {
     const [a, b] = [drHome, drWork].sort();
     await sql`
-      insert into public.person_links
+      insert into orbit.person_links
         (space_id, owner_id, person_a_id, person_b_id, person_b_space, confidence)
       values (${S_HOME}, ${PRIYA}, ${a!}, ${b!}, ${S_WORK}, 'confirmed')
     `;
@@ -400,13 +400,13 @@ async function main() {
   ] as const) {
     const accountId = uid();
     await sql`
-      insert into public.calendar_accounts (id, space_id, owner_id, provider, display_name, status)
+      insert into orbit.calendar_accounts (id, space_id, owner_id, provider, display_name, status)
       values (${accountId}, ${space}, ${owner}, 'local', ${`${name} (local)`}, 'connected')
     `;
     const calId = uid();
     calIds[space] = calId;
     await sql`
-      insert into public.calendars (id, space_id, owner_id, account_id, name, colour, icon)
+      insert into orbit.calendars (id, space_id, owner_id, account_id, name, colour, icon)
       values (${calId}, ${space}, ${owner}, ${accountId}, ${name}, 'slate', 'calendar')
     `;
     // A connected calendar that has never been pulled — no token, status idle.
@@ -414,7 +414,7 @@ async function main() {
     // keeps calendar_sync_state out of the pgTAP known-empty ledger: the
     // outsider check iterates pg_tables and cannot fail on an empty table.
     await sql`
-      insert into public.calendar_sync_state
+      insert into orbit.calendar_sync_state
         (space_id, owner_id, calendar_id, direction, last_status)
       values (${space}, ${owner}, ${calId}, 'pull', 'idle')
     `;
@@ -440,7 +440,7 @@ async function main() {
     eventIds.push(id);
 
     await sql`
-      insert into public.events
+      insert into orbit.events
         (id, space_id, owner_id, calendar_id, category_id, place_id, title, body_md,
          starts_at, ends_at, all_day, status)
       values (
@@ -455,11 +455,11 @@ async function main() {
     if (chance(0.3)) {
       const personId = pick(peopleIds);
       const personSpace = await sql<{ space_id: string }[]>`
-        select space_id from public.people where id = ${personId}
+        select space_id from orbit.people where id = ${personId}
       `;
       if (personSpace[0]?.space_id === space) {
         await sql`
-          insert into public.event_attendees (space_id, owner_id, event_id, person_id, response)
+          insert into orbit.event_attendees (space_id, owner_id, event_id, person_id, response)
           values (${space}, ${owner}, ${id}, ${personId},
                   ${pick(['accepted', 'accepted', 'needs_action', 'tentative'])})
           on conflict do nothing
@@ -484,12 +484,12 @@ async function main() {
   ] as const) {
     const dtstart = at(-30, hour, 30);
     const rows = await sql<{ id: string }[]>`
-      insert into public.recurrence_rules (space_id, owner_id, rrule, dtstart, timezone)
+      insert into orbit.recurrence_rules (space_id, owner_id, rrule, dtstart, timezone)
       values (${space}, ${owner}, ${rrule}, ${dtstart}, 'Europe/London')
       returning id
     `;
     await sql`
-      insert into public.events
+      insert into orbit.events
         (space_id, owner_id, calendar_id, category_id, recurrence_rule_id,
          title, starts_at, ends_at, all_day, status)
       values (
@@ -523,7 +523,7 @@ async function main() {
     const id = uid();
     eventIds.push(id);
     await sql`
-      insert into public.events
+      insert into orbit.events
         (id, space_id, owner_id, calendar_id, category_id, place_id, title,
          starts_at, ends_at, all_day, status)
       values (
@@ -543,7 +543,7 @@ async function main() {
     ['Stirchley — Loaf Bakery', -2, 8, 9, 'manual'],
   ] as const) {
     await sql`
-      insert into public.place_visits
+      insert into orbit.place_visits
         (space_id, owner_id, place_id, source, arrived_at, departed_at, notes_md)
       values (
         ${S_HOME}, ${PRIYA}, ${placeByName[placeName]!}, ${source},
@@ -555,7 +555,7 @@ async function main() {
   // One in Work, so "the partner sees Home visits and no Work ones" is a claim
   // with a row behind it on both sides.
   await sql`
-    insert into public.place_visits
+    insert into orbit.place_visits
       (space_id, owner_id, place_id, source, arrived_at, departed_at)
     values (${S_WORK}, ${PRIYA}, ${WORK_PLACE}, 'manual', ${at(-3, 9)}, ${at(-3, 17)})
   `;
@@ -563,7 +563,7 @@ async function main() {
   // A trip, with the journeys that belong to it.
   const TRIP = uid();
   await sql`
-    insert into public.travel_sessions
+    insert into orbit.travel_sessions
       (id, space_id, owner_id, title, source, origin_place_id, destination_place_id,
        starts_at, ends_at, timezone, is_active, notes_md)
     values (
@@ -574,7 +574,7 @@ async function main() {
     )
   `;
   await sql`
-    insert into public.travel_legs
+    insert into orbit.travel_legs
       (space_id, owner_id, session_id, from_place_id, to_place_id, mode,
        depart_at, arrive_at, duration_minutes, distance_metres, estimate_source,
        estimated_at, notes_md)
@@ -589,7 +589,7 @@ async function main() {
   `;
   // And a Work journey, in a space Danny can only see as free/busy.
   await sql`
-    insert into public.travel_sessions
+    insert into orbit.travel_sessions
       (space_id, owner_id, title, source, destination_place_id,
        starts_at, ends_at, timezone, is_active)
     values (
@@ -598,7 +598,7 @@ async function main() {
     )
   `;
   await sql`
-    insert into public.travel_legs
+    insert into orbit.travel_legs
       (space_id, owner_id, from_place_id, to_place_id, mode,
        depart_at, arrive_at, duration_minutes, distance_metres, estimate_source)
     values (
@@ -670,7 +670,7 @@ async function main() {
       }
 
       await sql`
-        insert into public.tasks
+        insert into orbit.tasks
           (id, space_id, owner_id, category_id, title, body_md, status, priority,
            visibility, due_on, deferred_until, completed_at, assignee_id,
            waiting_on, estimate_minutes, sort_order)
@@ -689,7 +689,7 @@ async function main() {
       if (chance(0.25)) {
         for (let s = 0; s < int(2, 4); s++) {
           await sql`
-            insert into public.task_checklist_items (space_id, owner_id, task_id, label, done, sort_order)
+            insert into orbit.task_checklist_items (space_id, owner_id, task_id, label, done, sort_order)
             values (${space}, ${owner}, ${id},
                     ${pick(['Find the paperwork', 'Ring them', 'Check the price', 'Book a slot', 'Confirm by email'])},
                     ${chance(0.35)}, ${s})
@@ -703,11 +703,11 @@ async function main() {
   {
     const id = uid();
     await sql`
-      insert into public.tasks (id, space_id, owner_id, title, body_md, is_locked, due_on)
+      insert into orbit.tasks (id, space_id, owner_id, title, body_md, is_locked, due_on)
       values (${id}, ${S_PRIYA}, ${PRIYA}, '', '', true, ${isoDate(dayOffset(3))})
     `;
     await sql`
-      insert into public.encrypted_blobs
+      insert into orbit.encrypted_blobs
         (space_id, owner_id, entity_kind, entity_id, ciphertext, nonce, algorithm)
       values (${S_PRIYA}, ${PRIYA}, 'task', ${id},
               ${Buffer.from('seed placeholder ciphertext').toString('base64')},
@@ -727,7 +727,7 @@ async function main() {
     noteIds.push(id);
 
     await sql`
-      insert into public.notes
+      insert into orbit.notes
         (id, space_id, owner_id, category_id, title, body_md, visibility, pinned_at, updated_at)
       values (
         ${id}, ${space}, ${PRIYA}, ${catId[space]![pick(CATEGORIES).slug]!},
@@ -747,14 +747,14 @@ async function main() {
       };
       const target = pick(pools[kind]!);
       const targetSpace = await sql<{ space_id: string }[]>`
-        select space_id from public.${sql(
+        select space_id from orbit.${sql(
           kind === 'task' ? 'tasks' : kind === 'person' ? 'people' : kind === 'place' ? 'places' : 'events',
         )} where id = ${target}
       `;
       // A note_link is space-scoped; it cannot reach across spaces.
       if (targetSpace[0]?.space_id !== space) continue;
       await sql`
-        insert into public.note_links (space_id, owner_id, note_id, entity_kind, entity_id)
+        insert into orbit.note_links (space_id, owner_id, note_id, entity_kind, entity_id)
         values (${space}, ${PRIYA}, ${id}, ${kind}, ${target})
         on conflict do nothing
       `;
@@ -770,11 +770,11 @@ async function main() {
     const lockedNoteId = uid();
     noteIds.push(lockedNoteId);
     await sql`
-      insert into public.notes (id, space_id, owner_id, title, body_md, is_locked)
+      insert into orbit.notes (id, space_id, owner_id, title, body_md, is_locked)
       values (${lockedNoteId}, ${S_HOME}, ${PRIYA}, '', '', true)
     `;
     await sql`
-      insert into public.encrypted_blobs
+      insert into orbit.encrypted_blobs
         (space_id, owner_id, entity_kind, entity_id, ciphertext, nonce, algorithm)
       values (${S_HOME}, ${PRIYA}, 'note', ${lockedNoteId},
               ${Buffer.from('seed placeholder note ciphertext').toString('base64')},
@@ -790,11 +790,11 @@ async function main() {
   // table has a check constraint refusing it, and there is a test for that.
   console.log('▸ activity');
   await sql`
-    insert into public.activity_log
+    insert into orbit.activity_log
       (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
     select ${S_HOME}, ${PRIYA}, ${PRIYA}, 'task', t.id, 'created',
            'Added from the weekly shop list'
-    from public.tasks t where t.space_id = ${S_HOME} limit 1
+    from orbit.tasks t where t.space_id = ${S_HOME} limit 1
   `;
 
   console.log('▸ tags');
@@ -802,15 +802,15 @@ async function main() {
     for (const t of TAGS) {
       const id = uid();
       await sql`
-        insert into public.tags (id, space_id, owner_id, name, slug)
+        insert into orbit.tags (id, space_id, owner_id, name, slug)
         values (${id}, ${space}, ${PRIYA}, ${t.replace(/-/g, ' ')}, ${t})
       `;
       for (const taskId of taskIds) {
         if (!chance(0.02)) continue;
-        const ts = await sql<{ space_id: string }[]>`select space_id from public.tasks where id = ${taskId}`;
+        const ts = await sql<{ space_id: string }[]>`select space_id from orbit.tasks where id = ${taskId}`;
         if (ts[0]?.space_id !== space) continue;
         await sql`
-          insert into public.taggings (space_id, owner_id, tag_id, entity_kind, entity_id)
+          insert into orbit.taggings (space_id, owner_id, tag_id, entity_kind, entity_id)
           values (${space}, ${PRIYA}, ${id}, 'task', ${taskId})
           on conflict do nothing
         `;
@@ -821,7 +821,7 @@ async function main() {
   // -- saved views, rules, reminders ---------------------------------------
   console.log('▸ views, rules, reminders');
   await sql`
-    insert into public.saved_views (space_id, owner_id, name, slug, entity_kind, filter, sort_order) values
+    insert into orbit.saved_views (space_id, owner_id, name, slug, entity_kind, filter, sort_order) values
       (${S_HOME}, ${PRIYA}, 'This weekend', 'this-weekend', 'task',
        ${sql.json({ due_within_days: 3, status: ['todo', 'doing'] })}, 0),
       (${S_HOME}, ${PRIYA}, 'Danny''s jobs', 'dannys-jobs', 'task',
@@ -834,7 +834,7 @@ async function main() {
   const RULE_ADMIN = '00000000-0000-4000-8000-0000000000b2';
   const RULE_WORK = '00000000-0000-4000-8000-0000000000b3';
   await sql`
-    insert into public.rules (id, space_id, owner_id, name, slug, description, trigger, conditions, actions, is_enabled, last_dry_run_at) values
+    insert into orbit.rules (id, space_id, owner_id, name, slug, description, trigger, conditions, actions, is_enabled, last_dry_run_at) values
       (${RULE_BINS}, ${S_HOME}, ${PRIYA}, 'Bins go to Danny', 'bins-to-danny',
        'Anything mentioning the bins gets assigned to Danny.',
        ${sql.json({ kind: 'task.created' })},
@@ -875,7 +875,7 @@ async function main() {
   const BIN_TASK = '00000000-0000-4000-8000-0000000000c1';
   const LOCKED_HOME_TASK = '00000000-0000-4000-8000-0000000000c2';
   await sql`
-    insert into public.tasks
+    insert into orbit.tasks
       (id, space_id, owner_id, category_id, title, body_md, status, priority, due_on, assignee_id, sort_order)
     values
       (${BIN_TASK}, ${S_HOME}, ${PRIYA}, ${catId[S_HOME]!.home ?? null},
@@ -893,11 +893,11 @@ async function main() {
   // only asserting it: the preview lists it as skipped and never as a match.
   // Its title is empty by check constraint — the server has no plaintext.
   await sql`
-    insert into public.tasks (id, space_id, owner_id, title, body_md, is_locked, due_on, sort_order)
+    insert into orbit.tasks (id, space_id, owner_id, title, body_md, is_locked, due_on, sort_order)
     values (${LOCKED_HOME_TASK}, ${S_HOME}, ${PRIYA}, '', '', true, ${isoDate(dayOffset(-14))}, 904)
   `;
   await sql`
-    insert into public.encrypted_blobs
+    insert into orbit.encrypted_blobs
       (space_id, owner_id, entity_kind, entity_id, ciphertext, nonce, algorithm)
     values (${S_HOME}, ${PRIYA}, 'task', ${LOCKED_HOME_TASK},
             ${Buffer.from('seed placeholder ciphertext').toString('base64')},
@@ -922,9 +922,9 @@ async function main() {
              c.slug as "categorySlug", a.display_name as "assigneeName",
              t.assignee_id as "assigneeId", t.due_on as "dueOn",
              t.deferred_until as "deferredUntil", t.estimate_minutes as "estimateMinutes"
-      from public.tasks t
-      left join public.categories c on c.id = t.category_id
-      left join public.profiles a on a.id = t.assignee_id
+      from orbit.tasks t
+      left join orbit.categories c on c.id = t.category_id
+      left join orbit.profiles a on a.id = t.assignee_id
       where t.space_id = ${S_HOME} and t.status in ('todo','doing','blocked')
       order by t.due_on nulls last, t.created_at
     `;
@@ -955,22 +955,22 @@ async function main() {
       })),
     }));
     await sql`
-      insert into public.rule_runs
+      insert into orbit.rule_runs
         (space_id, owner_id, rule_id, is_dry_run, trigger_kind, matched, effects, duration_ms)
       values (${S_HOME}, ${PRIYA}, ${ruleId}, true, ${trigger.kind},
               ${summary.matched > 0}, ${sql.json(effects)}, 1)
     `;
-    await sql`update public.rules set last_dry_run_at = now() where id = ${ruleId}`;
+    await sql`update orbit.rules set last_dry_run_at = now() where id = ${ruleId}`;
   }
 
   const dueSoon = await sql<{ id: string; space_id: string; owner_id: string }[]>`
-    select id, space_id, owner_id from public.tasks
+    select id, space_id, owner_id from orbit.tasks
     where due_on is not null and due_on >= ${isoDate(today)} and status = 'todo'
     order by due_on limit 8
   `;
   for (const t of dueSoon) {
     await sql`
-      insert into public.reminders (space_id, owner_id, entity_kind, entity_id, remind_at, message)
+      insert into orbit.reminders (space_id, owner_id, entity_kind, entity_id, remind_at, message)
       values (${t.space_id}, ${t.owner_id}, 'task', ${t.id}, ${at(int(0, 5), 8)}, '')
     `;
   }
@@ -981,15 +981,15 @@ async function main() {
   // tell "the rule never fired" from "it fired and the push went nowhere".
   {
     const [r] = await sql<{ id: string; space_id: string; owner_id: string }[]>`
-      select id, space_id, owner_id from public.reminders
+      select id, space_id, owner_id from orbit.reminders
       where space_id = ${S_HOME} order by remind_at limit 1
     `;
     const [d] = await sql<{ id: string }[]>`
-      select id from public.devices where space_id = ${S_HOME} limit 1
+      select id from orbit.devices where space_id = ${S_HOME} limit 1
     `;
     if (r) {
       await sql`
-        insert into public.notification_deliveries
+        insert into orbit.notification_deliveries
           (space_id, owner_id, reminder_id, device_id, channel, status, provider)
         values (${r.space_id}, ${r.owner_id}, ${r.id}, ${d?.id ?? null}, 'push', 'queued', 'push:fake')
       `;
@@ -1000,12 +1000,12 @@ async function main() {
   // writes one on every edit; nothing had ever edited a seeded note.
   {
     const [n] = await sql<{ id: string; space_id: string; owner_id: string; title: string; body_md: string }[]>`
-      select id, space_id, owner_id, title, body_md from public.notes
+      select id, space_id, owner_id, title, body_md from orbit.notes
       where space_id = ${S_HOME} and not is_locked order by created_at limit 1
     `;
     if (n) {
       await sql`
-        insert into public.note_versions (space_id, owner_id, note_id, version, title, body_md)
+        insert into orbit.note_versions (space_id, owner_id, note_id, version, title, body_md)
         values (${n.space_id}, ${n.owner_id}, ${n.id}, 1, ${n.title},
                 ${n.body_md + '\n\nFirst draft, kept by the seed so version history is not empty.'})
       `;
@@ -1014,7 +1014,7 @@ async function main() {
 
   // -- devices, AI consent --------------------------------------------------
   await sql`
-    insert into public.devices (space_id, owner_id, label, platform, last_seen_at) values
+    insert into orbit.devices (space_id, owner_id, label, platform, last_seen_at) values
       (${S_PRIYA}, ${PRIYA}, 'Priya — laptop', 'web', now()),
       (${S_HOME},  ${PRIYA}, 'Priya — laptop', 'web', now()),
       (${S_DANNY}, ${DANNY}, 'Danny — phone',  'web', now())
@@ -1030,14 +1030,14 @@ async function main() {
   // fact you can see in the app rather than only in pgTAP.
   {
     const devices = await sql<{ id: string; space_id: string; owner_id: string }[]>`
-      select id, space_id, owner_id from public.devices
+      select id, space_id, owner_id from orbit.devices
     `;
     const behindDays: Record<string, number> = { [S_PRIYA]: 2, [S_HOME]: 2, [S_DANNY]: 1 };
     for (const d of devices) {
       for (const kind of ['task', 'note', 'event', 'person', 'place'] as const) {
         const back = behindDays[d.space_id] ?? 2;
         await sql`
-          insert into public.sync_cursors
+          insert into orbit.sync_cursors
             (space_id, owner_id, device_id, entity_kind, cursor_at, last_sync_at)
           values (${d.space_id}, ${d.owner_id}, ${d.id}, ${kind}::app.entity_kind,
                   ${dayOffset(-back)}, ${dayOffset(-back)})
@@ -1054,7 +1054,7 @@ async function main() {
     ['weekly_review', 'Titles and due dates for the week are sent. No note bodies, no locked items.'],
   ] as const) {
     await sql`
-      insert into public.ai_feature_consents (space_id, owner_id, feature, is_enabled, data_leaves_device)
+      insert into orbit.ai_feature_consents (space_id, owner_id, feature, is_enabled, data_leaves_device)
       values (${S_HOME}, ${PRIYA}, ${feature}, false, ${disclosure})
     `;
   }
@@ -1064,7 +1064,7 @@ async function main() {
   // grant — so this is what makes "the partner sees one consent, his own, and
   // none of Priya's three" a fact you can see in the app rather than a claim.
   await sql`
-    insert into public.ai_feature_consents (space_id, owner_id, feature, is_enabled, data_leaves_device)
+    insert into orbit.ai_feature_consents (space_id, owner_id, feature, is_enabled, data_leaves_device)
     values (${S_HOME}, ${DANNY}, 'note_summary', false,
             'The note’s text is sent to the model provider. Locked notes are never included.')
   `;
@@ -1079,14 +1079,14 @@ async function main() {
   // them and a free/busy participant does not.
   {
     const [lockedNote] = await sql<{ id: string }[]>`
-      select id from public.notes where space_id = ${S_HOME} and is_locked limit 1
+      select id from orbit.notes where space_id = ${S_HOME} and is_locked limit 1
     `;
     const [plainNote] = await sql<{ id: string }[]>`
-      select id from public.notes where space_id = ${S_HOME} and not is_locked
+      select id from orbit.notes where space_id = ${S_HOME} and not is_locked
       order by created_at limit 1
     `;
     await sql`
-      insert into public.ai_runs
+      insert into orbit.ai_runs
         (space_id, owner_id, feature, provider, model, entity_kind, entity_id, status, error)
       values
         (${S_HOME}, ${PRIYA}, 'note_summary', 'ai:fake', 'fake-local', 'note',
@@ -1099,22 +1099,22 @@ async function main() {
 
   // -- summary --------------------------------------------------------------
   const counts = await sql<{ what: string; n: number }[]>`
-    select 'profiles' as what, count(*)::int as n from public.profiles
-    union all select 'spaces', count(*)::int from public.spaces
-    union all select 'people', count(*)::int from public.people
-    union all select 'events', count(*)::int from public.events
-    union all select 'tasks', count(*)::int from public.tasks
-    union all select 'notes', count(*)::int from public.notes
-    union all select 'note_links', count(*)::int from public.note_links
-    union all select 'places', count(*)::int from public.places
-    union all select 'place_visits', count(*)::int from public.place_visits
-    union all select 'travel_legs', count(*)::int from public.travel_legs
-    union all select 'travel_sessions', count(*)::int from public.travel_sessions
-    union all select 'rules', count(*)::int from public.rules
-    union all select 'rule_runs', count(*)::int from public.rule_runs
-    union all select 'devices', count(*)::int from public.devices
-    union all select 'sync_cursors', count(*)::int from public.sync_cursors
-    union all select 'space_invites', count(*)::int from public.space_invites
+    select 'profiles' as what, count(*)::int as n from orbit.profiles
+    union all select 'spaces', count(*)::int from orbit.spaces
+    union all select 'people', count(*)::int from orbit.people
+    union all select 'events', count(*)::int from orbit.events
+    union all select 'tasks', count(*)::int from orbit.tasks
+    union all select 'notes', count(*)::int from orbit.notes
+    union all select 'note_links', count(*)::int from orbit.note_links
+    union all select 'places', count(*)::int from orbit.places
+    union all select 'place_visits', count(*)::int from orbit.place_visits
+    union all select 'travel_legs', count(*)::int from orbit.travel_legs
+    union all select 'travel_sessions', count(*)::int from orbit.travel_sessions
+    union all select 'rules', count(*)::int from orbit.rules
+    union all select 'rule_runs', count(*)::int from orbit.rule_runs
+    union all select 'devices', count(*)::int from orbit.devices
+    union all select 'sync_cursors', count(*)::int from orbit.sync_cursors
+    union all select 'space_invites', count(*)::int from orbit.space_invites
     order by 1
   `;
   console.log('▸ seeded:');

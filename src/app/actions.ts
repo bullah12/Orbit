@@ -122,13 +122,13 @@ export async function toggleTaskDone(formData: FormData) {
   await asUser(user.id, async (tx) => {
     if (done) {
       await tx`
-        update public.tasks
+        update orbit.tasks
         set status = 'done', completed_at = now()
         where id = ${id}::uuid and status <> 'done'
       `;
     } else {
       await tx`
-        update public.tasks
+        update orbit.tasks
         set status = 'todo', completed_at = null
         where id = ${id}::uuid
       `;
@@ -154,10 +154,10 @@ export async function createTask(formData: FormData) {
     // a stale form could otherwise carry a category from a space the task is
     // not going into.
     const [row] = await tx<{ id: string }[]>`
-      insert into public.tasks (space_id, owner_id, category_id, title, due_on, assignee_id)
+      insert into orbit.tasks (space_id, owner_id, category_id, title, due_on, assignee_id)
       values (
         ${spaceId}::uuid, ${user.id}::uuid,
-        (select c.id from public.categories c
+        (select c.id from orbit.categories c
           where c.id = ${categoryId}::uuid and c.space_id = ${spaceId}::uuid),
         ${title}, ${dueOn}::date, ${user.id}::uuid)
       returning id
@@ -204,7 +204,7 @@ export async function updateTask(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      update public.tasks t set
+      update orbit.tasks t set
         title      = ${title},
         body_md    = ${bodyMd},
         status     = ${status}::app.task_status,
@@ -220,11 +220,11 @@ export async function updateTask(formData: FormData) {
           else null
         end,
         category_id = (
-          select c.id from public.categories c
+          select c.id from orbit.categories c
           where c.id = ${categoryId}::uuid and c.space_id = t.space_id
         ),
         assignee_id = (
-          select m.user_id from public.space_members m
+          select m.user_id from orbit.space_members m
           where m.user_id = ${assigneeId}::uuid
             and m.space_id = t.space_id
             and m.status = 'active'
@@ -246,7 +246,7 @@ export async function deleteTask(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`delete from public.tasks where id = ${id}::uuid`;
+    await tx`delete from orbit.tasks where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -263,7 +263,7 @@ export async function createNote(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.notes (space_id, owner_id, title, body_md)
+      insert into orbit.notes (space_id, owner_id, title, body_md)
       values (${spaceId}::uuid, ${user.id}::uuid, ${title}, ${bodyMd})
     `;
   });
@@ -284,15 +284,15 @@ export async function updateNote(formData: FormData) {
     // locked note writes a version row for a note whose contents the server has
     // never seen.
     await tx`
-      insert into public.note_versions (space_id, owner_id, note_id, version, title, body_md)
+      insert into orbit.note_versions (space_id, owner_id, note_id, version, title, body_md)
       select n.space_id, ${user.id}::uuid, n.id,
-             coalesce((select max(version) from public.note_versions v where v.note_id = n.id), 0) + 1,
+             coalesce((select max(version) from orbit.note_versions v where v.note_id = n.id), 0) + 1,
              n.title, n.body_md
-      from public.notes n
+      from orbit.notes n
       where n.id = ${id}::uuid and not n.is_locked
     `;
     await tx`
-      update public.notes set title = ${title}, body_md = ${bodyMd}, updated_at = now()
+      update orbit.notes set title = ${title}, body_md = ${bodyMd}, updated_at = now()
       where id = ${id}::uuid and not is_locked
     `;
   });
@@ -311,7 +311,7 @@ export async function archiveNote(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`update public.notes set archived_at = now() where id = ${id}::uuid`;
+    await tx`update orbit.notes set archived_at = now() where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -324,7 +324,7 @@ export async function restoreNote(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`update public.notes set archived_at = null where id = ${id}::uuid`;
+    await tx`update orbit.notes set archived_at = null where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -336,7 +336,7 @@ export async function deleteNote(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`delete from public.notes where id = ${id}::uuid`;
+    await tx`delete from orbit.notes where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -359,9 +359,9 @@ export async function addNoteLink(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.note_links (space_id, owner_id, note_id, entity_kind, entity_id)
+      insert into orbit.note_links (space_id, owner_id, note_id, entity_kind, entity_id)
       select n.space_id, ${user.id}::uuid, n.id, ${kind}::app.entity_kind, ${entityId}::uuid
-      from public.notes n
+      from orbit.notes n
       where n.id = ${noteId}::uuid
         and exists (
           select 1 from app.entity_space(${kind}::app.entity_kind, ${entityId}::uuid) es
@@ -383,7 +383,7 @@ export async function removeNoteLink(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      delete from public.note_links
+      delete from orbit.note_links
       where note_id = ${noteId}::uuid
         and entity_kind = ${kind}::app.entity_kind
         and entity_id = ${entityId}::uuid
@@ -414,12 +414,12 @@ export async function moveTaskToSpace(formData: FormData) {
     `;
     // The category belongs to the old space, so it cannot come along.
     await tx`
-      update public.tasks
+      update orbit.tasks
       set space_id = ${targetSpaceId}::uuid, category_id = null
       where id = ${id}::uuid
     `;
     await tx`
-      insert into public.activity_log (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
+      insert into orbit.activity_log (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
       values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'task', ${id}::uuid,
               'moved', 'Moved between spaces')
     `;
@@ -445,10 +445,10 @@ export async function createPerson(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.people (space_id, owner_id, category_id, display_name)
+      insert into orbit.people (space_id, owner_id, category_id, display_name)
       values (
         ${spaceId}::uuid, ${user.id}::uuid,
-        (select c.id from public.categories c
+        (select c.id from orbit.categories c
           where c.id = ${categoryId}::uuid and c.space_id = ${spaceId}::uuid),
         ${displayName})
     `;
@@ -470,13 +470,13 @@ export async function updatePerson(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      update public.people p set
+      update orbit.people p set
         display_name = ${displayName},
         nickname     = ${nickname},
         pronouns     = ${pronouns},
         notes_md     = ${notesMd},
         category_id  = (
-          select c.id from public.categories c
+          select c.id from orbit.categories c
           where c.id = ${categoryId}::uuid and c.space_id = p.space_id
         ),
         updated_at   = now()
@@ -493,7 +493,7 @@ export async function archivePerson(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`update public.people set archived_at = now() where id = ${id}::uuid`;
+    await tx`update orbit.people set archived_at = now() where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -511,9 +511,9 @@ export async function addPersonContact(formData: FormData) {
   await asUser(user.id, async (tx) => {
     // space_id and owner_id come from the person, never from the form.
     await tx`
-      insert into public.person_contacts (space_id, owner_id, person_id, kind, label, value)
+      insert into orbit.person_contacts (space_id, owner_id, person_id, kind, label, value)
       select p.space_id, ${user.id}::uuid, p.id, ${kind}, ${label}, ${value}
-      from public.people p where p.id = ${personId}::uuid
+      from orbit.people p where p.id = ${personId}::uuid
     `;
   });
 
@@ -526,7 +526,7 @@ export async function removePersonContact(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`delete from public.person_contacts where id = ${id}::uuid`;
+    await tx`delete from orbit.person_contacts where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -543,11 +543,11 @@ export async function addPersonDate(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.person_dates
+      insert into orbit.person_dates
         (space_id, owner_id, person_id, kind, label, on_date, year_known)
       select p.space_id, ${user.id}::uuid, p.id, ${kind}, ${label},
              ${onDate}::date, ${yearKnown}
-      from public.people p where p.id = ${personId}::uuid
+      from orbit.people p where p.id = ${personId}::uuid
     `;
   });
 
@@ -560,7 +560,7 @@ export async function removePersonDate(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`delete from public.person_dates where id = ${id}::uuid`;
+    await tx`delete from orbit.person_dates where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -583,7 +583,7 @@ export async function linkPeople(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.person_links
+      insert into orbit.person_links
         (space_id, owner_id, person_a_id, person_b_id, person_b_space)
       select
         case when a.id < b.id then a.space_id else b.space_id end,
@@ -591,7 +591,7 @@ export async function linkPeople(formData: FormData) {
         least(a.id, b.id),
         greatest(a.id, b.id),
         case when a.id < b.id then b.space_id else a.space_id end
-      from public.people a, public.people b
+      from orbit.people a, orbit.people b
       where a.id = ${personId}::uuid and b.id = ${otherId}::uuid and a.id <> b.id
       on conflict do nothing
     `;
@@ -606,7 +606,7 @@ export async function unlinkPeople(formData: FormData) {
   if (!linkId) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`delete from public.person_links where id = ${linkId}::uuid`;
+    await tx`delete from orbit.person_links where id = ${linkId}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -633,18 +633,18 @@ export async function movePersonToSpace(formData: FormData) {
     // Categories, contacts and dates all belong to a space. The category cannot
     // follow; the contacts and dates are the person's own and move with them.
     await tx`
-      update public.people
+      update orbit.people
       set space_id = ${targetSpaceId}::uuid, category_id = null
       where id = ${id}::uuid
     `;
     for (const table of ['person_contacts', 'person_dates']) {
       await tx.unsafe(
-        `update public.${table} set space_id = $1 where person_id = $2`,
+        `update orbit.${table} set space_id = $1 where person_id = $2`,
         [targetSpaceId, id],
       );
     }
     await tx`
-      insert into public.activity_log
+      insert into orbit.activity_log
         (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
       values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'person',
               ${id}::uuid, 'moved', 'Moved between spaces')
@@ -716,7 +716,7 @@ export async function createEvent(formData: FormData) {
     let ruleId: string | null = null;
     if (recurrenceRule) {
       const [rule] = await tx<{ id: string }[]>`
-        insert into public.recurrence_rules (space_id, owner_id, rrule, dtstart)
+        insert into orbit.recurrence_rules (space_id, owner_id, rrule, dtstart)
         values (${spaceId}::uuid, ${user.id}::uuid, ${recurrenceRule}, ${startsAt})
         returning id
       `;
@@ -724,7 +724,7 @@ export async function createEvent(formData: FormData) {
     }
 
     await tx`
-      insert into public.events
+      insert into orbit.events
         (space_id, owner_id, calendar_id, category_id, title, starts_at, ends_at, all_day,
          recurrence_rule_id)
       values (
@@ -734,13 +734,13 @@ export async function createEvent(formData: FormData) {
         -- boundary. Falling back to the space's first calendar keeps the
         -- compose bar to one decision.
         coalesce(
-          (select c.id from public.calendars c
+          (select c.id from orbit.calendars c
             where c.id = ${calendarId}::uuid and c.space_id = ${spaceId}::uuid),
-          (select c.id from public.calendars c
+          (select c.id from orbit.calendars c
             where c.space_id = ${spaceId}::uuid and c.is_writable
             order by c.sort_order, c.name limit 1)
         ),
-        (select k.id from public.categories k
+        (select k.id from orbit.categories k
           where k.id = ${categoryId}::uuid and k.space_id = ${spaceId}::uuid),
         ${title}, ${startsAt}, ${finalEnd}, ${allDay}, ${ruleId}::uuid
       )
@@ -774,7 +774,7 @@ export async function updateEvent(formData: FormData) {
     // The category is resolved against the event's *own* space, in SQL, so a
     // stale form cannot attach a category from somewhere else.
     await tx`
-      update public.events e
+      update orbit.events e
       set title = ${title},
           body_md = ${bodyMd},
           location_text = ${locationText},
@@ -783,7 +783,7 @@ export async function updateEvent(formData: FormData) {
           all_day = ${allDay},
           status = ${['confirmed', 'tentative', 'cancelled'].includes(status) ? status : 'confirmed'},
           category_id = (
-            select k.id from public.categories k
+            select k.id from orbit.categories k
             where k.id = ${categoryId}::uuid and k.space_id = e.space_id
           ),
           -- Locally edited, so a later push knows there is something to send.
@@ -839,19 +839,19 @@ export async function setEventRepeat(formData: FormData) {
   if (freq === '') {
     await asUser(user.id, async (tx) => {
       const [row] = await tx<{ ruleId: string | null }[]>`
-        select recurrence_rule_id as "ruleId" from public.events
+        select recurrence_rule_id as "ruleId" from orbit.events
         where id = ${id}::uuid and not is_locked
       `;
       if (!row?.ruleId) return;
       await tx`
-        update public.events set recurrence_rule_id = null,
+        update orbit.events set recurrence_rule_id = null,
                                  is_dirty = (external_id is not null)
         where id = ${id}::uuid and not is_locked
       `;
       await tx`
-        delete from public.recurrence_rules r
+        delete from orbit.recurrence_rules r
         where r.id = ${row.ruleId}::uuid
-          and not exists (select 1 from public.events e where e.recurrence_rule_id = r.id)
+          and not exists (select 1 from orbit.events e where e.recurrence_rule_id = r.id)
       `;
     });
     revalidatePath('/', 'layout');
@@ -871,26 +871,26 @@ export async function setEventRepeat(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     const [row] = await tx<{ ruleId: string | null }[]>`
-      select recurrence_rule_id as "ruleId" from public.events
+      select recurrence_rule_id as "ruleId" from orbit.events
       where id = ${id}::uuid and not is_locked
     `;
     if (row?.ruleId) {
       // Updated in place, so the exdates on it survive.
       await tx`
-        update public.recurrence_rules
+        update orbit.recurrence_rules
         set rrule = ${built.rrule}, dtstart = ${event.startsAt}, until = ${until}
         where id = ${row.ruleId}::uuid
       `;
     } else {
       const [rule] = await tx<{ id: string }[]>`
-        insert into public.recurrence_rules (space_id, owner_id, rrule, dtstart, until)
+        insert into orbit.recurrence_rules (space_id, owner_id, rrule, dtstart, until)
         values (${event.space.id}::uuid, ${user.id}::uuid, ${built.rrule},
                 ${event.startsAt}, ${until})
         returning id
       `;
       if (!rule) return;
       await tx`
-        update public.events set recurrence_rule_id = ${rule.id}::uuid,
+        update orbit.events set recurrence_rule_id = ${rule.id}::uuid,
                                  is_dirty = (external_id is not null)
         where id = ${id}::uuid and not is_locked
       `;
@@ -952,10 +952,10 @@ export async function skipOccurrence(formData: FormData) {
   await asUser(user.id, async (tx) => {
     if (put === 'skip') {
       await tx`
-        update public.recurrence_rules r
+        update orbit.recurrence_rules r
         set exdates = r.exdates || ${instant}::timestamptz
         where r.id = (
-          select e.recurrence_rule_id from public.events e
+          select e.recurrence_rule_id from orbit.events e
           where e.id = ${id}::uuid and not e.is_locked
         )
       `;
@@ -964,13 +964,13 @@ export async function skipOccurrence(formData: FormData) {
       // and '2026-04-06T08:00:00.000Z' and '2026-04-06 09:00:00+01' are the same
       // moment written two ways.
       await tx`
-        update public.recurrence_rules r
+        update orbit.recurrence_rules r
         set exdates = coalesce((
           select array_agg(x order by x) from unnest(r.exdates) as x
           where x <> ${instant}::timestamptz
         ), '{}'::timestamptz[])
         where r.id = (
-          select e.recurrence_rule_id from public.events e
+          select e.recurrence_rule_id from orbit.events e
           where e.id = ${id}::uuid and not e.is_locked
         )
       `;
@@ -992,14 +992,14 @@ export async function deleteEvent(formData: FormData) {
     // behind as a row nothing points at — invisible, and still counted by the
     // structural checks. It goes too, but only if no other event uses it.
     const [row] = await tx<{ ruleId: string | null }[]>`
-      select recurrence_rule_id as "ruleId" from public.events where id = ${id}::uuid
+      select recurrence_rule_id as "ruleId" from orbit.events where id = ${id}::uuid
     `;
-    await tx`delete from public.events where id = ${id}::uuid`;
+    await tx`delete from orbit.events where id = ${id}::uuid`;
     if (row?.ruleId) {
       await tx`
-        delete from public.recurrence_rules r
+        delete from orbit.recurrence_rules r
         where r.id = ${row.ruleId}::uuid
-          and not exists (select 1 from public.events e where e.recurrence_rule_id = r.id)
+          and not exists (select 1 from orbit.events e where e.recurrence_rule_id = r.id)
       `;
     }
   });
@@ -1028,12 +1028,12 @@ export async function moveEventToSpace(formData: FormData) {
         ${id}::uuid, ${targetSpaceId}::uuid) limit 1
     `;
     await tx`
-      update public.events
+      update orbit.events
       set space_id = ${targetSpaceId}::uuid,
           category_id = null,
           place_id = null,
           calendar_id = (
-            select c.id from public.calendars c
+            select c.id from orbit.calendars c
             where c.space_id = ${targetSpaceId}::uuid and c.is_writable
             order by c.sort_order, c.name limit 1
           )
@@ -1041,11 +1041,11 @@ export async function moveEventToSpace(formData: FormData) {
     `;
     // Attendees belong to the event and travel with it.
     await tx`
-      update public.event_attendees set space_id = ${targetSpaceId}::uuid
+      update orbit.event_attendees set space_id = ${targetSpaceId}::uuid
       where event_id = ${id}::uuid
     `;
     await tx`
-      insert into public.activity_log
+      insert into orbit.activity_log
         (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
       values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'event',
               ${id}::uuid, 'moved', 'Moved between spaces')
@@ -1076,14 +1076,14 @@ export async function moveNoteToSpace(formData: FormData) {
         ${id}::uuid, ${targetSpaceId}::uuid) limit 1
     `;
     await tx`
-      update public.notes set space_id = ${targetSpaceId}::uuid
+      update orbit.notes set space_id = ${targetSpaceId}::uuid
       where id = ${id}::uuid
     `;
     // A link to something in the old space is now a link across a boundary.
     // app.entity_space() resolves under the caller's own privileges, so an
     // item they cannot read resolves to no rows and the link goes.
     await tx`
-      delete from public.note_links l
+      delete from orbit.note_links l
       where l.note_id = ${id}::uuid
         and coalesce(
           (select space_id from app.entity_space(l.entity_kind, l.entity_id)),
@@ -1092,11 +1092,11 @@ export async function moveNoteToSpace(formData: FormData) {
     `;
     // Version history is the note's own and travels with it.
     await tx`
-      update public.note_versions set space_id = ${targetSpaceId}::uuid
+      update orbit.note_versions set space_id = ${targetSpaceId}::uuid
       where note_id = ${id}::uuid
     `;
     await tx`
-      insert into public.activity_log
+      insert into orbit.activity_log
         (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
       values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'note',
               ${id}::uuid, 'moved', 'Moved between spaces')
@@ -1129,7 +1129,7 @@ export async function importIcs(formData: FormData) {
 
   const result = await asUser(user.id, async (tx) => {
     const target = await tx<{ id: string; spaceId: string }[]>`
-      select id, space_id as "spaceId" from public.calendars
+      select id, space_id as "spaceId" from orbit.calendars
       where id = ${calendarId}::uuid and is_writable
     `;
     const calendar = target[0];
@@ -1153,8 +1153,8 @@ export async function importIcs(formData: FormData) {
     }
 
     await tx`
-      update public.calendar_accounts set last_synced_at = now()
-      where id = (select account_id from public.calendars where id = ${calendar.id}::uuid)
+      update orbit.calendar_accounts set last_synced_at = now()
+      where id = (select account_id from orbit.calendars where id = ${calendar.id}::uuid)
     `;
 
     return { imported, updated, rules };
@@ -1254,11 +1254,11 @@ export async function createPlace(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.places
+      insert into orbit.places
         (space_id, owner_id, category_id, name, address_text, postcode)
       values (
         ${spaceId}::uuid, ${user.id}::uuid,
-        (select c.id from public.categories c
+        (select c.id from orbit.categories c
           where c.id = ${categoryId}::uuid and c.space_id = ${spaceId}::uuid),
         ${name}, ${addressText}, ${postcode})
       on conflict (space_id, name) do nothing
@@ -1293,14 +1293,14 @@ export async function updatePlace(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      update public.places pl set
+      update orbit.places pl set
         name         = ${name},
         address_text = ${addressText},
         postcode     = ${postcode},
         city         = ${city},
         notes_md     = ${notesMd},
         category_id  = (
-          select c.id from public.categories c
+          select c.id from orbit.categories c
           where c.id = ${categoryId}::uuid and c.space_id = pl.space_id
         ),
         geom = ${
@@ -1346,7 +1346,7 @@ export async function geocodePlace(formData: FormData) {
   if (best) {
     await asUser(user.id, async (tx) => {
       await tx`
-        update public.places set
+        update orbit.places set
           geom = ST_SetSRID(ST_MakePoint(${best.lon}, ${best.lat}), 4326)::geography,
           geocoded_at = now(),
           geocode_source = ${provider.name},
@@ -1368,7 +1368,7 @@ export async function archivePlace(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`update public.places set archived_at = now() where id = ${id}::uuid`;
+    await tx`update orbit.places set archived_at = now() where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -1381,7 +1381,7 @@ export async function restorePlace(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`update public.places set archived_at = null where id = ${id}::uuid`;
+    await tx`update orbit.places set archived_at = null where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -1408,31 +1408,31 @@ export async function movePlaceToSpace(formData: FormData) {
         ${id}::uuid, ${targetSpaceId}::uuid) limit 1
     `;
     await tx`
-      update public.places
+      update orbit.places
       set space_id = ${targetSpaceId}::uuid, category_id = null
       where id = ${id}::uuid
     `;
     // Visits are the place's own history and move with it.
     await tx`
-      update public.place_visits set space_id = ${targetSpaceId}::uuid
+      update orbit.place_visits set space_id = ${targetSpaceId}::uuid
       where place_id = ${id}::uuid
     `;
     // Anything left behind in another space stops pointing at it, rather than
     // pointing at something its readers can no longer see.
     await tx`
-      update public.events set place_id = null
+      update orbit.events set place_id = null
       where place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
     `;
     await tx`
-      update public.travel_legs set from_place_id = null
+      update orbit.travel_legs set from_place_id = null
       where from_place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
     `;
     await tx`
-      update public.travel_legs set to_place_id = null
+      update orbit.travel_legs set to_place_id = null
       where to_place_id = ${id}::uuid and space_id <> ${targetSpaceId}::uuid
     `;
     await tx`
-      insert into public.activity_log
+      insert into orbit.activity_log
         (space_id, owner_id, actor_id, entity_kind, entity_id, action, summary)
       values (${targetSpaceId}::uuid, ${user.id}::uuid, ${user.id}::uuid, 'place',
               ${id}::uuid, 'moved', 'Moved between spaces')
@@ -1459,11 +1459,11 @@ export async function addPlaceVisit(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.place_visits
+      insert into orbit.place_visits
         (space_id, owner_id, place_id, source, arrived_at, departed_at, notes_md)
       select pl.space_id, ${user.id}::uuid, pl.id, 'manual',
              ${arrivedAt}, ${departedAt}, ${notesMd}
-      from public.places pl where pl.id = ${placeId}::uuid
+      from orbit.places pl where pl.id = ${placeId}::uuid
     `;
   });
 
@@ -1476,7 +1476,7 @@ export async function removePlaceVisit(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`delete from public.place_visits where id = ${id}::uuid`;
+    await tx`delete from orbit.place_visits where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -1491,9 +1491,9 @@ export async function setEventPlace(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      update public.events e set
+      update orbit.events e set
         place_id = (
-          select pl.id from public.places pl
+          select pl.id from orbit.places pl
           where pl.id = ${placeId}::uuid and pl.space_id = e.space_id
         ),
         updated_at = now()
@@ -1563,7 +1563,7 @@ async function placeEnds(userId: string, fromId: string | null, toId: string | n
     >`
       select id, space_id as "spaceId",
              ST_Y(geom::geometry) as lat, ST_X(geom::geometry) as lon
-      from public.places
+      from orbit.places
       where id in (${fromId ?? null}::uuid, ${toId ?? null}::uuid)
     `;
     return {
@@ -1612,7 +1612,7 @@ export async function createTravelLeg(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.travel_legs
+      insert into orbit.travel_legs
         (space_id, owner_id, session_id, from_place_id, to_place_id, event_id, mode,
          depart_at, arrive_at, duration_minutes, distance_metres, estimate_source,
          estimated_at, notes_md)
@@ -1620,7 +1620,7 @@ export async function createTravelLeg(formData: FormData) {
         ${spaceId}::uuid, ${user.id}::uuid,
         -- Resolved against the chosen space rather than trusted: a stale form
         -- could otherwise file a journey under a trip in another space.
-        (select t.id from public.travel_sessions t
+        (select t.id from orbit.travel_sessions t
           where t.id = ${sessionId}::uuid and t.space_id = ${spaceId}::uuid),
         ${fromPlaceId}::uuid, ${toPlaceId}::uuid, ${eventId}::uuid, ${mode},
         ${departAt}, ${arriveAt}, ${minutes}, ${estimate.metres || null},
@@ -1638,7 +1638,7 @@ export async function deleteTravelLeg(formData: FormData) {
   if (!id) return;
 
   await asUser(user.id, async (tx) => {
-    await tx`delete from public.travel_legs where id = ${id}::uuid`;
+    await tx`delete from orbit.travel_legs where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -1662,9 +1662,9 @@ export async function reestimateTravelLeg(formData: FormData) {
       select ST_Y(fp.geom::geometry) as "fromLat", ST_X(fp.geom::geometry) as "fromLon",
              ST_Y(tp.geom::geometry) as "toLat",   ST_X(tp.geom::geometry) as "toLon",
              l.depart_at as "departAt"
-      from public.travel_legs l
-      left join public.places fp on fp.id = l.from_place_id
-      left join public.places tp on tp.id = l.to_place_id
+      from orbit.travel_legs l
+      left join orbit.places fp on fp.id = l.from_place_id
+      left join orbit.places tp on tp.id = l.to_place_id
       where l.id = ${id}::uuid
     `;
     return rows[0] ?? null;
@@ -1685,7 +1685,7 @@ export async function reestimateTravelLeg(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      update public.travel_legs set
+      update orbit.travel_legs set
         mode = ${mode},
         duration_minutes = ${plan.doorToDoorMinutes || null},
         distance_metres  = ${estimate.metres || null},
@@ -1737,7 +1737,7 @@ export async function saveDerivedLeg(formData: FormData) {
     // constraint that would refuse the second row. The insert therefore checks
     // for itself, in the same statement, rather than trusting the button.
     await tx`
-      insert into public.travel_legs
+      insert into orbit.travel_legs
         (space_id, owner_id, from_place_id, to_place_id, event_id, mode,
          depart_at, arrive_at, duration_minutes, distance_metres, estimate_source,
          estimated_at, notes_md)
@@ -1748,7 +1748,7 @@ export async function saveDerivedLeg(formData: FormData) {
         ${estimate.source === 'none' ? null : new Date()},
         'Derived from the calendar.'
       where not exists (
-        select 1 from public.travel_legs l
+        select 1 from orbit.travel_legs l
         where l.to_place_id = ${toPlaceId}::uuid
           and l.arrive_at = ${arriveBy}
           and l.from_place_id is not distinct from ${fromPlaceId}::uuid
@@ -1776,7 +1776,7 @@ export async function createTravelSession(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.travel_sessions
+      insert into orbit.travel_sessions
         (space_id, owner_id, title, source, origin_place_id, destination_place_id,
          starts_at, ends_at, is_active)
       values (
@@ -1811,7 +1811,7 @@ export async function createSessionFromEvent(formData: FormData) {
     >`
       select id, title, space_id as "spaceId", starts_at as "startsAt",
              ends_at as "endsAt", all_day as "allDay", place_id as "placeId"
-      from public.events where id = ${eventId}::uuid and not is_locked
+      from orbit.events where id = ${eventId}::uuid and not is_locked
     `;
     return rows[0] ?? null;
   });
@@ -1829,7 +1829,7 @@ export async function createSessionFromEvent(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      insert into public.travel_sessions
+      insert into orbit.travel_sessions
         (space_id, owner_id, title, source, destination_place_id, event_id,
          starts_at, ends_at, is_active)
       values (
@@ -1885,7 +1885,7 @@ export async function updateTravelSession(formData: FormData) {
 
   const updated = await asUser(user.id, async (tx) => {
     const rows = await tx<{ id: string }[]>`
-      update public.travel_sessions set
+      update orbit.travel_sessions set
         title                = ${title},
         starts_at            = ${startsAt},
         ends_at              = ${endsAt},
@@ -1925,7 +1925,7 @@ export async function deleteTravelSession(formData: FormData) {
   await asUser(user.id, async (tx) => {
     // The FK cascades the legs; a leg with no session is not a leg anybody
     // asked for.
-    await tx`delete from public.travel_sessions where id = ${id}::uuid`;
+    await tx`delete from orbit.travel_sessions where id = ${id}::uuid`;
   });
 
   revalidatePath('/', 'layout');
@@ -2375,7 +2375,7 @@ export async function nameThisDevice(formData: FormData) {
   await asUser(user.id, async (tx) => {
     for (const space of writable) {
       await tx`
-        insert into public.devices (space_id, owner_id, label, platform, last_seen_at)
+        insert into orbit.devices (space_id, owner_id, label, platform, last_seen_at)
         values (${space.id}::uuid, ${user.id}::uuid, ${label}, 'web', now())
         on conflict (space_id, owner_id, label)
         do update set last_seen_at = now(), revoked_at = null
@@ -2657,9 +2657,9 @@ export async function setTaskAssignee(formData: FormData) {
 
   await asUser(user.id, async (tx) => {
     await tx`
-      update public.tasks t set
+      update orbit.tasks t set
         assignee_id = (
-          select m.user_id from public.space_members m
+          select m.user_id from orbit.space_members m
           where m.user_id = ${assigneeId}::uuid
             and m.space_id = t.space_id
             and m.status = 'active'

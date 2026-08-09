@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import { getCurrentUser, listSelectableUsers, usesDevAuth } from '@/lib/auth';
+import { devAuthRefusal, getCurrentUser, listSelectableUsers, usesDevAuth } from '@/lib/auth';
 import { listSpaces } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
 import { Sidebar } from '@/components/Sidebar';
@@ -61,6 +61,29 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // flash. Reading it outside the try/catch keeps the database-down page on the
   // chosen theme too.
   const theme = themeAttribute(await readTheme());
+
+  // Checked before anything else so it gets its own page rather than being
+  // swallowed by the catch below, which says "Orbit can't reach its database" —
+  // an actively misleading sentence for a deployment that is refusing to serve
+  // impersonation to the public internet. `authProvider()` throws on this too,
+  // so every other entry point fails closed; this is the one that explains it.
+  const refusal = devAuthRefusal();
+  if (refusal) {
+    return (
+      <html lang="en-GB" data-theme={theme}>
+        <body>
+          <div className="mx-auto max-w-xl p-10">
+            <h1 className="mb-2 text-lg font-semibold">Orbit will not start like this</h1>
+            <p className="muted mb-4 text-sm">{refusal}</p>
+            <p className="faint text-xs">
+              This is deliberate and it is not a bug. See <code>docs/deploy.md</code>,
+              and “Known bugs” 22 in <code>docs/STATUS.md</code>.
+            </p>
+          </div>
+        </body>
+      </html>
+    );
+  }
 
   try {
     // getCurrentUser rather than requireUser: with a real provider, "nobody is
