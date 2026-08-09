@@ -7,13 +7,20 @@ const config: NextConfig = {
   typedRoutes: true,
 
   // A self-contained server in .next/standalone, which is what the Dockerfile
-  // copies. Orbit needs a long-lived process rather than a serverless function:
-  // every page is `force-dynamic` and src/lib/db/index.ts holds a connection
-  // pool, which is an asset in a container and a liability in a lambda.
+  // copies — and which Vercel neither needs nor wants, since it builds its own
+  // output. Set everywhere except there.
   //
-  // `pnpm start` still works locally — this adds an output directory, it does
-  // not take the ordinary server away, and `pnpm smoke` still drives it.
-  output: 'standalone',
+  // The pool is what used to make this an either/or. A pool is an asset in a
+  // process that outlives the request and a liability in one that does not, so
+  // the original note here said "not serverless". That holds only while the app
+  // pools for itself: against Supabase's *transaction* pooler with
+  // `DATABASE_POOL_MAX=1` and `DATABASE_PREPARE=false`, the pooling happens in
+  // Supavisor and serverless is a perfectly good fit — a better one, for an app
+  // somebody opens a few times a day and would rather not pay to keep warm.
+  //
+  // `pnpm start` still works locally either way: this adds an output directory,
+  // it does not take the ordinary server away, and `pnpm smoke` still drives it.
+  output: process.env.VERCEL ? undefined : 'standalone',
 };
 
 export default config;

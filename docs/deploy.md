@@ -14,9 +14,15 @@ Railway for the second, because those are what §3 of
 
 ## 0. What you are signing up for
 
-- **A container, not a serverless function.** Every page is `force-dynamic` and
-  `src/lib/db/index.ts` holds a connection pool. Vercel's serverless runtime
-  would create and discard a pool per invocation.
+- **A container *or* a serverless function — this changed in session 12.** The
+  original note here said "not Vercel", because every page is `force-dynamic`
+  and `src/lib/db/index.ts` holds a connection pool, and a pool is a liability
+  in a process that does not outlive the request. That holds only while the app
+  pools for itself. Against Supabase's **transaction pooler** with
+  `DATABASE_POOL_MAX=1` and `DATABASE_PREPARE=false`, the pooling happens in
+  Supavisor and serverless is a good fit — a better one for an app opened a few
+  times a day that nobody wants to pay to keep warm. `docs/runbook.md` §4 has
+  the settings for all three hosts.
 - **`AUTH_PROVIDER=supabase` is written, never run.** It is a real
   implementation of the GoTrue REST API and no line of it has ever sent a
   request. The first sign-in on a real project is the first time any of it

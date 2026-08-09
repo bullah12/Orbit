@@ -1,5 +1,6 @@
 import 'server-only';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
+import { poolMax } from './config';
 
 /**
  * The only way the application talks to Postgres.
@@ -24,7 +25,10 @@ declare global {
 export const pool: Sql =
   globalThis.__orbitSql ??
   postgres(DATABASE_URL, {
-    max: 10,
+    // 10 in a container, 1 on serverless — see src/lib/db/config.ts. The
+    // number that matters is this one times the number of processes, and only
+    // the deployment knows that.
+    max: poolMax(),
     idle_timeout: 20,
     // Supabase's transaction pooler (port 6543) hands a different backend to
     // every statement, so a prepared statement is never there when it is used

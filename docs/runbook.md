@@ -234,48 +234,72 @@ or use `fly domain` / `railway domain` to reserve the hostname before deploying.
 
 ---
 
-## 4. Deploy the container
+## 4. Deploy
+**Vercel is the recommended host**, which reverses what `docs/deploy.md` said
+for three sessions. The reasoning there was the connection pool: a pool is an
+asset in a process that outlives the request and a liability in one that does
+not. That holds only while the app pools for itself. Against Supabase's
+**transaction pooler**, with `DATABASE_POOL_MAX=1`, the pooling happens in
+Supavisor and serverless is a good fit — a better one for an app somebody opens
+a few times a day and would rather not pay to keep warm.
 
-### Check the image locally first
+Fly and Railway both still work and are described afterwards. Pick one.
 
-Worth five minutes, because it catches the two most common mistakes on your own
-machine rather than in a deploy log.
+### Vercel
+
+Nothing to build locally: Vercel builds from the repository.
 
 ```sh
-docker build -t orbit .
-
-# Deliberately WITHOUT AUTH_PROVIDER, to see the guard work.
-docker run --rm -p 3000:3000 \
-  -e DATABASE_URL='postgresql://orbit_app:PASSWORD@db.YOUR-REF.supabase.co:5432/postgres' \
-  orbit
+npx vercel link          # or import the repo at vercel.com/new
 ```
 
-Open `http://localhost:3000`. You should see **"Orbit will not start like
-this"**. That is correct: `dev` is the default auth provider, it is
-impersonation by design, and the app refuses to serve it on a production build.
-Now do it properly:
+Then set the environment variables, for **Production** (repeat for Preview if
+you want preview deployments to work at all — they will refuse to start
+otherwise, which is the dev-auth guard doing its job):
+
+| Variable | Value | Why |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://orbit_app.YOUR-REF:PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres` | **Port 6543**, the transaction pooler. Note the role is `orbit_app.YOUR-REF` — the pooler wants the tenant-qualified name. |
+| `DATABASE_PREPARE` | `false` | The transaction pooler hands a different backend to every statement, so a prepared statement is never there when it is used again. Without this, every query fails with *prepared statement does not exist*. |
+| `DATABASE_POOL_MAX` | `1` | One process per concurrent request, each with its own pool. Leave it at 10 and a quiet app exhausts the database during its first busy minute. |
+| `AUTH_PROVIDER` | `supabase` | Without it the build refuses to serve, because `dev` is the default and the default is impersonation. |
+| `SUPABASE_URL` | `https://YOUR-REF.supabase.co` | |
+| `SUPABASE_ANON_KEY` | `eyJ…` | Public by design; RLS is what protects the data. |
+| `APP_URL` | `https://your-app.vercel.app` | Must match Supabase's Site URL and be in its Redirect URLs. |
 
 ```sh
-docker run --rm -p 3000:3000 \
-  -e DATABASE_URL='postgresql://orbit_app:PASSWORD@db.YOUR-REF.supabase.co:5432/postgres' \
-  -e AUTH_PROVIDER=supabase \
-  -e SUPABASE_URL='https://YOUR-REF.supabase.co' \
-  -e SUPABASE_ANON_KEY='eyJ…' \
-  -e APP_URL='http://localhost:3000' \
-  orbit
-
-curl -s localhost:3000/health    # expect {"status":"ok"}
+npx vercel --prod
 ```
 
-> `{"status":"unavailable"}` and a 503 means the container cannot reach the
-> database — a wrong password, the wrong port, or a host that is not reachable
-> from where you are. Fix it here; it will not fix itself in a datacentre.
+**Do not set `ORBIT_ALLOW_DEV_AUTH`.** It is the switch that lets the
+impersonation provider run on a production build.
 
-### Fly.io
+`next.config.ts` drops `output: 'standalone'` when `VERCEL` is set — that
+directory is for the Docker image and Vercel builds its own.
 
-`fly.toml` is committed. Edit `app` and `primary_region` in it first, then:
+**What you get, and what you give up:**
+
+- **It sleeps, and that is the point.** You pay per request, there is no idle
+  bill, and the first load after a quiet spell waits for a cold start. For an
+  app you open a few times a day and refresh by hand, that is the right trade.
+- **A polling tab would defeat it.** Anything that refreshes on an interval
+  keeps invoking the function, so you would pay for the traffic and gain
+  nothing. Manual refresh — the browser's own reload — already returns current
+  data, because every page is `force-dynamic` and sends `no-store`.
+- **`/health` still answers** but nothing uses it: there is no machine to take
+  out of rotation. It is still the quickest way to test `DATABASE_URL`.
+- **Vercel Cron could eventually run `schedule` rules** (edge 16), which on a
+  container needs a separate worker. Not built, but the door is open.
+
+### Fly.io — if you would rather have the config in the repo
+
+`fly.toml` is committed with `internal_port`, a `/health` check and
+`auto_stop_machines` already set, and comments saying why each one matters.
 
 ```sh
+# --copy-config keeps the committed file. Without it, `fly launch` writes its
+# own defaults: auto_stop_machines = true and internal_port = 8080, both wrong
+# here and both failing quietly.
 fly launch --no-deploy --copy-config --name orbit-yourname
 
 fly secrets set \
@@ -286,20 +310,19 @@ fly secrets set \
   APP_URL='https://orbit-yourname.fly.dev'
 
 fly deploy
-fly logs
 ```
 
-> **Do not let `fly launch` rewrite `fly.toml`.** Its defaults set
-> `auto_stop_machines = true` and `internal_port = 8080`, and both fail quietly:
-> the first throws away the Postgres connection pool between requests, and the
-> second looks like a deploy that succeeded and a site that does not answer.
-> `--copy-config` is what keeps the committed file.
+Session mode (5432) here, so no `DATABASE_PREPARE` and no `DATABASE_POOL_MAX` —
+one long-lived process is what the default pool of 10 is for.
 
-> **Never put `ORBIT_ALLOW_DEV_AUTH` in secrets.** It is the switch that lets
-> the impersonation provider run on a production build. It exists for a local
-> `pnpm start`, and `pnpm start` sets it for you.
+**`auto_stop_machines` is a cost decision, not a correctness one.** Nothing in
+Orbit breaks when the machine stops: there are no background jobs and no
+scheduler. Sleeping costs a second or two on the first request after idle and
+saves the idle hours. `fly.toml` currently keeps the machine running; flip
+`auto_stop_machines = true` and `min_machines_running = 0` if you would rather
+pay less and wait a moment.
 
-### Railway
+### Railway — if you want the shortest path
 
 ```sh
 railway init
@@ -313,15 +336,38 @@ railway variables set \
 railway domain
 ```
 
-Set the health check path to **`/health`**. Railway sets `PORT`; the Dockerfile
-already reads it.
+Health check path `/health`. Railway sets `PORT`; the Dockerfile reads it.
 
-### The pooler, if you use 6543
+### Checking the image locally, on any of them
 
-Supabase's *transaction* pooler hands a different backend to every statement, so
-a prepared statement is never there when it is used again and `asUser()` fails
-with *prepared statement does not exist*. Either use **5432 (session mode)**, or
-set `DATABASE_PREPARE=false`. Session mode is the simplest correct choice.
+Optional, and worth five minutes for Fly or Railway because it catches the two
+most common mistakes on your own machine rather than in a deploy log. Skip it
+for Vercel, which does not use the Dockerfile.
+
+```sh
+docker build -t orbit .
+
+# Deliberately WITHOUT AUTH_PROVIDER, to watch the guard work.
+docker run --rm -p 3000:3000 \
+  -e DATABASE_URL='postgresql://orbit_app:PASSWORD@db.YOUR-REF.supabase.co:5432/postgres' \
+  orbit
+```
+
+Expect **"Orbit will not start like this"** on every page. That is correct:
+`dev` is the default provider, it is impersonation by design, and the app
+refuses to serve it on a production build. Add the real variables and it
+starts.
+
+```sh
+curl -s localhost:3000/health    # expect {"status":"ok"}
+```
+
+`{"status":"unavailable"}` and a 503 means the container cannot reach the
+database. Fix it here; it will not fix itself in a datacentre.
+
+> `permission denied … docker.sock` means your user is not in the `docker`
+> group: `sudo usermod -aG docker $USER && newgrp docker`. On Docker Desktop for
+> Windows it is Settings → Resources → WSL Integration instead.
 
 ---
 
