@@ -108,6 +108,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </main>
       );
     } else {
+      // `listSpaces` is also what guarantees an account has spaces at all: it
+      // provisions Personal and Work for anybody who has none. See the comment
+      // on it — it is done there rather than here so that every reader in the
+      // request gets the provisioned list, not just the sidebar.
       const [spaces, counts, users] = await Promise.all([
         listSpaces(user.id),
         smartListCounts(user.id),

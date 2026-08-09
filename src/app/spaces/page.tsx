@@ -19,9 +19,9 @@ export const dynamic = 'force-dynamic';
 export default async function SpacesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; deleted?: string }>;
 }) {
-  const { error, next } = await searchParams;
+  const { error, next, deleted } = await searchParams;
   const user = await requireUser();
   const spaces = await listSpaces(user.id);
 
@@ -42,6 +42,12 @@ export default async function SpacesPage({
           style={{ background: 'var(--c-amber-bg)', color: 'var(--c-amber)' }}
         >
           {error}
+        </p>
+      )}
+
+      {deleted && (
+        <p role="status" className="hairline muted border-b px-5 py-2 text-xs">
+          {deleted} is gone, and everything that was in it with it.
         </p>
       )}
 
@@ -122,6 +128,15 @@ export default async function SpacesPage({
                 <span className="faint text-2xs">
                   you are {isInviteRole(s.role) ? ROLE_LABEL[s.role].toLowerCase() : s.role}
                 </span>
+                {s.isProtected && (
+                  <span
+                    className="faint inline-flex shrink-0 items-center gap-1 text-2xs"
+                    title="This space cannot be deleted, so you always have somewhere to write. It can be renamed."
+                  >
+                    <Icon name="lock" size={10} />
+                    always here
+                  </span>
+                )}
               </div>
               <Link
                 href={`/spaces/${s.id}`}

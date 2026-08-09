@@ -220,11 +220,15 @@ async function main() {
   // -- spaces ---------------------------------------------------------------
   console.log('▸ spaces');
   await sql`
-    insert into orbit.spaces (id, owner_id, name, kind, short_label, colour, icon, is_default) values
-      (${S_PRIYA}, ${PRIYA}, 'Priya',  'personal',  'Priya', 'indigo',  'user',      true),
-      (${S_HOME},  ${PRIYA}, 'Home',   'household', 'Home',  'emerald', 'house',     false),
-      (${S_WORK},  ${PRIYA}, 'Work',   'work',      'Work',  'sky',     'briefcase', false),
-      (${S_DANNY}, ${DANNY}, 'Danny',  'personal',  'Danny', 'amber',   'user',      true)
+    -- Each person's own space is protected, exactly as a real account's is:
+    -- migration 0015 gives everybody a Personal that cannot be deleted, and a
+    -- seed that did not would be demoing an app nobody will ever have.
+    insert into orbit.spaces
+      (id, owner_id, name, kind, short_label, colour, icon, is_default, protected) values
+      (${S_PRIYA}, ${PRIYA}, 'Priya',  'personal',  'Priya', 'indigo',  'user',      true,  true),
+      (${S_HOME},  ${PRIYA}, 'Home',   'household', 'Home',  'emerald', 'house',     false, false),
+      (${S_WORK},  ${PRIYA}, 'Work',   'work',      'Work',  'sky',     'briefcase', false, false),
+      (${S_DANNY}, ${DANNY}, 'Danny',  'personal',  'Danny', 'amber',   'user',      true,  true)
   `;
 
   await sql`
@@ -1096,6 +1100,18 @@ async function main() {
          'That item is locked. Locked items are end-to-end encrypted, have no plaintext on this server, and never reach an AI feature — switching anything on does not change that.')
     `;
   }
+
+  // A truncate-and-reinsert leaves every table's statistics describing the
+  // rows that used to be there — usually none of them, since the truncate
+  // resets the counts — and the planner then chooses for a table it thinks is
+  // empty. The month calendar, which expands recurrences across 42 days, went
+  // from 0.9s to 11s on a freshly seeded database because of it, which is slow
+  // enough to time a smoke check out and blame the wrong change entirely.
+  //
+  // One `analyze` at the end of the seed, where the rows have just been
+  // written and nothing else is using the database.
+  console.log('▸ analysing');
+  await sql.unsafe('analyze');
 
   // -- summary --------------------------------------------------------------
   const counts = await sql<{ what: string; n: number }[]>`

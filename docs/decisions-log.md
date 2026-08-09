@@ -1728,3 +1728,101 @@ as a request header instead. Absent, the bar renders.
   **455/455**.
 - A real browser, acting as a profile with no spaces: blocked capture → make a
   space → back on the preview with the line still typed → created.
+
+---
+
+## Session 13, second pass — two spaces on arrival, and one that cannot be deleted
+
+0014 made it possible to create a space. This makes it unnecessary: an account
+arrives with **Personal** and **Work**, and the empty-handed state that 0014's
+form exists to rescue somebody from is one almost nobody will ever be in. The
+form stays — it is how the third space gets made, and it is the fallback if
+provisioning ever fails — but it is no longer the first thing a new account has
+to understand.
+
+### Two, not one
+
+The first decision Orbit asks of a person is the one it is worst at explaining:
+a space is an *audience*, not a folder. One space teaches nobody that. Two
+teaches it the first time something is filed in the wrong one. Personal and Work
+is the split most people already have in their heads, and the household space —
+the one that needs a second person in it — is better made deliberately, on the
+screen that also offers the invitation.
+
+### Personal cannot be deleted, and that is a trigger, not a button
+
+Deleting a space deletes everything in it: every `space_id` column in the schema
+is `on delete cascade`. That is right — a space *is* its contents — but it means
+the last space standing holds everything somebody has, and an account with no
+space can create nothing at all, which is the bug 0014 was written for. So one
+space carries `protected` and the database refuses to delete it.
+
+Enforced in three places, and only one of them is a guarantee:
+
+- the page does not render a delete control for it;
+- the server action refuses, and checks the typed name for everything else;
+- **`spaces_refuse_protected_delete`, a `before delete` trigger on the table.**
+
+The first two are courtesies. The trigger is the boundary, because a definer
+function runs past the policy and a migration runs past both. The policy was
+narrowed to `owner_id = auth.uid() and not protected` as well, so an ordinary
+delete matches no row and reports nothing deleted rather than raising — the
+readable version of the same fact.
+
+`protected` cannot be turned off either (`spaces_refuse_protected_change`), or
+it would be a way to delete the space in two statements instead of one.
+
+**Protected means exactly and only "cannot be deleted".** It can be renamed,
+shared, filled and emptied. So renaming had to exist — it did not, anywhere —
+and now does, for admins, on the space page. A promise the interface cannot
+keep is worse than no promise.
+
+### Where the provisioning is called from, and why not the layout
+
+Signing up provisions both in the same transaction as the profile: 0012's
+trigger function was replaced rather than a second trigger added, because "in
+alphabetical order of trigger name" is a true fact about Postgres that nobody
+should have to know to read the file.
+
+That leaves two cases no trigger on `auth.users` can reach — an account that
+predates the migration, and the dev provider, which has no `auth.users` row —
+so `listSpaces()` provisions when it reads an empty list.
+
+It is in the query, not the layout, because of `cache()`. Every page and several
+server actions share one memoised list per request. Provisioning in the layout
+would leave that memo holding the empty array it read a moment *before* the
+write, so the sidebar would show two spaces and the page beneath it would still
+say there were none. Inside the cached function, every reader in the request
+gets the same, correct answer. It costs nothing in the ordinary case: a
+non-empty list returns immediately.
+
+The condition is "has no active membership", not "has no space called Work", so
+a Work somebody deliberately deleted stays deleted.
+
+### The smoke suite runs in sections now
+
+`scripts/smoke.mjs` is one long script because it drives a real browser through
+a real app and later checks depend on earlier state. That is still true, but a
+full pass is several minutes and the loop that matters when something breaks is
+*fix, re-run the thing that broke*. So every block is now guarded by
+`runs('<section>')`, each run writes `.smoke-last.json`, and `pnpm smoke
+--failed` re-runs only the sections that failed — plus anything they depend on,
+which `PREREQS` declares for the three module-level variables that cross section
+boundaries.
+
+A filtered run keeps the previous verdict for the sections it skipped, so fixing
+one failure cannot mark the others green, and it never prints "all checks
+passed" — it says how many sections it skipped. `CLAUDE.md` is the standing
+instruction that goes with it.
+
+### Verified against
+
+- `./scripts/db-test.sh` — **152/152**, including the new `default_spaces_test.sql`:
+  that signing up produces both spaces in one transaction, that
+  `ensure_default_spaces()` is a no-op the second time, and that the protected
+  space survives a delete as its owner, a delete as the *table owner*, and an
+  attempt to unprotect it first.
+- `pnpm smoke` **455/455** full, and `--failed` / `--section=` exercised.
+- A real browser on a profile with no spaces: first page load lands with
+  Personal and Work in the sidebar and capture already usable; Personal offers
+  a rename and no delete; Work deletes only after its name is typed exactly.
