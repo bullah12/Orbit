@@ -175,8 +175,7 @@ export default async function AiPage({
           </select>
           <button
             type="submit"
-            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm"
-            style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm btn-primary"
           >
             <Icon name="sparkle" size={13} />
             Summarise it

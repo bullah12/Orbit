@@ -24,6 +24,7 @@ import {
   renameSpaceAction,
   revokeSpaceInvite,
 } from '@/app/actions';
+import { SubmitButton } from '@/components/SubmitButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -278,8 +279,7 @@ export default async function SpacePage({
 
               <button
                 type="submit"
-                className="hairline rounded border px-3 py-1.5 text-sm"
-                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+                className="hairline rounded border px-3 py-1.5 text-sm btn-primary"
               >
                 Make a link
               </button>
@@ -378,9 +378,9 @@ export default async function SpacePage({
                 style={{ width: '8rem' }}
               />
             </div>
-            <button type="submit" className="hairline rounded border px-3 py-1.5 text-xs">
+            <SubmitButton className="hairline rounded border px-3 py-1.5 text-xs">
               Save the name
-            </button>
+            </SubmitButton>
           </form>
           {space.isProtected && (
             <p className="faint mt-2 max-w-2xl text-2xs">
@@ -445,13 +445,9 @@ export default async function SpacePage({
                     style={{ width: '14rem' }}
                   />
                 </div>
-                <button
-                  type="submit"
-                  className="hairline rounded border px-3 py-1.5 text-xs font-medium"
-                  style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
-                >
+                <SubmitButton className="hairline rounded border px-3 py-1.5 text-xs font-medium btn-danger">
                   Delete {space.name} and everything in it
-                </button>
+                </SubmitButton>
                 <Link href={`/spaces/${id}`} className="faint text-xs">
                   Keep it
                 </Link>
@@ -461,8 +457,7 @@ export default async function SpacePage({
             <div className="flex flex-wrap items-center gap-3">
               <Link
                 href={`/spaces/${id}?delete=1`}
-                className="hairline rounded border px-3 py-1.5 text-xs font-medium"
-                style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                className="btn hairline rounded border px-3 py-1.5 text-xs font-medium btn-danger"
               >
                 Delete this space
               </Link>

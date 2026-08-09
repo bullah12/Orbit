@@ -33,6 +33,8 @@ const PATHS: Record<string, string> = {
   trash: 'M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 10.5v6M14 10.5v6',
   x: 'M6 6l12 12M18 6 6 18',
   undo: 'M4 9h11a5 5 0 0 1 0 10h-5M4 9l4-4M4 9l4 4',
+  // Three quarters of a circle. Whole, it would not read as turning.
+  spinner: 'M12 4a8 8 0 1 1-5.66 2.34',
   cake: 'M4 20h16v-6H4v6ZM4 14a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2M12 12V8M12 5.5v.1M8 12V9M16 12V9',
   phone: 'M6 3h3l1.5 4-2 1.5a12 12 0 0 0 6 6L16 12.5 20 14v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.5 5.2 2 2 0 0 1 6 3Z',
   mail: 'M3 6h18v12H3V6ZM3 7l9 6 9-6',

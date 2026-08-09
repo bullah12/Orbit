@@ -180,6 +180,34 @@ describe('interactive and alarming colours', () => {
     expect(contrastOfOklch(t['--accent-text']!, t['--accent']!)).toBeGreaterThanOrEqual(4.5);
   });
 
+  /**
+   * The pressed states, which are the ones nobody looks at.
+   *
+   * A hover or an active fill is a colour a person reads text on for a fraction
+   * of a second, which is exactly how a button ends up unreadable at the moment
+   * it is being used. Both steps move away from the surface in their own theme —
+   * darker in light, lighter in dark — so these ratios should be *higher* than
+   * the resting one, and this fails if a later tweak inverts that.
+   */
+  it.each(THEMES)('%s: --accent-text stays readable on the hover and pressed fills', (_name, t) => {
+    const resting = contrastOfOklch(t['--accent-text']!, t['--accent']!);
+    for (const state of ['--accent-hover', '--accent-pressed'] as const) {
+      expect(contrastOfOklch(t['--accent-text']!, t[state]!)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastOfOklch(t['--accent-text']!, t[state]!)).toBeGreaterThanOrEqual(resting);
+    }
+  });
+
+  it.each(THEMES)('%s: body text clears 4.5:1 on a pressed button', (_name, t) => {
+    expect(contrastOfOklch(t['--text']!, t['--bg-pressed']!)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(THEMES)('%s: a pressed button is visibly darker than a hovered row', (_name, t) => {
+    // The whole point of a separate token: if these two ever converge, pressing
+    // a button looks the same as hovering it.
+    expect(t['--bg-pressed']).not.toEqual(t['--bg-hover']);
+    expect(contrastOfOklch(t['--bg-pressed']!, t['--bg-hover']!)).toBeGreaterThan(1.1);
+  });
+
   it.each(THEMES)('%s: --accent as a link colour clears 4.5:1 on --bg', (_name, t) => {
     expect(contrastOfOklch(t['--accent']!, t['--bg']!)).toBeGreaterThanOrEqual(4.5);
   });

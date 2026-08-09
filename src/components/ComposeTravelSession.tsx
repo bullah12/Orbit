@@ -100,8 +100,7 @@ export function ComposeTravelSession({
 
       <button
         type="submit"
-        className="rounded px-3 py-1.5 text-xs font-medium"
-        style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+        className="rounded px-3 py-1.5 text-xs font-medium btn-primary"
       >
         Start a trip
       </button>

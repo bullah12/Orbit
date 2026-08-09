@@ -132,8 +132,7 @@ export default async function NotePage({
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-xs font-medium"
-                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+                className="rounded px-3 py-1.5 text-xs font-medium btn-primary"
               >
                 Save
               </button>
@@ -244,8 +243,7 @@ export default async function NotePage({
             <input type="hidden" name="noteId" value={note.id} />
             <button
               type="submit"
-              className="hairline rounded border px-3 py-1.5 text-xs font-medium"
-              style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+              className="hairline rounded border px-3 py-1.5 text-xs font-medium btn-danger"
             >
               <span className="inline-flex items-center gap-1.5">
                 <Icon name="trash" size={12} />
@@ -375,8 +373,7 @@ function NoteMoveSection({
               <input type="hidden" name="targetSpaceId" value={target.id} />
               <button
                 type="submit"
-                className="rounded px-3 py-1.5 text-xs font-medium"
-                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+                className="rounded px-3 py-1.5 text-xs font-medium btn-primary"
               >
                 Move to {target.name}
               </button>

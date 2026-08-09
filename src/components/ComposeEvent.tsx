@@ -229,8 +229,7 @@ export function ComposeEvent({
 
       <button
         type="submit"
-        className="rounded px-2 py-1 text-xs font-medium"
-        style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+        className="rounded px-2 py-1 text-xs font-medium btn-primary"
       >
         Add
       </button>

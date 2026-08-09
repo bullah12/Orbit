@@ -6,6 +6,7 @@ import { Icon } from '@/components/Icon';
 import { ROLE_LABEL, ROLE_MEANING, isInviteRole } from '@/lib/invites';
 import { createSpaceAction } from '@/app/actions';
 import { SPACE_KINDS } from '@/lib/spaces';
+import { SubmitButton } from '@/components/SubmitButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,14 +84,12 @@ export default async function SpacesPage({
               className="input"
               style={{ width: '18rem' }}
             />
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm"
-              style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+            <SubmitButton
+              icon="plus"
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm btn-primary"
             >
-              <Icon name="plus" size={13} />
               Create the space
-            </button>
+            </SubmitButton>
           </div>
 
           <fieldset className="flex flex-wrap items-center gap-3">
@@ -140,7 +139,7 @@ export default async function SpacesPage({
               </div>
               <Link
                 href={`/spaces/${s.id}`}
-                className="hairline inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs"
+                className="btn hairline inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs"
               >
                 <Icon name="users" size={11} className="muted" />
                 People and invites

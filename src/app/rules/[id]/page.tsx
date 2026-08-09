@@ -357,8 +357,7 @@ export default async function RulePage({
               <input type="hidden" name="ruleId" value={row.id} />
               <button
                 type="submit"
-                className="w-full rounded px-2 py-1.5 text-xs font-medium"
-                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+                className="w-full rounded px-2 py-1.5 text-xs font-medium btn-primary"
               >
                 Dry run — change nothing
               </button>

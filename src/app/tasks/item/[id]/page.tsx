@@ -14,6 +14,7 @@ import { runAiFeatureFor } from '@/app/actions';
 import { smartListsFor } from '@/lib/smartlists';
 import { SMART_LISTS, isSmartListKey } from '@/lib/queries/tasks';
 import { formatDate } from '@/lib/format';
+import { SubmitButton } from '@/components/SubmitButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -206,13 +207,9 @@ export default async function TaskPage({
         </h2>
         <form action={deleteTask} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="taskId" value={task.id} />
-          <button
-            type="submit"
-            className="hairline rounded border px-3 py-1.5 text-xs font-medium"
-            style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
-          >
+          <SubmitButton className="hairline rounded border px-3 py-1.5 text-xs font-medium btn-danger">
             Delete this task
-          </button>
+          </SubmitButton>
           <span className="faint text-xs">
             Permanent, and it takes any sub-tasks and checklist with it.
           </span>
@@ -345,13 +342,9 @@ function EditForm({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          className="rounded px-3 py-1.5 text-xs font-medium"
-          style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
-        >
+        <SubmitButton className="rounded px-3 py-1.5 text-xs font-medium btn-primary">
           Save changes
-        </button>
+        </SubmitButton>
         {task.completedAt && (
           <span className="faint text-2xs">
             Completed {formatDate(task.completedAt.slice(0, 10))}
@@ -457,8 +450,7 @@ function MoveConfirmation({
           <input type="hidden" name="targetSpaceId" value={target.id} />
           <button
             type="submit"
-            className="rounded px-3 py-1.5 text-xs font-medium"
-            style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+            className="rounded px-3 py-1.5 text-xs font-medium btn-primary"
           >
             Move to {target.name}
           </button>
