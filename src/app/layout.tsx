@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   title: 'Orbit',
   description: 'Tasks, notes, people and calendar, in spaces you control.',
   appleWebApp: { capable: true, title: 'Orbit', statusBarStyle: 'default' },
+  // iOS does not read the manifest's icon list, so the one it does read is
+  // declared here. Next emits it as <link rel="apple-touch-icon">.
+  icons: { apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180' }] },
 };
 
 /**

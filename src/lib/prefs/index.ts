@@ -66,7 +66,7 @@ export function themeAttribute(choice: ThemeChoice): 'light' | 'dark' | undefine
  * scheme. `tests/prefs.test.ts` pins them to the stylesheet so the pair cannot
  * drift the way two copies of a palette would.
  */
-export const THEME_COLOUR = { light: '#f9fafb', dark: '#14161a' } as const;
+export const THEME_COLOUR = { light: '#f9fafb', dark: '#0d0e12' } as const;
 
 // ---------------------------------------------------------------------------
 // Week start

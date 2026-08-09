@@ -3513,7 +3513,7 @@ try {
     );
     check(
       'and the browser chrome is told the same one colour',
-      /<meta name="theme-color" content="#14161a"\/?>/.test(html) &&
+      /<meta name="theme-color" content="#0d0e12"\/?>/.test(html) &&
         !/prefers-color-scheme/.test(html.slice(0, html.indexOf('</head>'))),
     );
 
