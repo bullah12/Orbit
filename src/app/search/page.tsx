@@ -57,15 +57,26 @@ export default async function SearchPage({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="hairline border-b px-5 py-4">
-        <h1 className="text-lg font-semibold">Search</h1>
-        <p className="muted mt-0.5 text-xs">
-          Tasks, notes, people, events and places. What you can find is decided
-          by the spaces you are in, not by this page.
-        </p>
+      {/* A back arrow and a field, the way a search screen reached from a
+          header icon should look — not a page title above a form. The heading
+          is still there for a screen reader; the field is what a person needs. */}
+      <header className="hairline border-b px-5 pb-3.5 pt-1">
+        <h1 className="sr-only">Search</h1>
 
-        <form method="get" action="/search" className="mt-3 flex flex-col gap-2" role="search">
-          <div className="flex flex-wrap items-center gap-2">
+        <form method="get" action="/search" className="flex items-center gap-2" role="search">
+          <Link
+            href="/"
+            aria-label="Back"
+            className="row-hover -ml-3 flex h-11 w-11 shrink-0 items-center justify-center rounded"
+          >
+            <Icon name="chevron" size={21} className="muted rotate-180" />
+          </Link>
+
+          <div
+            className="hairline flex min-h-11 flex-1 items-center gap-2 rounded-lg border px-3"
+            style={{ background: 'var(--bg-raised)' }}
+          >
+            <Icon name="search" size={17} className="faint shrink-0" />
             <label htmlFor="q" className="sr-only">
               Search terms
             </label>
@@ -76,19 +87,24 @@ export default async function SearchPage({
               defaultValue={q.text}
               autoFocus
               placeholder="bins, Sadia, half three…"
-              className="input max-w-md"
-              style={{ width: '24rem' }}
+              className="min-w-0 flex-1 bg-transparent text-lg outline-none placeholder:text-[color:var(--text-faint)]"
+              style={{ appearance: 'none' }}
             />
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm btn-primary"
-            >
-              <Icon name="search" size={13} />
+            {/* The kinds ride along, so clearing the words does not silently
+                widen what is being looked in. */}
+            {requested.map((k) => (
+              <input key={k} type="hidden" name="kind" value={k} />
+            ))}
+            <button type="submit" className="sr-only">
               Search
             </button>
           </div>
-
         </form>
+
+        <p className="muted mt-2 text-xs">
+          Tasks, notes, people, events and places. What you can find is decided
+          by the spaces you are in, not by this page.
+        </p>
       </header>
 
       <KindChips q={q.text} requested={requested} searched={kinds} counts={results.counts} />
@@ -182,7 +198,7 @@ function KindChips({
 
   return (
     <nav
-      className="chipbar hairline border-b px-5 py-2"
+      className="chipbar hairline border-b px-5 py-2.5"
       aria-label="Which kinds to search"
       id="search-kinds"
     >
@@ -201,7 +217,6 @@ function KindChips({
             href={href(next) as never}
             aria-current={on ? 'true' : undefined}
           >
-            <Icon name={KIND_ICON[kind]} size={13} className="muted" />
             {KIND_PLURAL[kind]}
             {n != null && <span className="faint tabular-nums">{n}</span>}
           </Link>

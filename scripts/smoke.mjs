@@ -3564,7 +3564,7 @@ try {
     const subtitle = await page.locator('header p').first().innerText();
     check(
       'the header says what fraction of people the map can draw',
-      /^\d+ of \d+ have a place\.$/.test(subtitle.trim()),
+      /^\d+ of \d+ have a place$/.test(subtitle.trim()),
       subtitle.trim(),
     );
     const placeless = page.locator('.sheet button[aria-expanded]');

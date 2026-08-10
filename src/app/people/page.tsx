@@ -7,7 +7,7 @@ import { ComposePerson } from '@/components/ComposePerson';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { SearchButton } from '@/components/SearchButton';
-import { PeopleList } from '@/components/people/PeopleList';
+import { PeopleList, personDetail } from '@/components/people/PeopleList';
 import { PeopleMap, type PlacelessPerson } from '@/components/people/PeopleMap';
 import type { MapPerson } from '@/components/people/types';
 import { plural } from '@/lib/format';
@@ -43,6 +43,10 @@ export default async function PeoplePage({
   ]);
 
   const activeSpace = spaces.find((s) => s.id === spaceId);
+  // How many spaces these people actually come from — which is the number the
+  // subtitle is about. Not `spaces.length`: a space you are in but have nobody
+  // in is not a space this list spans.
+  const spaceCount = new Set(people.map((p) => p.space.id)).size;
 
   // A place without coordinates is a real place — typed in and never geocoded
   // — so "has a place" and "can be drawn" are two different questions, and the
@@ -53,10 +57,11 @@ export default async function PeoplePage({
     .map((p) => ({
       id: p.id,
       displayName: p.displayName,
-      colour: p.category?.colour ?? null,
+      category: p.category,
+      space: p.space,
+      detail: personDetail(p),
       placeName: p.homePlaceName ?? 'a place',
       placeAddress: p.homePlaceAddress,
-      spaceName: p.space.name,
       lat: p.homeLat!,
       lon: p.homeLon!,
     }));
@@ -72,29 +77,38 @@ export default async function PeoplePage({
     }));
 
   return (
-    // `h-screen` on the map view, not `min-h-screen`: the map is full-bleed
-    // below the header and needs a bounded height to fill. The list scrolls
-    // the page as every other list does.
-    <div className={`flex flex-col ${view === 'map' ? 'h-screen' : 'min-h-screen'}`}>
-      <header className="hairline shrink-0 border-b px-5 py-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-lg font-semibold">People</h1>
-          {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
-          <span className="faint text-xs">{plural(people.length, 'person', 'people')}</span>
-          <span className="ml-auto">
-            <SearchButton kind="person" label="Search people" />
-          </span>
+    // The map view is a *bounded* box, not a scrolling page: the map fills
+    // what is left under the header and the sheet is positioned against the
+    // bottom of it. The height has to subtract `--tabbar` — `h-screen` is
+    // 100vh, which is taller than the room `<main>`'s bottom padding leaves,
+    // so the sheet ended up underneath the tab bar with only its grab handle
+    // showing. Zero from `md` up, where there is no bar. The list view is an
+    // ordinary scrolling page and keeps `min-h-screen`.
+    <div
+      className={`flex flex-col ${view === 'map' ? '' : 'min-h-screen'}`}
+      style={view === 'map' ? { height: 'calc(100svh - var(--tabbar))' } : undefined}
+    >
+      <header className="hairline shrink-0 border-b px-5 pb-3.5 pt-2">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold tracking-[-0.02em] md:text-lg md:tracking-normal">
+                People
+              </h1>
+              {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
+            </div>
+            <p className="muted mt-1 text-sm md:mt-0.5 md:text-xs">
+              {view === 'map'
+                ? // The mappable fraction, in the header, before anybody counts
+                  // the pins and wonders. Migration 0017 on why null is ordinary.
+                  `${mappable.length} of ${people.length} have a place`
+                : `${plural(people.length, 'person', 'people')} across ${plural(spaceCount, 'space')}`}
+            </p>
+          </div>
+          <SearchButton kind="person" label="Search people" />
         </div>
 
-        <p className="muted mt-0.5 text-xs">
-          {view === 'map'
-            ? // The mappable fraction, in the header, before anybody counts the
-              // pins and wonders. See migration 0017 on why null is ordinary.
-              `${mappable.length} of ${people.length} have a place.`
-            : 'The same person can appear in more than one space. Those records stay separate and are linked, never merged.'}
-        </p>
-
-        <div className="mt-2">
+        <div className="mt-3">
           <ViewSwitch view={view} spaceId={spaceId} q={q} />
         </div>
       </header>
@@ -103,12 +117,19 @@ export default async function PeoplePage({
         <PeopleMap mappable={mappable} placeless={placeless} />
       ) : (
         <>
+          {/* Kept at every width, unlike the compose bars on Home and Tasks:
+              the capture button creates a task, a note or an event, so this is
+              the only way to add a person on a phone. The design's People
+              screen does not show it; dropping it would have removed the
+              capability rather than moved it. */}
           <ComposePerson spaces={spaces} categories={categories} defaultSpaceId={spaceId} />
 
-          {/* GET, not a server action: a search you can bookmark and go back to. */}
+          {/* GET, not a server action: a search you can bookmark and go back
+              to. Desktop only — on a phone the header's search button is what
+              replaced it, and it reaches every kind rather than just people. */}
           <form
             method="get"
-            className="hairline flex flex-wrap items-center gap-2 border-b px-3 py-2"
+            className="hairline hidden flex-wrap items-center gap-2 border-b px-3 py-2 md:flex"
             style={{ background: 'var(--bg-raised)' }}
           >
             {spaceId && <input type="hidden" name="space" value={spaceId} />}
@@ -133,6 +154,11 @@ export default async function PeoplePage({
               </Link>
             )}
           </form>
+
+          <p className="faint hidden px-5 pb-2 pt-2.5 text-xs md:block">
+            The same person can appear in more than one space. Those records stay
+            separate and are linked, never merged.
+          </p>
 
           {people.length === 0 ? (
             <p className="faint px-5 py-10 text-sm">

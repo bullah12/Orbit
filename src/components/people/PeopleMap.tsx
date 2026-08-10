@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Icon } from '@/components/Icon';
 import { PersonAvatar } from './PersonAvatar';
+import { SpaceIndicator } from '@/components/SpaceIndicator';
 import type { MapPerson } from './types';
 
 /**
@@ -57,14 +58,18 @@ export function PeopleMap({
     <div className="relative min-h-0 flex-1">
       <MapCanvas people={mappable} selectedIds={selectedIds} onSelect={setSelectedIds} />
 
-      <div className="sheet">
+      <div className="sheet px-5 pb-4 pt-2.5">
+        {/* Not draggable — see `.sheet-grip`. It is the signal that this is a
+            sheet over a map rather than a panel welded to the bottom. */}
+        <span className="sheet-grip" aria-hidden="true" />
+
         {selected.length === 1 && (
           <PersonCard person={selected[0]!} onClose={() => setSelectedIds([])} />
         )}
 
         {selected.length > 1 && (
-          <div className="hairline border-b">
-            <div className="flex items-center gap-2 px-4 pt-3">
+          <div className="hairline border-b pb-2">
+            <div className="flex items-center gap-2">
               <p className="section-label flex-1">
                 {selected.length} people at {selected[0]!.placeName}
               </p>
@@ -83,11 +88,15 @@ export function PeopleMap({
                   <button
                     type="button"
                     onClick={() => setSelectedIds([p.id])}
-                    className="row-hover set-row w-full text-left"
+                    className="row-hover flex min-h-11 w-full items-center gap-2.5 py-1 text-left"
                   >
-                    <PersonAvatar name={p.displayName} colour={p.colour} size={28} />
+                    <PersonAvatar
+                      name={p.displayName}
+                      colour={p.category?.colour ?? null}
+                      size={28}
+                    />
                     <span className="min-w-0 flex-1 truncate text-sm">{p.displayName}</span>
-                    <span className="faint shrink-0 text-xs">{p.spaceName}</span>
+                    <SpaceIndicator space={p.space} />
                     <Icon name="chevron" size={14} className="faint shrink-0" />
                   </button>
                 </li>
@@ -107,9 +116,9 @@ export function PeopleMap({
           onClick={() => setShowPlaceless((v) => !v)}
           aria-expanded={showPlaceless}
           disabled={placeless.length === 0}
-          className="row-hover set-row w-full text-left"
+          className="row-hover flex min-h-12 w-full items-center gap-2 pt-2 text-left"
         >
-          <Icon name="map_pin" size={16} className="faint shrink-0" />
+          <Icon name="alert" size={14} className="faint shrink-0" />
           <span className="flex-1 text-sm">
             {placeless.length === 0
               ? 'Everybody here has a place'
@@ -128,7 +137,10 @@ export function PeopleMap({
           <ul className="hairline border-t" id="people-without-a-place">
             {placeless.map((p) => (
               <li key={p.id} className="hairline border-b last:border-b-0">
-                <Link href={`/people/${p.id}` as never} className="row-hover set-row">
+                <Link
+                  href={`/people/${p.id}` as never}
+                  className="row-hover flex min-h-11 items-center gap-2.5 py-1"
+                >
                   <PersonAvatar name={p.displayName} colour={p.colour} size={28} />
                   <span className="min-w-0 flex-1 truncate text-sm">{p.displayName}</span>
                   <span className="faint shrink-0 text-xs">{p.spaceName}</span>
@@ -145,23 +157,34 @@ export function PeopleMap({
 
 function PersonCard({ person, onClose }: { person: MapPerson; onClose: () => void }) {
   return (
-    <div className="hairline border-b px-4 py-3">
-      <div className="flex items-center gap-3">
-        <PersonAvatar name={person.displayName} colour={person.colour} size={40} />
+    <div className="hairline border-b pb-3.5">
+      <div className="flex items-center gap-3.5">
+        <PersonAvatar
+          name={person.displayName}
+          colour={person.category?.colour ?? null}
+          size={48}
+        />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-medium">{person.displayName}</p>
-          <p className="muted truncate text-sm">
-            {person.placeAddress ?? person.placeName}
-            {/*
-              The qualifier. What is on screen is the *place's* address, not
-              something recorded against the person — so somebody reading
-              "14 Maple Road" knows where it came from and where to go to
-              change it. Without this the map quietly claims to hold addresses
-              it does not have.
-            */}
-            <span className="faint"> · via {person.placeName}</span>
+          <p className="truncate text-xl font-semibold tracking-[-0.01em]">
+            {person.displayName}
+          </p>
+          {/* The same sentence the list row shows about the same person —
+              category, then whichever one detail matters most. */}
+          <p className="muted mt-0.5 flex items-center gap-2 truncate text-sm">
+            {person.category && (
+              <span
+                className="inline-flex shrink-0 items-center gap-1"
+                style={{ color: `var(--c-${person.category.colour}, var(--c-slate))` }}
+              >
+                <Icon name={person.category.icon} size={12} strokeWidth={2} />
+                {person.category.name}
+              </span>
+            )}
+            {person.category && person.detail && <span aria-hidden="true">·</span>}
+            {person.detail && <span className="truncate">{person.detail}</span>}
           </p>
         </div>
+        <SpaceIndicator space={person.space} />
         <button
           type="button"
           onClick={onClose}
@@ -172,10 +195,25 @@ function PersonCard({ person, onClose }: { person: MapPerson; onClose: () => voi
         </button>
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
+      {/*
+        The qualifier, right-aligned and set apart from the address rather than
+        run into it. What is on screen is the *place's* address, not something
+        recorded against the person — so somebody reading "14 Alder Close" knows
+        where it came from and where to go to change it. Without this the map
+        quietly claims to hold addresses it does not have.
+      */}
+      <div className="muted mt-3 flex items-center gap-2 text-sm">
+        <Icon name="map_pin" size={14} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">
+          {person.placeAddress ?? person.placeName}
+        </span>
+        <span className="faint shrink-0 text-xs">via place</span>
+      </div>
+
+      <div className="mt-3.5 flex gap-2.5">
         <Link
           href={`/people/${person.id}` as never}
-          className="btn flex-1 rounded px-3 py-2.5 text-center text-sm font-medium btn-primary"
+          className="btn flex min-h-11 flex-1 items-center justify-center rounded-md text-lg font-medium btn-primary"
         >
           Open {person.displayName}’s page
         </Link>
@@ -190,9 +228,9 @@ function PersonCard({ person, onClose }: { person: MapPerson; onClose: () => voi
           target="_blank"
           rel="noreferrer noopener"
           aria-label={`Directions to ${person.placeName}`}
-          className="hairline btn flex h-11 w-11 shrink-0 items-center justify-center rounded border"
+          className="hairline btn flex min-h-11 w-11 shrink-0 items-center justify-center rounded-md border"
         >
-          <Icon name="route" size={18} className="muted" />
+          <Icon name="route" size={19} className="muted" />
         </a>
       </div>
     </div>

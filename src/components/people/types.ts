@@ -1,3 +1,5 @@
+import type { SpaceRef } from '@/components/SpaceIndicator';
+
 /**
  * What the map needs to know about a person.
  *
@@ -11,11 +13,14 @@
 export type MapPerson = {
   id: string;
   displayName: string;
-  /** A category colour name, or null. Tints the avatar from the same ramp. */
-  colour: string | null;
+  /** Tints the avatar and the pin from the same ramp the list uses. */
+  category: { name: string; colour: string; icon: string } | null;
+  /** The sheet carries a space indicator like every other surface. */
+  space: SpaceRef;
+  /** One line of secondary detail — the same sentence the list row shows. */
+  detail: string | null;
   placeName: string;
   placeAddress: string | null;
-  spaceName: string;
   lat: number;
   lon: number;
 };

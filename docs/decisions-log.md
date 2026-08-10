@@ -2479,3 +2479,102 @@ touched.
   `CLAUDE.md`. No pure module in `src/lib/` changed behaviour (`src/lib/nav.ts`
   is new data, moved verbatim), and no policy or definer function was touched;
   0017 adds a column and an index and leaves RLS alone.
+
+---
+
+## Session 16, second pass — the design as drawn, and an orange one
+
+The first pass built the mobile IA from the brief's prose. The design files
+themselves arrived afterwards (`Orbit Mobile.dc.html`, seven 390×844 screens at
+full fidelity), along with one instruction the design does not contain: **the
+accent is orange now, and the app is warm.**
+
+### Fire
+
+`--accent` was `oklch(48% 0.14 258)`, a blue. It is
+`light-dark(oklch(52% 0.185 48), oklch(75% 0.175 55))` — a deep ember in light,
+a glowing coal in dark. Chosen numerically against `src/lib/colour.ts` rather
+than by eye, and every threshold `contrast.test.ts` enforces has headroom:
+**6.5:1 and 8.6:1 on `--bg`**, 6.4/8.5 for `--accent-text` on the fill, worst
+category-chip pairing 5.6/7.5 against a floor of 3.
+
+The greyscale went with it, hue 265 → 50-60 at chroma 0.004-0.017. That was not
+optional: a cold white under a hot button reads as two designs, one of which is
+wrong. **Every lightness is unchanged**, so the ratios on `--text`,
+`--text-muted`, `--text-faint` and `--line` are exactly what they were —
+the warmth cost nothing measurable and the test proves it. Water keeps its blue
+at hue 230 while land follows the chrome: the one job of that colour is to say
+"sea".
+
+`--accent-glow` is a `color-mix` off `--accent` rather than a token beside it,
+so the fire and its light cannot drift. It is spent on three things and no
+others: the capture button, the active tab's marker, and today's date in the
+week strip. `color-mix` is invisible to the contrast parser, which is correct —
+a glow is never a foreground and has nothing to be legible against.
+
+**One honest cost.** `--c-orange` is hue 45 and the accent is now hue 48. They
+are never adjacent doing the same job — the accent is chrome on controls, a
+category colour is a chip and a left edge — but the palette is tighter than it
+was, and that is a consequence of the instruction rather than an oversight.
+
+### `.block` was shadowing Tailwind's `block`
+
+The agenda card utility was named `.block`. So is `display: block`. Every
+`className="block truncate"` in the app — the account row, the places list, the
+notes list, seven compose bars — had been picking up a card's padding,
+background and 3px left border. It went unnoticed for sessions because the
+places it hit were spans inside rows that already looked boxy; it became
+undeniable the moment a 68px person row put a name inside one and the name came
+out in a box.
+
+Renamed to `.agenda-block` / `-time` / `-now`. **A custom utility must not share
+a name with a framework one**: there is no cascade order that makes both
+meanings available, and the loser is whichever one you were not thinking about.
+
+### Compose bars are desktop-only now, except one
+
+The design's phone screens carry no compose bar — the capture button is the way
+in. Home, Tasks and Calendar follow it: a task, a note and an event are all
+things capture creates, so nothing moved out of reach.
+
+**`ComposePerson` stays at every width, against the design.** Capture does not
+create people, so removing that form from the phone would have removed the
+capability rather than relocating it. The design not showing a control is not
+the same as the design deleting it.
+
+### Smaller things the drawings settled
+
+- The range switch gets a row of its own on Home. At 390px it does not fit
+  beside a 30px heading, and a switch that wraps under a title looks like it
+  fell off.
+- Tasks is titled **Tasks**, not the list's name — the segment two lines below
+  already says which list, and the heading was repeating it.
+- The task row's assignee picker is `sm` and up. A select wide enough for
+  "Priya Raghavan" is a third of a 390px row and pushed everything onto a
+  second line; a phone gets the name and the task's own page changes it.
+- The calendar's day view is headed by the **month**, with the date in words
+  underneath — `10/08/2026` at 26px was the one thing on the screen that did
+  not need saying, since the week strip is right there.
+- Map clusters are labelled by **place** ("Moseley Farmers' Market") rather than
+  by count, because in a household several people share one address and the
+  place name says more than the number.
+- No zoom buttons on the map. MapLibre ships their glyphs as background images
+  baked at one lightness, and the only way to flip them is a
+  `prefers-color-scheme` block — which this stylesheet deliberately does not
+  have, and `contrast.test.ts` fails the file if one reappears. Pinch, wheel,
+  double-tap and the keyboard all still zoom. The attribution stays and is
+  themed with tokens: the tiles are OpenStreetMap and the licence requires it.
+- The map view is `calc(100svh - var(--tabbar))`, not `h-screen`. 100vh is
+  taller than the room `<main>`'s bottom padding leaves, so the bottom sheet
+  sat underneath the tab bar with only its grab handle showing.
+
+### Verified against
+
+- `pnpm build` — clean after every step.
+- `pnpm smoke` — **482/482**, full suite, on a fresh build.
+- `tests/contrast.test.ts` — **43/43**. Run deliberately and against the
+  standing rule, because it is the guard on the file this pass rewrote; a
+  palette change is exactly the case it exists for. The rest of `pnpm test` was
+  not run: no pure module changed behaviour.
+- By eye, both schemes, at 390×844: all seven screens screenshotted and read
+  against the design's own frames.

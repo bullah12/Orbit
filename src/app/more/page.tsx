@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/auth';
 import { usesDevAuth } from '@/lib/auth/session';
 import { listSpaces, spaceMemberCounts, type SpaceSummary } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
+import { moreCounts } from '@/lib/queries/more';
 // From `@/lib/nav`, not from `SidebarNav` — that module is `'use client'`,
 // and a Server Component importing an array from one gets a client reference
 // rather than the array. See the note at the top of `src/lib/nav.ts`.
@@ -40,11 +41,18 @@ export const dynamic = 'force-dynamic';
  */
 export default async function MorePage() {
   const user = await requireUser();
-  const [spaces, counts, members] = await Promise.all([
+  const [spaces, counts, members, more] = await Promise.all([
     listSpaces(user.id),
     smartListCounts(user.id),
     spaceMemberCounts(user.id),
+    moreCounts(user.id),
   ]);
+
+  // The count each row is allowed to show. A row with nothing to say says
+  // nothing rather than "0" — zero is a number about an empty page, and this
+  // list is for deciding which page to open.
+  const detail = (n: number, one: string, many = `${one}s`) =>
+    n > 0 ? `${n} ${n === 1 ? one : many}` : undefined;
 
   // Automation is named; System is the remainder, so an entry added to ADMIN
   // later appears here rather than silently going missing from the phone.
@@ -54,18 +62,32 @@ export default async function MorePage() {
 
   return (
     <div className="measure flex flex-col" style={{ minHeight: 'calc(100svh - var(--tabbar))' }}>
-      <header className="hairline border-b px-5 py-4">
-        <h1 className="text-xl font-semibold tracking-tight">More</h1>
-        <p className="muted mt-0.5 text-sm">
-          Everything the tab bar does not carry.
-        </p>
+      <header className="px-5 pb-2 pt-1">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] md:text-lg md:tracking-normal">
+          More
+        </h1>
       </header>
 
       <Group title="Your stuff">
         {/* One row, not nine. The nine live on the task page's own filter. */}
-        <Row href="/tasks/all" icon="check" label="Tasks" detail={plural(counts.all, 'open task')} />
+        <Row
+          href="/tasks/all"
+          icon="check"
+          label="Tasks"
+          detail={detail(counts.all, 'open task')}
+        />
         {SECONDARY.map((l) => (
-          <Row key={l.href} href={l.href} icon={l.icon} label={l.label} />
+          <Row
+            key={l.href}
+            href={l.href}
+            icon={l.icon}
+            label={l.label}
+            detail={
+              l.href === '/places' ? detail(more.places, 'place')
+              : l.href === '/notes' ? detail(more.notes, 'note')
+              : undefined
+            }
+          />
         ))}
       </Group>
 
@@ -78,7 +100,17 @@ export default async function MorePage() {
 
       <Group title="Automation">
         {automation.map((l) => (
-          <Row key={l.href} href={l.href} icon={l.icon} label={l.label} />
+          <Row
+            key={l.href}
+            href={l.href}
+            icon={l.icon}
+            label={l.label}
+            detail={
+              l.href === '/rules' ? (more.rulesOn > 0 ? `${more.rulesOn} on` : undefined)
+              : l.href === '/ai' ? detail(more.consents, 'consent')
+              : undefined
+            }
+          />
         ))}
       </Group>
 
@@ -129,10 +161,10 @@ function Row({
   return (
     <li>
       <Link href={href as never} className="set-row row-hover">
-        <Icon name={icon} size={18} className="muted shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-base">{label}</span>
+        <Icon name={icon} size={19} className="muted shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-lg">{label}</span>
         {detail && <span className="faint shrink-0 text-sm tabular-nums">{detail}</span>}
-        <Icon name="chevron" size={16} className="faint shrink-0" />
+        <Icon name="chevron" size={17} className="faint shrink-0" />
       </Link>
     </li>
   );
@@ -150,15 +182,18 @@ function SpaceRow({ space, members }: { space: SpaceSummary; members: number }) 
     ? 'free/busy only'
     : members > 0
       ? plural(members, 'member')
-      : undefined;
+      : 'just you';
 
   return (
     <li>
       <Link href={`/tasks/all?space=${space.id}` as never} className="set-row row-hover">
+        {/* The chip is the name, the colour and the icon in one object — the
+            same one the rest of the app uses. Putting the name beside it as
+            plain text would be the word twice, so the space the label would
+            have taken goes to the status instead. */}
         <SpaceIndicator space={space} />
-        <span className="min-w-0 flex-1 truncate text-base">{space.name}</span>
-        {status && <span className="faint shrink-0 text-sm">{status}</span>}
-        <Icon name="chevron" size={16} className="faint shrink-0" />
+        <span className="muted min-w-0 flex-1 truncate text-lg">{status}</span>
+        <Icon name="chevron" size={17} className="faint shrink-0" />
       </Link>
     </li>
   );
@@ -174,34 +209,46 @@ function Account({
   canSignOut: boolean;
 }) {
   return (
-    <section aria-labelledby="more-account">
-      <h2
-        id="more-account"
-        className="hairline section-label border-y px-5 py-1.5"
-        style={{ background: 'var(--bg-sunken)' }}
-      >
+    <section
+      aria-labelledby="more-account"
+      className="hairline border-t"
+      style={{ background: 'var(--bg-raised)' }}
+    >
+      <h2 id="more-account" className="sr-only">
         Account
       </h2>
-      <div className="flex items-center gap-3 px-5 py-3">
+      <div className="flex min-h-[60px] items-center gap-3.5 px-5 py-2">
         <span
           aria-hidden="true"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
           style={{ background: 'var(--bg-sunken)', color: 'var(--text-muted)' }}
         >
           {initials(displayName)}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-base font-medium">{displayName}</span>
-          <span className="muted block truncate text-sm" title={email}>
+          <span className="block truncate text-lg">{displayName}</span>
+          <span className="faint block truncate text-sm" title={email}>
             {email}
           </span>
         </span>
-        {canSignOut && (
+        {canSignOut ? (
           <Link
             href="/auth/signout"
-            className="hairline btn shrink-0 rounded border px-3 py-2 text-sm"
+            className="hairline btn shrink-0 rounded-md border px-3 py-2 text-sm"
           >
             Sign out
+          </Link>
+        ) : (
+          // Under the dev provider there is no session to end, so the row goes
+          // where the account settings are rather than offering a control that
+          // would refuse. `UserSwitcher` in the rail is the impersonation seam
+          // and it is deliberately not repeated here.
+          <Link
+            href="/settings"
+            aria-label="Account settings"
+            className="row-hover flex h-9 w-9 shrink-0 items-center justify-center rounded"
+          >
+            <Icon name="chevron" size={17} className="faint" />
           </Link>
         )}
       </div>

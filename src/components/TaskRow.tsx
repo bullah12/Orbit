@@ -30,17 +30,11 @@ export function TaskRow({
   const overdue = !done && task.dueOn != null && daysFromToday(task.dueOn) < 0;
 
   return (
-    // 56px on a phone, and the old density from `sm` up. The padding rather
-    // than a `min-height` is what gets there, so a row whose metadata wraps
-    // onto a second line grows past 56 instead of crushing into it — and a
-    // single-line row is balanced rather than top-heavy. Desktop is untouched:
-    // this list is read a hundred rows at a time with a mouse, and 56px rows
+    // 56px on a phone, and the old density from `sm` up. Desktop is untouched:
+    // that list is read a hundred rows at a time with a mouse, and 56px rows
     // would turn a screenful into a third of one.
-    <li className="hairline row-hover group flex items-baseline gap-2.5 border-b px-3 py-[1.125rem] sm:py-1.5">
-      {/* Aligned to the title's line, not to the middle of the row: once the
-          metadata wraps below the title on a narrow screen the row is two lines
-          tall, and a centred box floats down beside the wrong one. */}
-      <form action={toggleTaskDone} className="mt-px flex shrink-0 self-start sm:mt-0 sm:self-center">
+    <li className="hairline row-hover group flex min-h-14 items-center gap-3.5 border-b px-5 py-2.5 sm:min-h-0 sm:items-baseline sm:gap-2.5 sm:px-3 sm:py-1.5">
+      <form action={toggleTaskDone} className="flex shrink-0 self-center">
         <input type="hidden" name="taskId" value={task.id} />
         <input type="hidden" name="done" value={String(!done)} />
         <button
@@ -48,7 +42,7 @@ export function TaskRow({
           aria-label={done ? `Mark “${task.title}” as not done` : `Mark “${task.title}” as done`}
           // 22px is the thumb-sized version of the same box; `sm` puts it back
           // to 16px, where it is being hit with a pointer.
-          className="flex h-[22px] w-[22px] items-center justify-center rounded-[4px] border sm:h-4 sm:w-4"
+          className="flex h-[22px] w-[22px] items-center justify-center rounded-md border sm:h-4 sm:w-4 sm:rounded-[4px]"
           style={{
             borderColor: done ? 'var(--accent)' : 'var(--line-strong)',
             background: done ? 'var(--accent)' : 'transparent',
@@ -65,87 +59,123 @@ export function TaskRow({
           off a 390px screen entirely. Whatever else wraps, the title does not
           move. */}
       <div className="min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          {task.isLocked ? (
-            <span className="muted flex items-center gap-1.5 italic">
-              <Icon name="lock" size={12} />
-              Locked — opens on this device only
-            </span>
-          ) : (
-            <Link
-              href={`/tasks/item/${task.id}` as never}
-              className="truncate"
-              style={done ? { color: 'var(--text-faint)', textDecoration: 'line-through' } : undefined}
-            >
-              {task.title}
-            </Link>
-          )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            {task.isLocked ? (
+              <span className="muted flex items-center gap-1.5 italic">
+                <Icon name="lock" size={12} />
+                Locked — opens on this device only
+              </span>
+            ) : (
+              <Link
+                href={`/tasks/item/${task.id}` as never}
+                className="truncate"
+                style={
+                  done ? { color: 'var(--text-faint)', textDecoration: 'line-through' } : undefined
+                }
+              >
+                {task.title}
+              </Link>
+            )}
 
-          {task.priority === 'urgent' && (
-            <span className="shrink-0 text-2xs font-semibold uppercase" style={{ color: 'var(--danger)' }}>
-              Urgent
-            </span>
-          )}
-          {task.visibility === 'private' && (
-            <span className="faint flex shrink-0 items-center gap-0.5 text-2xs" title="Private to you">
-              <Icon name="eye_off" size={10} />
-              Private
-            </span>
-          )}
-        </div>
-
-        {(task.waitingOn || task.checklistTotal > 0 || task.noteCount > 0) && (
-          <div className="faint mt-0.5 flex items-center gap-3 text-2xs">
-            {task.waitingOn && <span>Waiting on {task.waitingOn}</span>}
-            {task.checklistTotal > 0 && (
-              <span>
-                {task.checklistDone}/{task.checklistTotal} steps
+            {task.priority === 'urgent' && (
+              <span
+                className="shrink-0 text-2xs font-semibold uppercase"
+                style={{ color: 'var(--danger)' }}
+              >
+                Urgent
               </span>
             )}
-            {task.noteCount > 0 && (
-              <span className="flex items-center gap-1">
-                <Icon name="note" size={10} />
-                {task.noteCount}
+            {task.visibility === 'private' && (
+              <span
+                className="faint flex shrink-0 items-center gap-0.5 text-2xs"
+                title="Private to you"
+              >
+                <Icon name="eye_off" size={10} />
+                Private
               </span>
             )}
           </div>
-        )}
+
+          {(task.waitingOn || task.checklistTotal > 0 || task.noteCount > 0) && (
+            <div className="faint mt-0.5 flex items-center gap-3 text-xs sm:text-2xs">
+              {task.waitingOn && <span>Waiting on {task.waitingOn}</span>}
+              {task.checklistTotal > 0 && (
+                <span>
+                  {task.checklistDone}/{task.checklistTotal} steps
+                </span>
+              )}
+              {task.noteCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <Icon name="note" size={10} />
+                  {task.noteCount}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs sm:mt-0 sm:shrink-0 sm:flex-nowrap sm:justify-end sm:text-2xs">
+          {/* Edge 32. A picker when the page supplied the options and the row is
+              writable; otherwise the name as before. A locked task is excluded
+              because `setTaskAssignee` refuses one — offering a control that
+              silently does nothing is worse than not offering it.
+
+              The picker is a pointer control and it is `sm` and up only: a
+              select wide enough to hold "Priya Raghavan" is a third of a 390px
+              row, and it pushed everything else onto a second line. A phone
+              gets the name, and the task's own page is where it is changed. */}
+          {showAssignee &&
+            (assignable && assignable.length > 0 && !task.isLocked ? (
+              <>
+                <span className="hidden sm:contents">
+                  <AssigneePicker
+                    taskId={task.id}
+                    assigneeId={task.assigneeId}
+                    options={assignable}
+                    label={task.title}
+                  />
+                </span>
+                {task.assigneeName && (
+                  <span className="sm:hidden">
+                    <Assignee name={task.assigneeName} isMine={task.isMine} />
+                  </span>
+                )}
+              </>
+            ) : (
+              task.assigneeName && <Assignee name={task.assigneeName} isMine={task.isMine} />
+            ))}
+          {task.estimateMinutes != null && (
+            <span className="faint hidden text-2xs sm:inline">
+              {formatDuration(task.estimateMinutes)}
+            </span>
+          )}
+          <CategoryChip category={task.category} />
+          {/* The due date is right-aligned against the row on a phone — see the
+              sibling below — so here it is `sm` and up only. */}
+          {task.dueOn && (
+            <span
+              className="hidden text-2xs tabular-nums sm:inline"
+              style={{ color: overdue ? 'var(--danger)' : 'var(--text-muted)' }}
+            >
+              {formatDueDate(task.dueOn)}
+            </span>
+          )}
+          <SpaceIndicator space={task.space} />
+        </div>
       </div>
 
-      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 sm:mt-0 sm:shrink-0 sm:flex-nowrap sm:justify-end">
-        {/* Edge 32. A picker when the page supplied the options and the row is
-            writable; otherwise the name as before. A locked task is excluded
-            because `setTaskAssignee` refuses one — offering a control that
-            silently does nothing is worse than not offering it. */}
-        {showAssignee &&
-          (assignable && assignable.length > 0 && !task.isLocked ? (
-            <AssigneePicker
-              taskId={task.id}
-              assigneeId={task.assigneeId}
-              options={assignable}
-              label={task.title}
-            />
-          ) : (
-            task.assigneeName && <Assignee name={task.assigneeName} isMine={task.isMine} />
-          ))}
-        {task.estimateMinutes != null && (
-          <span className="faint hidden text-2xs sm:inline">
-            {formatDuration(task.estimateMinutes)}
-          </span>
-        )}
-        <CategoryChip category={task.category} />
-        {task.dueOn && (
-          <span
-            className="text-2xs tabular-nums"
-            style={{ color: overdue ? 'var(--danger)' : 'var(--text-muted)' }}
-          >
-            {formatDueDate(task.dueOn)}
-          </span>
-        )}
-        <SpaceIndicator space={task.space} />
-      </div>
-      </div>
+      {/* Hard right, vertically centred, on a phone only. A column of dates is
+          read down its right edge; inside the wrapping metadata cluster it
+          landed in a different place on every row. */}
+      {task.dueOn && (
+        <span
+          className="shrink-0 self-center text-sm tabular-nums sm:hidden"
+          style={{ color: overdue ? 'var(--danger)' : 'var(--text-muted)' }}
+        >
+          {formatDueDate(task.dueOn)}
+        </span>
+      )}
     </li>
   );
 }

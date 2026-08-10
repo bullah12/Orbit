@@ -1,14 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-// v6 dropped the default export; these are the four things this file uses.
+// v6 dropped the default export; these are the three things this file uses.
 // `Map` is aliased because the global of that name is also in scope here.
-import {
-  Map as MlMap,
-  Marker,
-  NavigationControl,
-  type LngLatBoundsLike,
-} from 'maplibre-gl';
+import { Map as MlMap, Marker, type LngLatBoundsLike } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { initials } from './PersonAvatar';
 import type { MapPerson } from './types';
@@ -106,7 +101,14 @@ export default function MapCanvas({
     }
     map.current = m;
 
-    m.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+    // No zoom buttons, deliberately. They are a pair of white squares whose
+    // +/- glyphs are background images MapLibre ships at one lightness, so in
+    // dark mode they are an invisible icon on a bright chip — and the only way
+    // to flip them is a `prefers-color-scheme` media query, which this app's
+    // stylesheet deliberately does not have (the palette is `light-dark()`, and
+    // `contrast.test.ts` fails the file if a media query reappears). Pinch,
+    // wheel, double-tap and the keyboard all still zoom, and tapping a cluster
+    // is the gesture this map is actually built around.
     // Tiles failing is not fatal: the markers are positioned by projection, not
     // by the basemap, so they stay where they belong over an empty ground.
     m.on('error', () => {});
@@ -123,7 +125,7 @@ export default function MapCanvas({
         const el =
           group.length === 1
             ? pinFor(group[0]!, selected.current.includes(group[0]!.id))
-            : clusterPin(group.length);
+            : clusterPin(group);
         el.addEventListener('click', (e) => {
           e.stopPropagation();
           if (group.length === 1) {
@@ -238,8 +240,9 @@ function pinFor(p: MapPerson, isSelected: boolean): HTMLElement {
 
   const avatar = document.createElement('span');
   avatar.className = 'pin-avatar';
-  avatar.style.color = `var(--c-${p.colour ?? 'slate'}, var(--c-slate))`;
-  avatar.style.background = `var(--c-${p.colour ?? 'slate'}-bg, var(--c-slate-bg))`;
+  const hue = p.category?.colour ?? 'slate';
+  avatar.style.color = `var(--c-${hue}, var(--c-slate))`;
+  avatar.style.background = `var(--c-${hue}-bg, var(--c-slate-bg))`;
   avatar.textContent = initials(p.displayName);
 
   const label = document.createElement('span');
@@ -249,13 +252,35 @@ function pinFor(p: MapPerson, isSelected: boolean): HTMLElement {
   return el;
 }
 
-function clusterPin(n: number): HTMLElement {
+function clusterPin(group: MapPerson[]): HTMLElement {
+  const n = group.length;
+  // A cluster is labelled by *where* it is when it can be — every member at one
+  // address is the ordinary case, and "Alder Close" says more than "4 people".
+  // Only when the group spans several places does it fall back to the count.
+  const first = group[0]!;
+  const oneplace = group.every((p) => p.placeName === first.placeName);
+  const label = oneplaceLabel(oneplace, first.placeName, n);
+
   const el = document.createElement('button');
   el.type = 'button';
   el.className = 'pin pin-cluster';
-  el.setAttribute('aria-label', `${n} people here`);
-  el.textContent = `${n} people`;
+  el.setAttribute('aria-label', `${n} people${oneplace ? ` at ${first.placeName}` : ' here'}`);
+
+  const badge = document.createElement('span');
+  badge.className = 'pin-avatar';
+  badge.style.color = 'var(--c-slate)';
+  badge.style.background = 'var(--c-slate-bg)';
+  badge.textContent = `+${n}`;
+
+  const text = document.createElement('span');
+  text.textContent = label;
+
+  el.append(badge, text);
   return el;
+}
+
+function oneplaceLabel(oneplace: boolean, placeName: string, n: number): string {
+  return oneplace ? placeName : `${n} people`;
 }
 
 /**

@@ -112,7 +112,7 @@ export function EventBlock({
       }
       className={`row-hover rounded-sm border-y border-l-2 border-r ${className}`}
       // Category colour on the left edge only, hairline on the other three.
-      // globals.css specifies exactly this next to `.block`, with the reason
+      // globals.css specifies exactly this next to `.agenda-block`, with the reason
       // written beside it: filling the block turns a stack of them into a
       // colour chart. Every border was taking the accent, so a week of events
       // read as a grid of coloured rectangles rather than as a list of things.
