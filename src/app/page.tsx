@@ -89,8 +89,12 @@ export default async function TodayPage({
     <div className="measure flex min-h-screen flex-col">
       {/* The header must wrap: the switch is `flex-none` and nowrap because
           squeezed it clipped "Month" to "Mont". */}
-      <header className="hairline flex flex-wrap items-baseline gap-x-3 gap-y-1.5 border-b px-5 py-4">
-        <div className="min-w-0">
+      {/* The design puts the range switch on a row of its own rather than to
+          the right of a 30px heading: at 390px the two do not fit side by side,
+          and a switch that wraps under a title is a switch that looks like it
+          fell off it. */}
+      <header className="flex items-start gap-2 px-5 pb-4 pt-2">
+        <div className="min-w-0 flex-1">
           {/* 30px on a phone. This is the one heading in the app somebody
               reads from across a kitchen, and at 17px it was the same size as
               a section label two inches below it. Back to the system's page
@@ -107,15 +111,16 @@ export default async function TodayPage({
               : `${formatLongDate(today)} – ${formatLongDate(days[days.length - 1]!)}`}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-1">
-          <RangeSwitch current={range} />
-          <SearchButton />
-        </div>
+        <SearchButton />
       </header>
+
+      <div className="flex items-center gap-2 px-5 pb-4">
+        <RangeSwitch current={range} />
+      </div>
 
       {/* No card. A stat that needs a box around it is a stat nobody trusted. */}
       <div
-        className="hairline flex flex-wrap items-baseline gap-x-8 gap-y-2 border-b px-5 py-4 md:py-3"
+        className="hairline flex flex-wrap items-baseline gap-x-9 gap-y-2 border-b px-5 pb-5 md:pb-3 md:pt-3"
         style={{ background: 'var(--bg)' }}
       >
         <Stat n={counts.events} label={counts.events === 1 ? 'event' : 'events'} />
@@ -131,7 +136,12 @@ export default async function TodayPage({
         )}
       </div>
 
-      <ComposeTask spaces={spaces} categories={categories} />
+      {/* Desktop only. On a phone the capture button is the way in — a
+          second always-open field a row below the stats was the same action
+          twice, and it pushed "What's on" off the first screen. */}
+      <div className="hidden md:block">
+        <ComposeTask spaces={spaces} categories={categories} />
+      </div>
 
       <SectionHeading>What’s on</SectionHeading>
       <Agenda items={items} days={days} today={today} />
@@ -176,26 +186,34 @@ export default async function TodayPage({
           <SectionHeading>Coming up</SectionHeading>
           <ul>
             {dates.map((d) => (
-              <li
-                key={`${d.personId}-${d.kind}-${d.onDate}`}
-                className="hairline row-hover flex min-h-11 flex-wrap items-center gap-2 border-b px-5 py-2 text-base"
-              >
-                <Icon name="cake" size={13} className="faint shrink-0" />
-                <Link href={`/people/${d.personId}`} className="min-w-0 truncate">
-                  {d.displayName}
+              <li key={`${d.personId}-${d.kind}-${d.onDate}`} className="hairline border-b">
+                {/* Two lines, not one wrapping row. The name is what the eye is
+                    hunting for and it now has a line to itself; what kind of
+                    date it is sits under it, and how far away it is stays
+                    right-aligned where a column of them can be read down. */}
+                <Link
+                  href={`/people/${d.personId}`}
+                  className="row-hover flex min-h-[52px] items-center gap-2.5 px-5 py-2.5"
+                >
+                  <Icon name="cake" size={15} className="faint shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{d.displayName}</span>
+                    <span className="muted block truncate text-sm">
+                      {d.label ?? d.kind}
+                      {d.turning != null && d.kind === 'birthday'
+                        ? ` — turning ${d.turning}`
+                        : ''}
+                    </span>
+                  </span>
+                  <span className="faint shrink-0 text-sm">
+                    {d.daysAway === 0
+                      ? 'today'
+                      : d.daysAway === 1
+                        ? 'tomorrow'
+                        : `in ${plural(d.daysAway, 'day')}`}
+                  </span>
+                  <SpaceIndicator space={d.space} />
                 </Link>
-                <span className="muted text-sm">
-                  {d.label ?? d.kind}
-                  {d.turning != null && d.kind === 'birthday' ? ` — turning ${d.turning}` : ''}
-                </span>
-                <span className="faint ml-auto shrink-0 text-xs">
-                  {d.daysAway === 0
-                    ? 'today'
-                    : d.daysAway === 1
-                      ? 'tomorrow'
-                      : `in ${plural(d.daysAway, 'day')}`}
-                </span>
-                <SpaceIndicator space={d.space} />
               </li>
             ))}
           </ul>
@@ -270,7 +288,7 @@ function Stat({ n, label, danger = false }: { n: number; label: string; danger?:
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h2
-      className="hairline section-label border-y px-5 py-2"
+      className="hairline section-label border-y px-5 py-2.5"
       style={{ background: 'var(--bg-sunken)' }}
     >
       {children}

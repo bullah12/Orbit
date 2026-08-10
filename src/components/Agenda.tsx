@@ -18,15 +18,16 @@ import { splitDay } from '@/lib/calendar';
  * happening, in order, starting now. So it is a column of blocks against a time
  * gutter, not seven columns of empty night hours.
  *
- * This is the surface `globals.css` was written for. `.block`, `.block-time`,
- * `.block-now` and `.now-line` were added to the stylesheet, contrast-checked
+ * This is the surface `globals.css` was written for. `.agenda-block`,
+ * `.agenda-block-time`, `.agenda-block-now` and `.now-line` were added to the
+ * stylesheet, contrast-checked
  * and documented when the revised design was adopted, and then nothing was
  * built that used them — nine utilities and four tokens sat dead. Everything
  * here wears them rather than inventing a second vocabulary beside them.
  *
  * Category colour lives on the block's left edge only. Filling the block turns
  * a stack of them into a colour chart, which is the note written next to
- * `.block` in the stylesheet.
+ * `.agenda-block` in the stylesheet.
  */
 export function Agenda({
   items,
@@ -52,7 +53,7 @@ export function Agenda({
   }
 
   return (
-    <div className="flex flex-col gap-3 px-5 py-3">
+    <div className="flex flex-col gap-2.5 px-5 py-3.5">
       {withEvents.map(({ day, timed }) => (
         <section key={day} aria-label={formatLongDate(day)}>
           {/* A single day needs no heading — the page header already said which
@@ -63,7 +64,7 @@ export function Agenda({
             </h3>
           )}
 
-          <ul className="flex flex-col gap-1.5">
+          <ul className="flex flex-col gap-2.5">
             {timed.allDay.map((item) => (
               <AgendaRow key={item.key} item={item} allDay />
             ))}
@@ -136,13 +137,13 @@ function AgendaRow({
   );
 
   return (
-    <li className="flex items-start gap-2">
-      <span className="block-time shrink-0 pt-2 text-right" style={{ width: 'var(--gutter)' }}>
+    <li className="flex items-start gap-2.5">
+      <span className="agenda-block-time shrink-0 pt-[9px] text-right" style={{ width: 'var(--gutter)' }}>
         {allDay ? 'All day' : formatTime(item.startsAt)}
       </span>
       {item.isBusy ? (
         // Somebody else's time is quieter by shape, not by a colour of its own.
-        <div className="busy min-w-0 flex-1 px-2.5 py-2 text-sm">{body}</div>
+        <div className="busy min-w-0 flex-1 px-3 py-2.5 text-sm">{body}</div>
       ) : (
         <Link
           href={
@@ -150,7 +151,7 @@ function AgendaRow({
               ? `/calendar/event/${item.id}?on=${encodeURIComponent(item.startsAt)}`
               : `/calendar/event/${item.id}`
           }
-          className={`block row-hover min-w-0 flex-1 text-sm ${isNow ? 'block-now' : ''}`}
+          className={`agenda-block row-hover min-w-0 flex-1 text-sm ${isNow ? 'agenda-block-now' : ''}`}
           style={isNow ? undefined : { borderLeftColor: accent }}
         >
           {body}
@@ -168,8 +169,8 @@ function AgendaRow({
  */
 function NowLine({ now }: { now: Date }) {
   return (
-    <li className="flex items-center gap-2" aria-hidden="true">
-      <span className="block-time shrink-0 text-right" style={{ width: 'var(--gutter)' }}>
+    <li className="flex items-center gap-2.5" aria-hidden="true">
+      <span className="agenda-block-time shrink-0 text-right" style={{ width: 'var(--gutter)' }}>
         now {formatTime(now)}
       </span>
       <span className="now-line now-line-gutter flex-1" />

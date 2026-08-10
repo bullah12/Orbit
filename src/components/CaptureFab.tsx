@@ -102,9 +102,11 @@ const KIND_ICON = { task: 'check', note: 'note', event: 'calendar' } as const;
  * the page's own form posts.
  *
  * The one thing `/capture` does that this does not is resolve a `#space` hint
- * against the database, which needs a query. The hint still shows in the chips
- * as something the parser read; it just does not preselect a space here. The
- * space radios are right underneath and the full page is one tap away.
+ * against the database, which needs a query. So the sheet does not offer the
+ * space as a choice: it shows which one it landed on as a chip in the read-back
+ * row, and the footnote points at `/capture` for changing it. Three radios for
+ * a decision that is right by default almost every time is the sheet turning
+ * into the page it exists to save you a trip to.
  *
  * A dialog, so it takes focus and Escape closes it — this one does cover the
  * page, unlike the map's sheet.
@@ -135,6 +137,12 @@ function CaptureSheet({
   }, [onClose]);
 
   const ready = capture.title.length > 0 && spaces.length > 0;
+  // The space is decided, not chosen here. `/capture` resolves a `#space` hint
+  // against the database, which needs a query this sheet cannot make; the chip
+  // below says which space it landed on and the footnote says where to change
+  // it. Offering three radios for a decision that is right by default almost
+  // every time is the sheet becoming the page it is a shortcut to.
+  const space = spaces[0];
 
   return (
     <div className="fixed inset-0 z-40 md:hidden">
@@ -146,127 +154,133 @@ function CaptureSheet({
         style={{ background: 'color-mix(in oklab, var(--bg-sunken) 72%, transparent)' }}
       />
 
-      <div
+      <form
+        action={captureCreate}
         role="dialog"
         aria-modal="true"
         aria-label="Capture something"
-        className="hairline absolute inset-x-0 bottom-0 max-h-[85%] overflow-y-auto rounded-t-lg border-t px-4 pt-3"
+        className="hairline absolute inset-x-0 bottom-0 max-h-[88%] overflow-y-auto border-t px-5 pt-2.5"
         style={{
           background: 'var(--bg-raised)',
-          paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
+          borderRadius: '1rem 1rem 0 0',
+          paddingBottom: 'calc(1.625rem + env(safe-area-inset-bottom))',
         }}
       >
-        <div className="mb-3 flex items-center gap-2">
-          <h2 className="section-label flex-1">Capture</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="row-hover flex h-9 w-9 items-center justify-center rounded"
-          >
-            <Icon name="x" size={16} className="muted" />
-          </button>
-        </div>
+        <span className="sheet-grip" aria-hidden="true" />
+
+        <h2 className="mb-3 text-xl font-semibold tracking-[-0.01em]">Capture</h2>
+
+        <input type="hidden" name="text" value={text} />
+        <input type="hidden" name="kind" value={chosenKind} />
+        {space && <input type="hidden" name="spaceId" value={space.id} />}
 
         <label htmlFor="capture-sheet-text" className="sr-only">
           What do you want to capture?
         </label>
-        <input
+        {/* A textarea, not an input: a captured line is often a sentence, and a
+            one-line field that scrolls sideways hides the beginning of what you
+            just typed. 16px because anything smaller makes iOS zoom the page. */}
+        <textarea
           id="capture-sheet-text"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          rows={2}
           autoFocus
-          autoComplete="off"
           placeholder="“bins out tomorrow”, “dentist a week on Tuesday”"
-          className="input"
-          style={{ fontSize: '1rem', paddingBlock: '0.625rem' }}
+          className="hairline w-full resize-none rounded-lg border px-3.5 py-3"
+          style={{
+            background: 'var(--bg)',
+            borderColor: 'var(--line-strong)',
+            fontSize: '1rem',
+            minHeight: '88px',
+            color: 'var(--text)',
+            fontFamily: 'inherit',
+          }}
         />
 
-        <p aria-live="polite" className="mt-2 text-sm">
-          {text.trim() === '' ? (
-            <span className="faint">
-              Type it the way you would say it. Nothing is sent anywhere to read it.
-            </span>
-          ) : (
-            <>
-              <Icon name={KIND_ICON[chosenKind]} size={13} className="muted inline" />{' '}
-              {describeCapture({ ...capture, kind: chosenKind })}
-            </>
-          )}
+        <p className="section-label mt-3.5" aria-hidden={text.trim() === ''}>
+          {text.trim() === '' ? 'Orbit will read this back' : 'Orbit reads this as'}
         </p>
 
-        {capture.matches.length > 0 && (
-          <ul id="capture-sheet-matches" className="mt-2 flex flex-wrap gap-1.5">
-            {capture.matches.map((m, i) => (
-              <li
-                key={i}
-                className="hairline inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs"
-              >
-                <Icon name={FIELD_ICON[m.field]} size={11} className="muted" />
-                <span className="faint">{m.text}</span>
-                <Icon name="arrow_right" size={10} className="faint" />
-                <span>{m.meaning}</span>
+        {text.trim() === '' ? (
+          <p className="faint mt-2 text-sm">
+            Type it the way you would say it. Nothing is sent anywhere to read it.
+          </p>
+        ) : (
+          <>
+            <p aria-live="polite" className="sr-only">
+              {describeCapture({ ...capture, kind: chosenKind })}
+            </p>
+            <ul id="capture-sheet-matches" className="mt-2 flex flex-wrap gap-2">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setKind(nextKind(chosenKind))}
+                  aria-label={`Create it as a ${chosenKind}. Tap to change.`}
+                  className="hairline inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 text-sm"
+                >
+                  <Icon name={KIND_ICON[chosenKind]} size={13} className="muted" />
+                  {chosenKind[0]!.toUpperCase() + chosenKind.slice(1)}
+                </button>
               </li>
-            ))}
-          </ul>
+              {capture.matches.map((m, i) => (
+                <li
+                  key={i}
+                  className="hairline inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 text-sm tabular-nums"
+                  title={`“${m.text}” → ${m.meaning}`}
+                >
+                  <Icon name={FIELD_ICON[m.field]} size={13} className="muted" />
+                  {m.meaning}
+                </li>
+              ))}
+              {space && (
+                <li className="inline-flex items-center">
+                  <SpaceIndicator space={space} />
+                </li>
+              )}
+            </ul>
+          </>
         )}
 
-        <form action={captureCreate} className="mt-4 flex flex-col gap-3">
-          <input type="hidden" name="text" value={text} />
+        <div className="mt-4 flex gap-2.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="hairline flex min-h-12 min-w-[92px] items-center justify-center rounded-md border px-4 text-lg"
+          >
+            Cancel
+          </button>
+          <SubmitButton
+            disabled={!ready}
+            className="flex min-h-12 flex-1 items-center justify-center rounded-md text-lg font-medium disabled:opacity-50 btn-primary"
+          >
+            Capture
+          </SubmitButton>
+        </div>
 
-          <fieldset className="flex flex-wrap items-center gap-3">
-            <legend className="section-label mb-1">Create it as</legend>
-            {(['task', 'note', 'event'] as const).map((k) => (
-              <label key={k} className="flex min-h-11 items-center gap-1.5 text-sm">
-                <input
-                  type="radio"
-                  name="kind"
-                  value={k}
-                  checked={k === chosenKind}
-                  onChange={() => setKind(k)}
-                />
-                <Icon name={KIND_ICON[k]} size={13} className="muted" />
-                {k[0]!.toUpperCase() + k.slice(1)}
-              </label>
-            ))}
-          </fieldset>
-
-          <fieldset className="flex flex-wrap items-center gap-3">
-            <legend className="section-label mb-1">Into</legend>
-            {spaces.map((s, i) => (
-              <label key={s.id} className="flex min-h-11 items-center gap-1.5">
-                <input type="radio" name="spaceId" value={s.id} defaultChecked={i === 0} />
-                <SpaceIndicator space={s} />
-              </label>
-            ))}
-            {spaces.length === 0 && (
-              <span className="muted text-sm">
-                nowhere yet — everything lives in a space, and you are not in one
-                you can write to
-              </span>
-            )}
-          </fieldset>
-
-          <div className="flex items-center gap-3">
-            <SubmitButton
-              icon="plus"
-              disabled={!ready}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded px-3 text-sm disabled:opacity-50 btn-primary"
-            >
-              Create it
-            </SubmitButton>
-            {/* The surface this is a shortcut to. It resolves a #space hint
-                against the database, which needs a query — and it works with
-                no JavaScript at all, which this cannot. */}
+        {spaces.length === 0 ? (
+          <p className="mt-3 text-sm" style={{ color: 'var(--warning)' }}>
+            There is nowhere to put it yet. Everything in Orbit lives in a space
+            and you are not in one you can write to.
+          </p>
+        ) : (
+          <p className="faint mt-3 text-sm">
+            Opens the full preview on{' '}
             <Link
               href={`/capture${text ? `?text=${encodeURIComponent(text)}` : ''}` as never}
-              className="muted text-sm underline underline-offset-2"
+              className="underline underline-offset-2"
             >
-              Open the full page
-            </Link>
-          </div>
-        </form>
-      </div>
+              /capture
+            </Link>{' '}
+            if you want to change what it read.
+          </p>
+        )}
+      </form>
     </div>
   );
+}
+
+/** Task → Note → Event → Task. Three options is a cycle, not a dropdown. */
+function nextKind(k: 'task' | 'note' | 'event'): 'task' | 'note' | 'event' {
+  return k === 'task' ? 'note' : k === 'note' ? 'event' : 'task';
 }

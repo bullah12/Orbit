@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { SpaceIndicator, CategoryChip } from '@/components/SpaceIndicator';
+import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Icon } from '@/components/Icon';
 import { PersonAvatar } from './PersonAvatar';
-import { formatDueDate } from '@/lib/format';
+import { formatDueDate, plural } from '@/lib/format';
 import type { PersonRow } from '@/lib/queries/people';
 
 /**
@@ -25,20 +25,26 @@ export function PeopleList({ people }: { people: PersonRow[] }) {
         <li key={p.id} className="hairline border-b">
           <Link
             href={`/people/${p.id}` as never}
-            className="row-hover flex min-h-[68px] items-center gap-3 px-4 py-2.5"
+            className="row-hover flex min-h-[68px] items-center gap-3.5 px-5 py-3"
           >
-            <PersonAvatar
-              name={p.isLocked ? '?' : p.displayName}
-              colour={p.category?.colour ?? null}
-            />
+            {p.isLocked ? (
+              // The lock is the avatar. An initials circle for a record whose
+              // name the server has never seen would be inventing two letters.
+              <span
+                aria-hidden="true"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+                style={{ background: 'var(--c-slate-bg)', color: 'var(--c-slate)' }}
+              >
+                <Icon name="lock" size={20} />
+              </span>
+            ) : (
+              <PersonAvatar name={p.displayName} colour={p.category?.colour ?? null} />
+            )}
 
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-base">
+              <span className="block truncate text-lg">
                 {p.isLocked ? (
-                  <em className="muted inline-flex items-center gap-1.5">
-                    <Icon name="lock" size={13} />
-                    Locked person
-                  </em>
+                  <em className="muted">Locked person</em>
                 ) : (
                   <>
                     {p.displayName}
@@ -50,26 +56,48 @@ export function PeopleList({ people }: { people: PersonRow[] }) {
                   </>
                 )}
               </span>
-              <span className="muted block truncate text-sm">{secondary(p)}</span>
+
+              {p.isLocked ? (
+                <span
+                  className="faint mt-0.5 block truncate font-mono text-sm"
+                >
+                  opens on this device only
+                </span>
+              ) : (
+                // One line, and the category lives *in* it rather than as a
+                // chip on the right. The right-hand end of the row belongs to
+                // the space indicator, which is the thing that has to be on
+                // every row; a second coloured chip beside it was two colours
+                // competing to mean two different things at the same size.
+                <span className="muted mt-0.5 flex items-center gap-2 truncate text-sm">
+                  {p.category && (
+                    <span
+                      className="inline-flex shrink-0 items-center gap-1"
+                      style={{ color: `var(--c-${p.category.colour}, var(--c-slate))` }}
+                    >
+                      <Icon name={p.category.icon} size={12} strokeWidth={2} />
+                      {p.category.name}
+                    </span>
+                  )}
+                  {p.category && personDetail(p) && <span aria-hidden="true">·</span>}
+                  {personDetail(p) && <span className="truncate">{personDetail(p)}</span>}
+                  {p.linkCount > 0 && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span
+                        className="inline-flex shrink-0 items-center gap-1"
+                        title="Also has a record in another space"
+                      >
+                        <Icon name="link" size={11} />
+                        linked
+                      </span>
+                    </>
+                  )}
+                </span>
+              )}
             </span>
 
-            {/* Two records, linked, never merged (decision 4). This is the one
-                piece of the old row that could not fold into the line of
-                secondary detail: it is not a fact about the person, it is a
-                fact about this *record* — that there is another one — and
-                somebody scanning for the reason a name appears twice needs it
-                on both rows at once, not behind whichever of them they open. */}
-            {p.linkCount > 0 && (
-              <span
-                className="faint inline-flex shrink-0 items-center gap-1 text-xs"
-                title="Also has a record in another space"
-              >
-                <Icon name="link" size={12} />
-                linked
-              </span>
-            )}
-            {!p.isLocked && <CategoryChip category={p.category} />}
-            <SpaceIndicator space={p.space} />
+            {!p.isLocked && <SpaceIndicator space={p.space} />}
           </Link>
         </li>
       ))}
@@ -78,23 +106,25 @@ export function PeopleList({ people }: { people: PersonRow[] }) {
 }
 
 /**
- * The one line under the name.
+ * The middle of the one line under the name — what sits after the category.
  *
- * Ordered by what a person is most likely to be scanning for, and it is only
- * ever one of them: where they live, then the date that is coming up, then the
- * fact that they exist twice. A row that tried to show all three is the row
+ * Exported because the map's bottom sheet shows the same sentence about the
+ * same person: two surfaces describing one row should not describe it
+ * differently.
+ *
+ * Ordered by what somebody is most likely to be scanning for, and it is only
+ * ever one of them: where they live, then the date that is coming up, then how
+ * much contact detail is on file. A row that tried to show all three is the row
  * this replaced.
  */
-function secondary(p: PersonRow): string {
-  if (p.isLocked) return 'Opens on this device only';
+export function personDetail(p: PersonRow): string {
   if (p.homePlaceName) return p.homePlaceName;
   if (p.nextDate) {
     const when = formatDueDate(nextOccurrence(p.nextDate.onDate));
     return `${p.nextDate.label ?? p.nextDate.kind} ${when}`;
   }
-  // Not the link — that has its own marker on the row, so repeating it here
-  // would spend the one secondary line on something already said.
-  return p.category?.name ?? '';
+  if (p.contactCount > 0) return plural(p.contactCount, 'contact');
+  return '';
 }
 
 /** The next time this day-of-year comes round, as an ISO date. */

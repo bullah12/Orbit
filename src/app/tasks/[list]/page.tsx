@@ -60,28 +60,35 @@ export default async function TaskListPage({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="hairline border-b px-5 py-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-lg font-semibold">{meta.label}</h1>
-          {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
-          <span className="faint text-xs">{plural(tasks.length, 'task')}</span>
-          <span className="ml-auto">
-            <SearchButton kind="task" label="Search tasks" />
-          </span>
+      {/* "Tasks", not the list's name. The nine lists are one page now and the
+          segmented row below says which of them you are on — putting the same
+          word in the heading and in the selected segment two lines apart is
+          the title saying nothing. The blurb underneath is the active list's
+          own sentence, which is the part that does carry information. */}
+      <header className="flex items-start gap-2 px-5 pb-3 pt-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] md:text-lg md:tracking-normal">
+              Tasks
+            </h1>
+            {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
+            <span className="faint text-xs">{plural(tasks.length, 'task')}</span>
+          </div>
+          <p className="muted mt-1 text-sm md:mt-0.5 md:text-xs">{meta.blurb}</p>
         </div>
-        {/* The active list's own sentence, under the title. It was already
-            here; the segments above make it carry more, because the label in
-            a scrolling row of nine is the shortest a list is ever named. */}
-        <p className="muted mt-0.5 text-xs">{meta.blurb}</p>
+        <SearchButton kind="task" label="Search tasks" />
       </header>
 
       <TaskListTabs active={list} counts={counts} spaceId={spaceId ?? null} />
 
-      <ComposeTask
-        spaces={spaces}
-        categories={categories}
-        defaultSpaceId={spaceId ?? preferredSpace ?? undefined}
-      />
+      {/* Desktop only, as on Home: the FAB is the phone's way in. */}
+      <div className="hidden md:block">
+        <ComposeTask
+          spaces={spaces}
+          categories={categories}
+          defaultSpaceId={spaceId ?? preferredSpace ?? undefined}
+        />
+      </div>
 
       {tasks.length === 0 ? (
         <p className="faint px-5 py-10 text-sm">Nothing here.</p>
