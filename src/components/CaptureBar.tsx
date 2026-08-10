@@ -21,6 +21,13 @@ import { Icon } from './Icon';
  *
  * `spaceCount` is here so the bar can be honest on an account that cannot yet
  * write anywhere: it points at the space form instead of pretending.
+ *
+ * **Desktop only.** On a phone the sticky bar spent a whole row of a 390px
+ * screen on a field that is empty almost all of the time, directly above the
+ * heading it was pushing down. `CaptureFab` is what a phone gets instead: the
+ * same destination, in the corner a thumb already rests in, costing no vertical
+ * space at all. The two are hidden at each other's widths, so exactly one of
+ * them is on screen.
  */
 export function CaptureBar({
   spaceCount,
@@ -36,7 +43,7 @@ export function CaptureBar({
   if (spaceCount === 0) {
     return (
       <div
-        className="hairline sticky top-0 z-20 flex items-center gap-2 border-b px-3 py-2 text-xs"
+        className="hairline sticky top-0 z-20 hidden items-center gap-2 border-b px-3 py-2 text-xs md:flex"
         style={{ background: 'var(--bg-raised)' }}
       >
         <Icon name="alert" size={13} className="muted" />
@@ -57,7 +64,7 @@ export function CaptureBar({
       method="get"
       action="/capture"
       aria-label="Capture something from anywhere"
-      className="hairline sticky top-0 z-20 flex items-center gap-2 border-b px-3 py-2"
+      className="hairline sticky top-0 z-20 hidden items-center gap-2 border-b px-3 py-2 md:flex"
       style={{ background: 'var(--bg-raised)' }}
     >
       <label htmlFor="capture-bar-text" className="sr-only">

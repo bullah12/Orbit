@@ -17,6 +17,7 @@
     "db:test": "./scripts/db-test.sh"
   },
   "dependencies": {
+    "maplibre-gl": "^6.2.0",
     "next": "^15.5.22",
     "postgres": "^3.4.9",
     "react": "^19.2.8",

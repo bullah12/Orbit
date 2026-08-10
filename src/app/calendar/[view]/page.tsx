@@ -101,18 +101,21 @@ export default async function CalendarPage({
           />
         </nav>
 
-        <nav className="flex items-center gap-1" aria-label="Calendar view">
+        {/* One control, not three buttons that each look like an action.
+            `.seg` is the shape the app already uses for a small closed set of
+            peer options — the range switch on Home — and Day/Week/Month is the
+            same idea about a different noun. The accent fill it used to carry
+            made the current view look like the thing you were about to press.
+
+            Still links: the view is a route, so it survives a reload, it can
+            be sent to somebody, and the back button means what it says. */}
+        <nav className="seg flex-none whitespace-nowrap" aria-label="Calendar view">
           {(['day', 'week', 'month'] as CalendarView[]).map((v) => (
             <Link
               key={v}
               href={`/calendar/${v}?date=${anchor}`}
               aria-current={v === view ? 'page' : undefined}
-              className="hairline row-hover rounded border px-2 py-1 text-xs capitalize"
-              style={
-                v === view
-                  ? { background: 'var(--accent)', color: 'var(--accent-text)', borderColor: 'var(--accent)' }
-                  : undefined
-              }
+              className="capitalize"
             >
               {v}
             </Link>
@@ -127,6 +130,16 @@ export default async function CalendarPage({
           Import
         </Link>
       </header>
+
+      {/* The date picker, on a phone.
+          Prev/Today/Next moves a whole period at a time, which is the wrong
+          grain when what you want is Thursday. A strip of the anchor's week is
+          the smallest control that answers that directly, and it doubles as
+          the "where am I" the header title states in words. It stays in the
+          current view — picking a day on the week grid should not throw you
+          into the day grid. Hidden from `md` up, where the grid itself is
+          wide enough to click a day in. */}
+      <WeekStrip view={view} anchor={anchor} today={today} weekStart={weekStart} />
 
       {error && (
         <p
@@ -190,6 +203,69 @@ function PeriodLink({
     >
       <Icon name={icon} size={13} className={flip ? 'muted rotate-180' : 'muted'} />
     </Link>
+  );
+}
+
+/**
+ * Seven days across, the anchor's own week, as the phone's date picker.
+ *
+ * Each day keeps the current view rather than forcing `day` — somebody
+ * skimming the week grid who taps Thursday wants the week grid scrolled to
+ * Thursday, not a different page. Today is marked separately from the
+ * selection, because on any day but this one they are two different squares
+ * and a picker that conflates them is lying about one of them.
+ */
+function WeekStrip({
+  view,
+  anchor,
+  today,
+  weekStart,
+}: {
+  view: CalendarView;
+  anchor: DateOnly;
+  today: DateOnly;
+  weekStart: WeekStart;
+}) {
+  const days = weekDays(anchor, weekStart);
+  const initial = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'short' });
+
+  return (
+    <nav
+      aria-label="Pick a day"
+      className="hairline grid grid-cols-7 border-b md:hidden"
+      style={{ background: 'var(--bg-raised)' }}
+    >
+      {days.map((d) => {
+        const selected = d === anchor;
+        const isToday = d === today;
+        return (
+          <Link
+            key={d}
+            href={`/calendar/${view}?date=${d}`}
+            aria-current={selected ? 'date' : undefined}
+            aria-label={formatDate(d)}
+            className="flex min-h-14 flex-col items-center justify-center gap-0.5"
+            style={selected ? { background: 'var(--bg-sunken)' } : undefined}
+          >
+            <span className="faint text-2xs uppercase">
+              {initial.format(new Date(`${d}T00:00:00Z`)).slice(0, 2)}
+            </span>
+            <span
+              className="flex h-7 w-7 items-center justify-center rounded-full text-sm tabular-nums"
+              style={
+                isToday
+                  ? { background: 'var(--accent)', color: 'var(--accent-text)', fontWeight: 600 }
+                  : selected
+                    ? { fontWeight: 600 }
+                    : { color: 'var(--text-muted)' }
+              }
+            >
+              {Number(d.slice(8, 10))}
+            </span>
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 

@@ -3396,11 +3396,24 @@ try {
 
     const bar = page.locator('nav[aria-label="Primary"]:visible');
     check('a bottom bar takes its place', await bar.isVisible());
+
+    // Four, and the count is the assertion. Six tabs on a 390px screen is 65px
+    // each, which is a 22px icon under a label that has to be abbreviated to
+    // fit. Capture and Search left the bar deliberately — the two checks below
+    // are what stop either of them quietly coming back.
+    const tabs = bar.locator('a');
+    check('the bar carries exactly four tabs', (await tabs.count()) === 4, `${await tabs.count()}`);
     check(
-      'and it carries the surfaces somebody actually opens',
+      'and they are the four surfaces somebody stands on',
       (await bar.locator('a[href="/"]').count()) === 1 &&
         (await bar.locator('a[href="/calendar/week"]').count()) === 1 &&
-        (await bar.locator('a[href="/search"]').count()) === 1,
+        (await bar.locator('a[href="/people"]').count()) === 1 &&
+        (await bar.locator('a[href="/more"]').count()) === 1,
+    );
+    check(
+      'Capture and Search are not among them — they are the FAB and a header button',
+      (await bar.locator('a[href="/capture"]').count()) === 0 &&
+        (await bar.locator('a[href="/search"]').count()) === 0,
     );
     check(
       'the tab you are standing on says so',
@@ -3435,17 +3448,164 @@ try {
       }),
     );
 
-    // The drawer covers the page, and a cover with one exit is a trap.
-    await page.getByRole('button', { name: 'More of Orbit' }).click();
-    const drawer = page.locator('nav[aria-label="All of Orbit"]');
-    check('More opens a drawer holding the whole of the rail', await drawer.isVisible());
+    // Capture is over every tab rather than being one of them, so it has to be
+    // on every tab — a FAB rendered by one page and not the next is worse than
+    // no FAB, because the place a thumb has learnt to go is empty half the time.
+    const fab = page.locator('.fab');
+    for (const [href, name] of [
+      ['/', 'Home'],
+      ['/calendar/week', 'Calendar'],
+      ['/people', 'People'],
+      ['/more', 'More'],
+    ]) {
+      await page.goto(href);
+      check(`the capture button is on ${name}`, await fab.isVisible());
+    }
+
+    // Except here. The map's bottom sheet owns that corner, and two things
+    // fighting for the same 60px is how a thumb hits the wrong one.
+    await page.goto('/people?view=map');
+    check('and stands down on the People map, where the sheet owns that corner', (await fab.count()) === 0);
+
+    // The capture bar is a desktop control now. Both of them on screen at once
+    // would be the same action twice.
+    await page.goto('/');
     check(
-      'and the drawer reaches what the bar leaves out',
-      (await drawer.locator('a[href="/rules"]').count()) === 1 &&
-        (await drawer.locator('a[href="/notes"]').count()) === 1,
+      'the sticky capture bar is not on a phone — the FAB replaces it',
+      !(await page.locator('form[aria-label="Capture something from anywhere"]').isVisible()),
+    );
+
+    // The sheet covers the page, and a cover with one exit is a trap. This is
+    // the assertion the deleted drawer used to carry; the drawer is a route
+    // now and has no exit to test, but the sheet does.
+    await fab.click();
+    const sheet = page.getByRole('dialog', { name: 'Capture something' });
+    check('the capture button raises a sheet over the page you are on', await sheet.isVisible());
+    await page.fill('#capture-sheet-text', 'bins out tomorrow');
+    check(
+      'and it shows the same parse the capture page shows',
+      (await page.locator('#capture-sheet-matches li').count()) > 0,
+      `${await page.locator('#capture-sheet-matches li').count()} chips`,
     );
     await page.keyboard.press('Escape');
-    check('Escape closes the drawer', !(await drawer.isVisible()));
+    check('Escape closes the sheet', !(await sheet.isVisible()));
+
+    // Search left the bar for the header of each page that bears a list, where
+    // it can carry that page's context into the query.
+    check(
+      'search is a header button on Home',
+      (await page.locator('header a[href="/search"]').count()) === 1,
+    );
+    await page.goto('/people');
+    check(
+      'and on People it arrives with the kind already chosen',
+      (await page.locator('header a[href="/search?kind=person"]').count()) === 1,
+    );
+    await page.goto('/tasks/all');
+    check(
+      'and on Tasks the same',
+      (await page.locator('header a[href="/search?kind=task"]').count()) === 1,
+    );
+
+    // The nine smart lists are nine routes and stay nine routes: the segmented
+    // filter is links, so a deep link is not a thing the page has to recover
+    // from — it is the thing that decides which segment is on.
+    const segments = page.locator('nav[aria-label="Task lists"] a');
+    check('the task lists are a scrolling row of segments', (await segments.count()) === 9);
+    await page.goto('/tasks/overdue');
+    check(
+      'a deep link to /tasks/overdue still works and lights its own segment',
+      (await page.locator('nav[aria-label="Task lists"] a[href="/tasks/overdue"]').getAttribute('aria-current')) === 'page',
+    );
+    check(
+      'and only its own',
+      (await page.locator('nav[aria-label="Task lists"] a[aria-current="page"]').count()) === 1,
+    );
+
+    // What the drawer used to be for. The bar leaves things out; this is where
+    // they are, and it is a page with a URL rather than an overlay with a
+    // focus trap.
+    await page.goto('/more');
+    // Scoped to `main`: the 240px rail is `hidden md:flex`, so at 390px it is
+    // still in the DOM and an unscoped count picks up both copies of a link.
+    check(
+      'More is a page, and it reaches what the bar leaves out',
+      (await page.locator('main a[href="/rules"]').count()) === 1 &&
+        (await page.locator('main a[href="/notes"]').count()) === 1,
+    );
+    // Exact href, not a prefix: the space rows below point at
+    // `/tasks/all?space=…`, which is a space, not a tenth smart list.
+    check(
+      'the nine task lists are one Tasks row here, not nine',
+      (await page.locator('main a[href="/tasks/all"]').count()) === 1,
+    );
+    check('every control on the More page has a label', (await labelAuditOn(page)).length === 0,
+      (await labelAuditOn(page)).join(', '));
+
+    // Account is pinned to the bottom rather than sitting at the end of the
+    // scroll — it should be above the tab bar, not four groups below it.
+    const account = page.locator('section[aria-labelledby="more-account"]');
+    check('and the account sits at the bottom, above the tab bar', await account.isVisible());
+
+    // People: two views, and the view is in the URL so it survives a reload.
+    await page.goto('/people');
+    check(
+      'People opens on the list',
+      (await page.locator('nav[aria-label="People view"] a[aria-current="page"]').innerText()) === 'List',
+    );
+    await page.goto('/people?view=map');
+    check(
+      'and ?view=map is the map, from the URL alone',
+      (await page.locator('nav[aria-label="People view"] a[aria-current="page"]').innerText()) === 'Map',
+    );
+    // The honest count. A map that draws some of the people and says nothing
+    // about the rest has lied by omission about exactly the ones somebody
+    // would go looking for.
+    const subtitle = await page.locator('header p').first().innerText();
+    check(
+      'the header says what fraction of people the map can draw',
+      /^\d+ of \d+ have a place\.$/.test(subtitle.trim()),
+      subtitle.trim(),
+    );
+    const placeless = page.locator('.sheet button[aria-expanded]');
+    check('the sheet carries a permanent row for the people it cannot draw', await placeless.isVisible());
+    await placeless.click();
+    check(
+      'and opens the list of them rather than leaving a number',
+      (await page.locator('#people-without-a-place li').count()) > 0,
+      `${await page.locator('#people-without-a-place li').count()} listed`,
+    );
+
+    // Every pin has to lead somewhere. Several people at one address is the
+    // ordinary case in a household organiser — two parents at one house share
+    // a coordinate exactly — so a cluster that only ever zoomed would swallow
+    // those taps for ever. Tapping through to a person is the assertion.
+    // Put the placeless list away first: it is part of the sheet, it overlaps
+    // the lower pins, and a forced click would land on whichever of its rows
+    // is on top rather than on the marker underneath.
+    await placeless.click();
+    // `dispatchEvent` rather than a mouse click for the same reason — a marker
+    // is a floating element over a canvas and its centre is not reliably the
+    // topmost thing at that point.
+    await page.locator('.pin').first().dispatchEvent('click');
+    await page.waitForTimeout(1500);
+    let card = await page.locator('.sheet').innerText();
+    if (/people at /i.test(card)) {
+      // A cluster zooming cannot separate: it lists its people instead.
+      await page.locator('.sheet ul li button').first().dispatchEvent('click');
+      await page.waitForTimeout(600);
+      card = await page.locator('.sheet').innerText();
+    }
+    check('tapping a pin reaches a person card', card.includes('Open '), card.split('\n')[0]);
+    check(
+      'and the address says which place it came from, rather than claiming to be the person’s own',
+      card.includes('via '),
+    );
+    check(
+      'the card offers the page and directions',
+      (await page.locator('.sheet a[href^="/people/"]').count()) === 1 &&
+        (await page.locator('.sheet a[href^="https://www.openstreetmap.org/directions"]').count()) === 1,
+    );
 
     await ctx.close();
   }

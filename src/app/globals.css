@@ -19,6 +19,15 @@
   --text-lg: 0.9375rem;    --text-lg--line-height: 1.4;     /* 15px  detail-page lead */
   --text-xl: 1.0625rem;    --text-xl--line-height: 1.28;    /* 17px  page titles */
 
+  /* Two more, for one screen. Home on a phone is read at arm's length while
+     something else is happening, and the six-step scale tops out at a page
+     title — which is the right ceiling for a dense list and the wrong one for
+     the number of things overdue today. They are used at phone widths only;
+     from `md` up Home returns to the scale above, where the rest of the
+     system's page titles live and nothing has changed. */
+  --text-2xl: 1.75rem;     --text-2xl--line-height: 1.15;   /* 28px  a stat */
+  --text-3xl: 1.875rem;    --text-3xl--line-height: 1.1;    /* 30px  the day */
+
   /* Radius is a two-value idea: things inside a row, and things that are a
      surface. DEFAULT is pinned so the 169 existing "rounded" uses land on the
      scale rather than on a framework default nobody chose. */
@@ -115,8 +124,12 @@
   /* How much room the fixed bottom bar needs from the page beneath it. One
      token so the bar's height and the padding that clears it cannot disagree —
      they were two numbers in two files, which is how a list ends with its last
-     row permanently hidden. Zero from `md` up, where there is no bar. */
-  --tabbar:        calc(3.25rem + env(safe-area-inset-bottom));
+     row permanently hidden. The capture FAB hangs off this too. Zero from `md`
+     up, where there is no bar.
+
+     3.5rem, not 3.25rem: a tab is a 22px icon over a 12px label, and four tabs
+     across a 390px phone can afford the height that six could not. */
+  --tabbar:        calc(3.5rem + env(safe-area-inset-bottom));
 
   /* The readable measure. A dense row stops helping when its title and its date
      are 1500px apart, which is what a full-bleed list does on a wide monitor.
@@ -362,8 +375,13 @@ button[aria-busy='true'],
     padding: var(--row-pad-y) var(--row-pad-x);
   }
   .row + .row { border-top: 1px solid var(--line); }
+  /* 12px, not 11px. A label set in caps at 11px with 0.08em of tracking is
+     below the floor at which it can be read on a phone at arm's length, and
+     these are the words that say what a whole section of the screen is. The
+     other 11px uses — a chip, a count in a corner — are read in context and
+     stay where they are. */
   .section-label {
-    font-size: var(--text-2xs); font-weight: 500;
+    font-size: var(--text-xs); font-weight: 500;
     letter-spacing: 0.08em; text-transform: uppercase;
     color: var(--text-muted);
   }
@@ -425,8 +443,9 @@ button[aria-busy='true'],
 
   /* The bottom bar. A tab is a touch target before it is a label: 44px is the
      smallest thing a thumb hits reliably, and it is a floor rather than a
-     height so a long label may still wrap. */
-  .tab { min-height: 2.75rem; }
+     height so a long label may still wrap. 56px is what four tabs can afford
+     and six could not — a 22px icon over a 12px label, both legible. */
+  .tab { min-height: 3.5rem; }
   .tab[aria-current='page'] { color: var(--text); }
   .tab[aria-current='page']::before {
     content: '';
@@ -442,12 +461,117 @@ button[aria-busy='true'],
   /* Reading surfaces cap at the measure; grids opt out by not using it. */
   .measure { max-width: var(--measure); }
 
+  /* Capture, as a floating button. 60px so it is unmistakably the primary
+     action and not a fifth tab that escaped; `right: 20px` and a bottom edge
+     that hangs off `--tabbar`, which already carries the home indicator.
+
+     The ring is the third box-shadow in this file and the elevation note above
+     says there are two. It qualifies on the same grounds as the other two: a
+     hard-edged ring whose only job is to separate an element from a substrate
+     the palette cannot predict — here, whatever list row is scrolling beneath
+     it. Not a shadow, and not decorative. */
+  .fab {
+    position: fixed;
+    right: 20px;
+    bottom: calc(var(--tabbar) + 1rem);
+    z-index: 35;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 3.75rem; height: 3.75rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-text);
+    box-shadow: 0 0 0 4px var(--bg);
+  }
+  .fab:hover  { background: var(--accent-hover); }
+  .fab:active { background: var(--accent-pressed); translate: 0 1px; }
+
   /* Range switch — Today / Week / Month. Selection is carried by a raised
      surface, a stronger edge and weight 600: three signals, none of them hue,
      because this control sits directly above ten coloured chips. */
   .seg { display: inline-flex; gap: 0; background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 2px; }
   .seg > * { padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--text-muted); background: none; border: 1px solid transparent; }
-  .seg > [aria-current='true'] { background: var(--bg-raised); border-color: var(--line-strong); color: var(--text); font-weight: 600; }
+  /* Both spellings of "this one". `true` is what a `role="group"` of buttons
+     carries; `page` is what a link to the page you are already on carries, and
+     the calendar's Day/Week/Month is made of links. Neither is more correct
+     than the other — they describe different elements — so the selector takes
+     both rather than making one of them lie for the sake of a stylesheet. */
+  .seg > [aria-current='true'],
+  .seg > [aria-current='page'] { background: var(--bg-raised); border-color: var(--line-strong); color: var(--text); font-weight: 600; }
+
+  /* A row of segments that does not fit, and says so by scrolling.
+     `.seg` is the other shape: a small closed set that fits, so it gets a
+     border and a raised selection. Nine task lists never fit on a 390px
+     screen, so this one runs off the edge instead of shrinking every label to
+     illegibility — and selection is an underline rather than a raised chip,
+     because a raised chip inside a scroller reads as a button that moves.
+
+     The 2px accent is an inset shadow rather than a border-bottom so that
+     turning it on does not change the segment's height and shove the row. */
+  .segbar {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .segbar::-webkit-scrollbar { display: none; }
+  .segbar > * {
+    flex: none;
+    display: inline-flex; align-items: center; gap: 0.375rem;
+    padding: 0.625rem 0.75rem;
+    min-height: 2.75rem;
+    font-size: var(--text-lg);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .segbar > [aria-current='page'] {
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  /* A scrolling row of filter pills. Same scroller as `.segbar`, different
+     job: a segment says which one page you are on, a pill says which of
+     several filters are switched on, so they can be on together and each has
+     an edge of its own.
+
+     Selection is a raised surface, a stronger edge and weight 600 — the three
+     non-hue signals `.seg` uses, for the same reason. This row sits directly
+     above search results carrying category chips, and a filled accent pill
+     would be the loudest colour on a page whose whole job is to let ten
+     category colours mean something. 44px so each one is a thumb target. */
+  .chipbar {
+    display: flex; gap: 0.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .chipbar::-webkit-scrollbar { display: none; }
+  .chipbar > * {
+    flex: none;
+    display: inline-flex; align-items: center; gap: 0.375rem;
+    min-height: 2.75rem;
+    padding-inline: 0.875rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--bg-sunken);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+  .chipbar > [aria-current='true'] {
+    background: var(--bg-raised);
+    border-color: var(--line-strong);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* A settings row: icon, label, whatever it has to say for itself, chevron.
+     44px so the whole row is the target, not just the words in it. */
+  .set-row {
+    display: flex; align-items: center; gap: 0.625rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 1.25rem;
+  }
 
   /* An agenda block. Bigger than a row because it is the thing you read at a
      glance in the morning; the category colour lives on the left edge only, so
@@ -471,13 +595,56 @@ button[aria-busy='true'],
   /* Summary numbers. Tabular, quiet label, no card — a stat that needs a box
      around it is a stat nobody trusted. */
   .stat { display: flex; flex-direction: column; gap: 0.125rem; }
-  .stat-num { font-size: var(--text-xl); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  /* 28px on a phone, where the strip is the first thing read and there is
+     nothing beside it competing; back to the page-title size from `md` up,
+     where it sits in a row with a sidebar and a calendar and 28px would be
+     shouting. */
+  .stat-num { font-size: var(--text-2xl); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  @media (min-width: 48rem) {
+    .stat-num { font-size: var(--text-xl); }
+  }
 
   /* Map. The surface is chrome; pins carry the person's colour and a label,
      never colour alone. */
   .map { background: var(--map-water); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
   .map-land { fill: var(--map-land); stroke: var(--map-line); stroke-width: 1; }
-  .pin { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.0625rem 0.375rem 0.0625rem 0.25rem; border-radius: 999px; background: var(--bg-raised); border: 1px solid var(--line); font-size: var(--text-2xs); font-weight: 500; white-space: nowrap; box-shadow: 0 0 0 2px var(--map-land); }
+  .pin { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.0625rem 0.375rem 0.0625rem 0.25rem; border-radius: 999px; background: var(--bg-raised); border: 1px solid var(--line); font-size: var(--text-2xs); font-weight: 500; white-space: nowrap; box-shadow: 0 0 0 2px var(--map-land); color: var(--text); cursor: pointer; }
+
+  /* The avatar inside a pin, and the same initials circle the list uses at
+     44px. Colour comes from the category ramp and is never the only cue — the
+     name is right next to it, which is the whole reason a pin is a chip and
+     not a dot. */
+  .pin-avatar {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.125rem; height: 1.125rem;
+    border-radius: 999px;
+    font-size: 0.5625rem; font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  /* Several pins in the same few pixels, said as a number rather than as a
+     pile of overlapping chips nobody can read or tap. */
+  .pin-cluster { padding-inline: 0.5rem; }
+
+  /* A sheet raised from the bottom edge. It owns the bottom-right corner while
+     it is up, which is why the capture FAB stands down on the map view — two
+     things fighting for the same 60px is how a thumb hits the wrong one.
+
+     Not a dialog: it does not cover the map, it sits under it, and the map
+     stays live and pannable behind it. So no backdrop, no focus trap, and
+     dismissing it is an ordinary close button. */
+  .sheet {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 10;
+    max-height: 60%;
+    overflow-y: auto;
+    background: var(--bg-raised);
+    border-top: 1px solid var(--line);
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 
   /* Elevation stays flat. Surface, sunken and a hairline are the whole
      vocabulary and that is the right answer here: a shadow on a flat row is a

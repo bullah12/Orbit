@@ -30,7 +30,13 @@ export function TaskRow({
   const overdue = !done && task.dueOn != null && daysFromToday(task.dueOn) < 0;
 
   return (
-    <li className="hairline row-hover group flex items-baseline gap-2.5 border-b px-3 py-1.5">
+    // 56px on a phone, and the old density from `sm` up. The padding rather
+    // than a `min-height` is what gets there, so a row whose metadata wraps
+    // onto a second line grows past 56 instead of crushing into it — and a
+    // single-line row is balanced rather than top-heavy. Desktop is untouched:
+    // this list is read a hundred rows at a time with a mouse, and 56px rows
+    // would turn a screenful into a third of one.
+    <li className="hairline row-hover group flex items-baseline gap-2.5 border-b px-3 py-[1.125rem] sm:py-1.5">
       {/* Aligned to the title's line, not to the middle of the row: once the
           metadata wraps below the title on a narrow screen the row is two lines
           tall, and a centred box floats down beside the wrong one. */}
@@ -40,14 +46,16 @@ export function TaskRow({
         <button
           type="submit"
           aria-label={done ? `Mark “${task.title}” as not done` : `Mark “${task.title}” as done`}
-          className="flex h-4 w-4 items-center justify-center rounded-[4px] border"
+          // 22px is the thumb-sized version of the same box; `sm` puts it back
+          // to 16px, where it is being hit with a pointer.
+          className="flex h-[22px] w-[22px] items-center justify-center rounded-[4px] border sm:h-4 sm:w-4"
           style={{
             borderColor: done ? 'var(--accent)' : 'var(--line-strong)',
             background: done ? 'var(--accent)' : 'transparent',
             color: 'var(--accent-text)',
           }}
         >
-          {done && <Icon name="check" size={10} strokeWidth={3} />}
+          {done && <Icon name="check" size={12} strokeWidth={3} />}
         </button>
       </form>
 

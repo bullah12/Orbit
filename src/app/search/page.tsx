@@ -88,25 +88,10 @@ export default async function SearchPage({
             </button>
           </div>
 
-          <fieldset className="flex flex-wrap items-center gap-3">
-            <legend className="faint text-2xs font-semibold uppercase tracking-wider">
-              Look in
-            </legend>
-            {SEARCH_KINDS.map((kind) => (
-              <label key={kind} className="flex items-center gap-1.5 text-xs">
-                <input
-                  type="checkbox"
-                  name="kind"
-                  value={kind}
-                  defaultChecked={kinds.includes(kind)}
-                />
-                <Icon name={KIND_ICON[kind]} size={12} className="muted" />
-                {KIND_PLURAL[kind]}
-              </label>
-            ))}
-          </fieldset>
         </form>
       </header>
+
+      <KindChips q={q.text} requested={requested} searched={kinds} counts={results.counts} />
 
       <div className="hairline flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-5 py-2">
         <p aria-live="polite" className="muted text-xs">
@@ -145,6 +130,84 @@ export default async function SearchPage({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The five kinds, as a scrolling row of count chips.
+ *
+ * They were five checkboxes in a `fieldset`, which on a 390px screen wrapped
+ * to three lines of 12px labels above the results — a control taller than the
+ * first result, for something most people set once and never touch. As chips
+ * they are one line that scrolls, each one carrying its own number.
+ *
+ * **Links, not inputs, and the same GET.** Each chip is the URL you would have
+ * got by ticking that box and pressing Search, so the page stays bookmarkable,
+ * the back button undoes a filter, and no JavaScript is needed to change one.
+ * They toggle rather than select: tapping an active chip takes that kind out,
+ * exactly as unticking it did. Removing the last one lands on All, because
+ * "search nothing" is not a state worth being able to reach.
+ *
+ * **A chip only shows a number if that kind was actually searched**, and that
+ * is deliberate. The page's standing rule is that unticking a kind does not
+ * hide results you could see, it declines to look for them — so a count for a
+ * kind nobody looked for would have to come from a sixth query run purely to
+ * populate a label, and would quietly turn the filter into a display filter.
+ * With no filter set, which is how the page arrives, all five were searched
+ * and all five have numbers.
+ */
+function KindChips({
+  q,
+  requested,
+  searched,
+  counts,
+}: {
+  q: string;
+  /** What the URL asked for. Empty means "all five", which is the default. */
+  requested: SearchKind[];
+  /** What was actually searched — the same five when nothing was requested. */
+  searched: SearchKind[];
+  counts: Partial<Record<SearchKind, number>>;
+}) {
+  const href = (kinds: SearchKind[]) => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    for (const k of kinds) p.append('kind', k);
+    const qs = p.toString();
+    return `/search${qs ? `?${qs}` : ''}`;
+  };
+
+  const total = searched.reduce((n, k) => n + (counts[k] ?? 0), 0);
+  const all = requested.length === 0;
+
+  return (
+    <nav
+      className="chipbar hairline border-b px-5 py-2"
+      aria-label="Which kinds to search"
+      id="search-kinds"
+    >
+      <Link href={href([]) as never} aria-current={all ? 'true' : undefined}>
+        All
+        <span className="faint tabular-nums">{total}</span>
+      </Link>
+
+      {SEARCH_KINDS.map((kind) => {
+        const on = requested.includes(kind);
+        const next = on ? requested.filter((k) => k !== kind) : [...requested, kind];
+        const n = searched.includes(kind) ? counts[kind] ?? 0 : null;
+        return (
+          <Link
+            key={kind}
+            href={href(next) as never}
+            aria-current={on ? 'true' : undefined}
+          >
+            <Icon name={KIND_ICON[kind]} size={13} className="muted" />
+            {KIND_PLURAL[kind]}
+            {n != null && <span className="faint tabular-nums">{n}</span>}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 

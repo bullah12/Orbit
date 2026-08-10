@@ -7,6 +7,7 @@ import { listSpaces } from '@/lib/queries/spaces';
 import { smartListCounts } from '@/lib/queries/tasks';
 import { Sidebar } from '@/components/Sidebar';
 import { CaptureBar } from '@/components/CaptureBar';
+import { CaptureFab } from '@/components/CaptureFab';
 import { Shortcuts } from '@/components/Shortcuts';
 import { THEME_COLOUR, themeAttribute } from '@/lib/prefs';
 import { readTheme } from '@/lib/prefs/cookies';
@@ -141,6 +142,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             />
             {children}
           </main>
+          {/* Below `md` only, where the capture bar is not rendered. Here
+              rather than in a page for the same reason the bar is here: no
+              page should have to remember to offer capture. */}
+          <CaptureFab spaces={spaces.filter((s) => s.canWrite)} />
           <Shortcuts />
         </div>
       );

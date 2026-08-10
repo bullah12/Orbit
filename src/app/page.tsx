@@ -11,6 +11,7 @@ import { Icon } from '@/components/Icon';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
 import { Agenda } from '@/components/Agenda';
 import { RangeSwitch, isRange, type Range } from '@/components/RangeSwitch';
+import { SearchButton } from '@/components/SearchButton';
 import {
   addDaysISO,
   formatDate,
@@ -90,26 +91,31 @@ export default async function TodayPage({
           squeezed it clipped "Month" to "Mont". */}
       <header className="hairline flex flex-wrap items-baseline gap-x-3 gap-y-1.5 border-b px-5 py-4">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight">
+          {/* 30px on a phone. This is the one heading in the app somebody
+              reads from across a kitchen, and at 17px it was the same size as
+              a section label two inches below it. Back to the system's page
+              title from `md` up, where nothing about the old size was wrong. */}
+          <h1 className="text-3xl font-semibold tracking-[-0.02em] md:text-xl md:tracking-tight">
             {range === 'today' ? 'Today' : range === 'week' ? 'This week' : 'This month'}
           </h1>
           {/* Spelled out rather than 01/08/2026. A page title is read, not
               scanned down a column, and a numeric date at the top of the app is
               the one place the DD/MM–MM/DD ambiguity actually costs something. */}
-          <p className="muted mt-0.5 text-xs">
+          <p className="muted mt-1 text-base md:mt-0.5 md:text-xs">
             {range === 'today'
               ? formatLongDate(today)
               : `${formatLongDate(today)} – ${formatLongDate(days[days.length - 1]!)}`}
           </p>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
           <RangeSwitch current={range} />
+          <SearchButton />
         </div>
       </header>
 
       {/* No card. A stat that needs a box around it is a stat nobody trusted. */}
       <div
-        className="hairline flex flex-wrap items-baseline gap-x-8 gap-y-2 border-b px-5 py-3"
+        className="hairline flex flex-wrap items-baseline gap-x-8 gap-y-2 border-b px-5 py-4 md:py-3"
         style={{ background: 'var(--bg)' }}
       >
         <Stat n={counts.events} label={counts.events === 1 ? 'event' : 'events'} />
@@ -118,8 +124,8 @@ export default async function TodayPage({
             nothing else on this strip is. */}
         <Stat n={counts.overdue} label="overdue" danger={counts.overdue > 0} />
         {yesterday.eventCount > 0 && yesterday.noteCount === 0 && (
-          <span className="faint ml-auto flex items-center gap-1.5 self-center text-2xs">
-            <Icon name="calendar" size={11} />
+          <span className="faint ml-auto flex items-center gap-1.5 self-center text-xs">
+            <Icon name="calendar" size={12} />
             {plural(yesterday.eventCount, 'event')} yesterday, no notes.
           </span>
         )}
@@ -146,7 +152,7 @@ export default async function TodayPage({
                   <SpaceIndicator space={c.space} />
                   <button
                     type="submit"
-                    className="hairline rounded border px-2 py-0.5 text-2xs"
+                    className="hairline rounded border px-2.5 py-1.5 text-xs"
                     aria-label={`Review the week ahead in ${c.space.name}`}
                   >
                     {c.isEnabled ? 'Review it' : 'Review it (switched off)'}
@@ -155,7 +161,7 @@ export default async function TodayPage({
               </li>
             ))}
           </ul>
-          <p className="faint mt-1.5 text-2xs">
+          <p className="faint mt-1.5 text-xs">
             Titles and dates for the next seven days. No note bodies, nothing
             locked, and one space at a time.
           </p>
@@ -172,17 +178,17 @@ export default async function TodayPage({
             {dates.map((d) => (
               <li
                 key={`${d.personId}-${d.kind}-${d.onDate}`}
-                className="hairline row-hover flex flex-wrap items-baseline gap-2 border-b px-5 py-1.5 text-sm"
+                className="hairline row-hover flex min-h-11 flex-wrap items-center gap-2 border-b px-5 py-2 text-base"
               >
-                <Icon name="cake" size={12} className="faint shrink-0" />
+                <Icon name="cake" size={13} className="faint shrink-0" />
                 <Link href={`/people/${d.personId}`} className="min-w-0 truncate">
                   {d.displayName}
                 </Link>
-                <span className="muted text-xs">
+                <span className="muted text-sm">
                   {d.label ?? d.kind}
                   {d.turning != null && d.kind === 'birthday' ? ` — turning ${d.turning}` : ''}
                 </span>
-                <span className="faint ml-auto shrink-0 text-2xs">
+                <span className="faint ml-auto shrink-0 text-xs">
                   {d.daysAway === 0
                     ? 'today'
                     : d.daysAway === 1
@@ -247,7 +253,14 @@ function Stat({ n, label, danger = false }: { n: number; label: string; danger?:
   return (
     <div className="stat" style={danger ? { color: 'var(--danger)' } : undefined}>
       <span className="stat-num">{n}</span>
-      <span className={danger ? 'text-2xs uppercase tracking-wider' : 'section-label'}>
+      {/* `.section-label` is the 12px uppercase label; the danger variant has
+          to restate it rather than compose, because the colour comes from the
+          wrapper and `.section-label` sets its own. */}
+      <span
+        className={
+          danger ? 'text-xs font-medium uppercase tracking-[0.08em]' : 'section-label'
+        }
+      >
         {label}
       </span>
     </div>
@@ -257,7 +270,7 @@ function Stat({ n, label, danger = false }: { n: number; label: string; danger?:
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h2
-      className="hairline section-label border-b px-5 py-1.5"
+      className="hairline section-label border-y px-5 py-2"
       style={{ background: 'var(--bg-sunken)' }}
     >
       {children}

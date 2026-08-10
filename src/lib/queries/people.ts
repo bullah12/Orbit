@@ -15,6 +15,17 @@ export type PersonRow = {
   contactCount: number;
   linkCount: number;
   nextDate: { kind: string; label: string | null; onDate: string } | null;
+  /**
+   * Where they live, if anybody has said. Null is the ordinary case — see
+   * `0017_person_home_place.sql`. `homePlaceId` can be set while `lat`/`lon`
+   * are null: a place typed in by hand and never geocoded is a normal place,
+   * and it is an address without a pin rather than a broken row.
+   */
+  homePlaceId: string | null;
+  homePlaceName: string | null;
+  homePlaceAddress: string | null;
+  homeLat: number | null;
+  homeLon: number | null;
 };
 
 const PERSON_SELECT = `
@@ -28,8 +39,24 @@ const PERSON_SELECT = `
   jsonb_build_object('id', s.id, 'name', s.name, 'shortLabel', s.short_label,
                      'colour', s.colour, 'icon', s.icon) as space,
   case when c.id is null then null else
-    jsonb_build_object('name', c.name, 'colour', c.colour, 'icon', c.icon) end as category
+    jsonb_build_object('name', c.name, 'colour', c.colour, 'icon', c.icon) end as category,
+  p.home_place_id       as "homePlaceId",
+  hp.name               as "homePlaceName",
+  hp.address_text       as "homePlaceAddress",
+  ST_Y(hp.geom::geometry) as "homeLat",
+  ST_X(hp.geom::geometry) as "homeLon"
 `;
+
+/**
+ * The home place, joined for every read of a person.
+ *
+ * `left join`, and it has to stay one: a person with no place is the ordinary
+ * case, and an inner join here would silently shorten every list in the app to
+ * the people who happen to have an address. It is also a left join *through*
+ * RLS — a place in a space the caller cannot read resolves to no row, so the
+ * person still appears and their address does not.
+ */
+const HOME_PLACE_JOIN = `left join orbit.places hp on hp.id = p.home_place_id`;
 
 export async function listPeople(
   userId: string,
@@ -48,6 +75,7 @@ export async function listPeople(
       from orbit.people p
       join orbit.spaces s on s.id = p.space_id
       left join orbit.categories c on c.id = p.category_id
+      ${tx.unsafe(HOME_PLACE_JOIN)}
       left join lateral (
         select count(*)::int as n from orbit.person_contacts x where x.person_id = p.id
       ) ct on true
@@ -138,6 +166,7 @@ export async function getPerson(
       from orbit.people p
       join orbit.spaces s on s.id = p.space_id
       left join orbit.categories c on c.id = p.category_id
+      ${tx.unsafe(HOME_PLACE_JOIN)}
       where p.id = ${id}::uuid
     `;
     const person = rows[0];
