@@ -12,6 +12,7 @@ import {
 } from '@/lib/queries/people';
 import { listCategories, type CategoryOption } from '@/lib/queries/tasks';
 import { listSpaces, previewMove, type SpaceSummary } from '@/lib/queries/spaces';
+import { listPlaces, type PlaceRow } from '@/lib/queries/places';
 import {
   addPersonContact,
   addPersonDate,
@@ -55,10 +56,13 @@ export default async function PersonPage({
   if (!result) notFound();
   const { person, contacts, dates, links, mentions } = result;
 
-  const [categories, spaces, candidates] = await Promise.all([
+  const [categories, spaces, candidates, places] = await Promise.all([
     listCategories(user.id, person.space.id),
     listSpaces(user.id),
     person.isLocked ? Promise.resolve([]) : listLinkCandidates(user.id, person.id),
+    // Only this person's own space: the home place has to live where they do,
+    // and `updatePerson` re-checks that independently of what is offered here.
+    listPlaces(user.id, { spaceId: person.space.id }),
   ]);
 
   const targets = spaces.filter((s) => s.canWrite && s.id !== person.space.id);
@@ -105,7 +109,7 @@ export default async function PersonPage({
         </div>
       ) : (
         <>
-          <EditForm person={person} categories={categories} />
+          <EditForm person={person} categories={categories} places={places} />
           <ContactsSection person={person} contacts={contacts} />
           <DatesSection person={person} dates={dates} />
         </>
@@ -296,9 +300,12 @@ function LinkSection({
 function EditForm({
   person,
   categories,
+  places,
 }: {
   person: PersonRow;
   categories: CategoryOption[];
+  /** Places in this person's own space — the only ones the action will accept. */
+  places: PlaceRow[];
 }) {
   return (
     <form action={updatePerson} className="flex flex-col gap-4 px-5 py-4">
@@ -349,6 +356,39 @@ function EditForm({
           </select>
         </Field>
       </div>
+
+      {/*
+        Where they live. Until migration 0017 there was nowhere to put this, so
+        People could not be drawn on a map from anything better than attendance
+        history — which is where somebody has *been*, not where they live.
+
+        A select of existing places rather than a free-text address: an address
+        typed here would be a second, unstructured copy of a place record, with
+        no coordinates, no geocoding and nothing linking the two. It offers only
+        this person's own space, which is also the only thing `updatePerson`
+        will accept.
+      */}
+      <Field
+        label="Home"
+        id="person-home-place"
+        hint={places.length === 0 ? 'no places in this space yet' : 'a place in this space'}
+      >
+        <select
+          id="person-home-place"
+          name="homePlaceId"
+          defaultValue={person.homePlaceId ?? ''}
+          className="input"
+          disabled={places.length === 0}
+        >
+          <option value="">No place recorded</option>
+          {places.map((pl) => (
+            <option key={pl.id} value={pl.id}>
+              {pl.name}
+              {pl.city ? ` — ${pl.city}` : ''}
+            </option>
+          ))}
+        </select>
+      </Field>
 
       <Field label="Notes" id="person-notes" hint="Markdown">
         <textarea

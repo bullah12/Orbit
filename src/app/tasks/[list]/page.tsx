@@ -5,9 +5,12 @@ import {
   assignableBySpace,
   categoriesBySpace,
   listTasks,
+  smartListCounts,
   SMART_LISTS,
   isSmartListKey,
 } from '@/lib/queries/tasks';
+import { TaskListTabs } from '@/components/TaskListTabs';
+import { SearchButton } from '@/components/SearchButton';
 import { TaskRow } from '@/components/TaskRow';
 import { ComposeTask } from '@/components/ComposeTask';
 import { SpaceIndicator } from '@/components/SpaceIndicator';
@@ -29,12 +32,15 @@ export default async function TaskListPage({
   if (!isSmartListKey(list)) notFound();
 
   const user = await requireUser();
-  const [spaces, categories, tasks, assignable, preferredSpaceRaw] = await Promise.all([
+  const [spaces, categories, tasks, assignable, preferredSpaceRaw, counts] = await Promise.all([
     listSpaces(user.id),
     categoriesBySpace(user.id),
     listTasks(user.id, list, { spaceId: spaceId ?? null }),
     assignableBySpace(user.id),
     readDefaultSpaceRaw(),
+    // The segment counts. Same query the rail's counts come from, scoped to
+    // the same space, so the two cannot disagree by two inches.
+    smartListCounts(user.id, spaceId ?? null),
   ]);
 
   // Standing in a space wins over the preference: `?space=` means somebody
@@ -55,13 +61,21 @@ export default async function TaskListPage({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="hairline border-b px-5 py-4">
-        <div className="flex flex-wrap items-baseline gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-semibold">{meta.label}</h1>
           {activeSpace && <SpaceIndicator space={activeSpace} size="md" />}
           <span className="faint text-xs">{plural(tasks.length, 'task')}</span>
+          <span className="ml-auto">
+            <SearchButton kind="task" label="Search tasks" />
+          </span>
         </div>
+        {/* The active list's own sentence, under the title. It was already
+            here; the segments above make it carry more, because the label in
+            a scrolling row of nine is the shortest a list is ever named. */}
         <p className="muted mt-0.5 text-xs">{meta.blurb}</p>
       </header>
+
+      <TaskListTabs active={list} counts={counts} spaceId={spaceId ?? null} />
 
       <ComposeTask
         spaces={spaces}

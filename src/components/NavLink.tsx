@@ -37,13 +37,11 @@ export function NavLink({
   icon,
   label,
   count,
-  onNavigate,
 }: {
   href: string;
   icon: string;
   label: string;
   count?: number;
-  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
   const active = isActive(href, pathname, useSearchParams().get('space'));
@@ -51,7 +49,6 @@ export function NavLink({
   return (
     <Link
       href={href as never}
-      onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
       className="row-hover nav-link flex items-center gap-2 rounded px-2 py-1 text-sm"
     >

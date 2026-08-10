@@ -2351,3 +2351,131 @@ of it (a cookie that cannot be written during a render) is certain regardless.
   them. Run because `src/lib/auth/` is a pure module by the standing rule.
 - `./scripts/db-test.sh` — **not run**. No policy and no definer function was
   touched, and the real project could not be reached to run it there.
+
+---
+
+## Session 16 — the mobile redesign: four tabs, a map, and a column for where somebody lives
+
+Mobile is the primary surface now, and this session implemented a decided
+design rather than exploring one. Seven numbered steps, each built before the
+next; `pnpm smoke` **482/482** at the end, up from 479 (the phone section grew).
+
+### The tab bar went from six to four, and the drawer became a page
+
+Six tabs on a 390px screen is 65px each: a 22px icon under a label that has to
+be abbreviated to fit under it. Four is the number at which a tab can be a
+touch target and a whole word at the same time — Home, Calendar, People, More.
+
+**Capture left the bar and became a FAB.** It was spending a sixth of the bar
+to say "plus". As a floating button it is over every tab rather than beside
+three of them. It is rendered once from the root layout, hangs off the same
+`--tabbar` token that `<main>`'s bottom padding reads, and stands down on the
+People map view where the bottom sheet owns that corner.
+
+**Search left the bar for the header of each page that bears a list.** A tab
+was the wrong shape for it: search is something you do *to* the list in front
+of you, not a sixth place to stand — and in a header it can carry that page's
+context into the query (`/search?kind=person` from People), which a tab
+pointing at a bare `/search` never could.
+
+**The drawer is gone and `/more` is a route.** A drawer covering the page needs
+a backdrop, an Escape handler and a focus trap, all so somebody can reach
+Notes; it has no URL, the back button does not close it, and the whole of the
+rail has to be rendered a second time to fill it. A route needs none of that.
+Removing the focus trap is the part worth saying out loud.
+
+The sticky `CaptureBar` is now `md:` and up only. On a phone it spent a whole
+row on a field that is empty almost all of the time, directly above the heading
+it was pushing down. The FAB replaces it and the two are hidden at each other's
+widths, so exactly one is ever on screen.
+
+### `PRIMARY`/`SECONDARY`/`ADMIN` had to move out of `SidebarNav.tsx`
+
+`/more` sources its groups from those arrays, and it is a Server Component.
+`SidebarNav.tsx` is `'use client'`, and **a Server Component importing anything
+from a client module gets a client reference, not the value** — the bundler
+substitutes a proxy so the thing can cross the boundary, which is exactly right
+for a component and useless for an array. It does not fail at build time. It
+fails as `ADMIN.filter is not a function`, at runtime, on the page.
+
+So the data lives in `src/lib/nav.ts`, with no directive, and both sides import
+it. `SidebarNav` still re-exports all three, so nothing that already imported
+them from there had to change.
+
+### Nine task routes, one page, and the segments are links
+
+`/tasks/[list]` collapses to one page with a horizontally scrollable filter.
+The segments are `<Link>`s to the nine existing routes with the active one
+derived from the route param, **not** client state — `/tasks/overdue` is a URL
+somebody bookmarks and lands on from Home's "see all", so the segment has to
+reflect the URL rather than recover from it. That also keeps the whole page a
+server component. Counts come from the same `smartListCounts` the rail uses,
+scoped to the same space, so the two cannot disagree two inches apart.
+
+### The person↔place link — migration 0017
+
+There was none. `queries/places.ts` exposes an association derived from
+`event_attendees → events.place_id`, which is attendance history: it says
+Dr Iqbal was at the surgery and would say the same of anybody who once had an
+appointment there. A map drawn on that basis is a map of meetings labelled
+home. So: `people.home_place_id`, nullable, `on delete set null`.
+
+**Null is the ordinary case, not a gap.** Most people in a household organiser
+have no address and never will. Every reader keeps those rows — `listPeople`
+left-joins — and the map says out loud how many people it is not drawing rather
+than quietly showing a shorter list. The header carries the fraction
+("23 of 42 have a place") and the sheet carries a permanent row that opens the
+list of the rest.
+
+Same-space is enforced in the writing statement, not as a check constraint,
+exactly as `category_id` already was: `updatePerson` resolves the id through a
+subquery filtered on `p.space_id`, and the picker only offers places from the
+person's own space. RLS is unchanged and needed no change.
+
+### The map: MapLibre, lazily, and vector for one specific reason
+
+`next/dynamic({ ssr: false })`, so ~220 KB never lands in the Home bundle —
+verified, not assumed. Not a CDN script: the service worker precaches what the
+build emits and cannot see a `<script src="https://…">`, and a map that only
+works online in an app with an offline shell breaks exactly where a household
+organiser gets used.
+
+**Vector rather than raster because Orbit ships a real dark mode.** A raster
+basemap is pixels baked at one lightness; at sunset the app goes dark and the
+map stays a bright rectangle. A vector style is restyleable at runtime, which
+is what lets the ground be repainted from the actual computed `--map-water` and
+`--map-land` values rather than from a stock style's second opinion about what
+land looks like.
+
+Clustering is done in JavaScript on projected pixel distance rather than with
+MapLibre's GeoJSON clustering, because the pins are HTML chips — an avatar and
+a name — and that form is the whole reason a pin is not a coloured dot.
+
+**The bug that only shows up with real data:** several people share one address.
+Two parents and a child at one house have pins at *identical* coordinates, and
+no amount of zoom separates them — so a cluster that only ever zoomed in
+swallowed those taps for ever. A cluster now checks whether zooming would
+actually split it; when it would not, it opens and lists its people instead.
+This is the ordinary case in a household organiser, not an edge.
+
+### A seed lesson worth more than the change that caused it
+
+Adding `chance()`/`pick()` calls to the people loop to assign home places broke
+a smoke check **about moving notes**, forty lines further down the seed. `rnd`
+is one `mulberry32` stream shared by the whole file: every draw taken shifts
+every draw after it, so two new calls moved a note into a different space and
+the fixture shifted underneath the suite.
+
+The assignment is now derived from the loop index and consumes no randomness.
+**Anything added to an existing seed loop has to be stream-neutral**, or the
+failure surfaces somewhere unrelated and looks like a regression in code nobody
+touched.
+
+### Verified against
+
+- `pnpm build` — clean, after each numbered step.
+- `pnpm smoke` — **482/482**, full suite, on a fresh build and a fresh reseed.
+- `pnpm test` and `./scripts/db-test.sh` — **not run**, per the standing rule in
+  `CLAUDE.md`. No pure module in `src/lib/` changed behaviour (`src/lib/nav.ts`
+  is new data, moved verbatim), and no policy or definer function was touched;
+  0017 adds a column and an index and leaves RLS alone.

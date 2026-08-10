@@ -468,6 +468,7 @@ export async function updatePerson(formData: FormData) {
   const pronouns = String(formData.get('pronouns') ?? '').trim() || null;
   const notesMd = String(formData.get('notesMd') ?? '');
   const categoryId = String(formData.get('categoryId') ?? '') || null;
+  const homePlaceId = String(formData.get('homePlaceId') ?? '') || null;
 
   await asUser(user.id, async (tx) => {
     await tx`
@@ -479,6 +480,14 @@ export async function updatePerson(formData: FormData) {
         category_id  = (
           select c.id from orbit.categories c
           where c.id = ${categoryId}::uuid and c.space_id = p.space_id
+        ),
+        -- Same shape as category_id above, and for the same reason: the space
+        -- boundary is enforced in the statement, so an id typed into the form
+        -- by hand resolves to null rather than to a place in another space.
+        -- Migration 0017 sets out why that is here and not a check constraint.
+        home_place_id = (
+          select pl.id from orbit.places pl
+          where pl.id = ${homePlaceId}::uuid and pl.space_id = p.space_id
         ),
         updated_at   = now()
       where p.id = ${id}::uuid and not p.is_locked

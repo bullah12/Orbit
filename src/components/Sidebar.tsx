@@ -11,8 +11,9 @@ import { AccountPanel } from './AccountPanel';
  * Navigation, in its two shapes.
  *
  * `SidebarNav` holds the links and knows nothing about where it is rendered;
- * this file decides that a wide screen gets a fixed rail and a narrow one gets
- * a bottom bar plus a drawer holding the same rail.
+ * this file decides that a wide screen gets a fixed rail. A narrow one gets
+ * `MobileNav`'s four tabs, which reach the rest through `/more` — a page, not
+ * a drawer, so nothing here has to be rendered twice.
  *
  * The bottom slot stays here because the decision behind it is a server
  * decision: the switcher is impersonation by design, so it is rendered only
@@ -48,9 +49,7 @@ export function Sidebar({
         <SidebarNav spaces={spaces} counts={counts} footer={footer} />
       </nav>
 
-      <MobileNav>
-        <SidebarNav spaces={spaces} counts={counts} footer={footer} />
-      </MobileNav>
+      <MobileNav />
     </>
   );
 }

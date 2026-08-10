@@ -299,6 +299,27 @@ async function _listSpaceMembers(userId: string, spaceId: string): Promise<Space
   });
 }
 
+/**
+ * How many people are in each space, keyed by space id.
+ *
+ * `listSpaceMembers` cannot answer this: it excludes `free_busy` participants
+ * because they cannot hold an assignment. For "3 members" on a settings row
+ * they are members — they are in the space, they just see less of it — so this
+ * counts every active row. No `where` on the caller: the policy on
+ * `space_members` already limits it to spaces they are in.
+ */
+export async function spaceMemberCounts(userId: string): Promise<Record<string, number>> {
+  const rows = await asUser(userId, async (tx) => {
+    return tx<{ spaceId: string; n: number }[]>`
+      select m.space_id as "spaceId", count(*)::int as n
+      from orbit.space_members m
+      where m.status = 'active'
+      group by m.space_id
+    `;
+  });
+  return Object.fromEntries(rows.map((r) => [r.spaceId, r.n]));
+}
+
 export type MovePreviewRow = {
   change: 'gains' | 'loses' | 'keeps';
   profileId: string;

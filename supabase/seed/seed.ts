@@ -341,10 +341,31 @@ async function main() {
     const id = uid();
     peopleIds.push(id);
 
+    // Where they live (migration 0017). Deliberately not everybody: null is the
+    // ordinary case for a person in a household organiser, and the People map
+    // has to be exercised against a list where most rows are mappable and a
+    // real minority is not — that minority is what the "N people have no place
+    // yet" row and the "8 of 11 have a place" subtitle exist to be honest
+    // about, and a seed where everyone has an address would never show them.
+    //
+    // Derived from `i`, and deliberately **not** from `chance()`/`pick()`.
+    // `rnd` is one mulberry32 stream shared by the whole seed, so every draw
+    // taken here shifts every draw after it — adding two calls in this loop
+    // moved a note into a different space forty lines further down and broke a
+    // smoke check about moving notes, which had nothing to do with any of this.
+    // Anything added to an existing seed loop has to be stream-neutral or the
+    // whole fixture shifts underneath the suite.
+    const homePlace =
+      space === S_HOME ? (i % 3 === 2 ? null : placeIds[i % placeIds.length]!)
+      : space === S_WORK ? (i % 2 === 0 ? WORK_PLACE : null)
+      : null; // Priya's own space has no places in it.
+
     await sql`
-      insert into orbit.people (id, space_id, owner_id, category_id, display_name, notes_md)
+      insert into orbit.people
+        (id, space_id, owner_id, category_id, display_name, notes_md, home_place_id)
       values (${id}, ${space}, ${PRIYA}, ${catId[space]![cat]!}, ${name},
-              ${chance(0.3) ? `Met through ${pick(['the school', 'choir', 'work', 'the street WhatsApp', 'book club'])}.` : ''})
+              ${chance(0.3) ? `Met through ${pick(['the school', 'choir', 'work', 'the street WhatsApp', 'book club'])}.` : ''},
+              ${homePlace})
     `;
 
     if (chance(0.7)) {
