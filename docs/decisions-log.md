@@ -2001,3 +2001,140 @@ comment saying why is the thing the answer deletes.
   spinner turning, label unchanged.
 - `pnpm test tests/contrast.test.ts` — the one suite outside the smoke rule that
   a palette change must not skip.
+
+---
+
+## Session 14 — the docs catch up with a deployment that already happened
+
+No behaviour changed. `docs/deployment-and-android.md` was written in session 9
+and had drifted far enough to be misleading in three separate directions, and
+four other handoff documents were still asserting things this repository had
+already disproved.
+
+Two **comments** in `src/lib/auth/` were among them — `index.ts` and
+`supabase.ts` both declared the provider *written, never run* — and a comment
+that is factually wrong is worse than no comment, because it is read by somebody
+deciding what to trust. They were corrected in place and say which paths have
+actually been watched. Nothing executable was touched, and the suite was still
+re-run rather than assumed.
+
+### The claim that was falsified inside the repo before anybody edited it
+
+Four documents said `AUTH_PROVIDER=supabase` had never run. Session 13's own
+decisions-log entries say otherwise, twice: *"Reported from a real Supabase
+project"*, with a real account id, and a bug reachable only by signing in.
+Migrations 0014, 0015 and 0016 exist **because** somebody signed into a real
+project and could then do nothing. The provider had been running for a session
+and the contract still said it had never sent a request.
+
+That is the interesting failure here, and it is worth naming: STATUS was
+rewritten completely in session 12 and not at all in session 13, so a fact that
+arrived as a bug report never reached the file whose job is to hold facts.
+
+### "Running in production" is a third label, and it was needed
+
+The temptation was to move `auth:supabase` from *written, never run* to
+*works*. It has not earned that: `works` in STATUS means executed **and
+watched**, and nobody has watched the refresh path, a magic link, a confirmed
+sign-up, or an invitation redeemed by a second real account. The refresh path is
+the one STATUS has named for four sessions as most likely to be wrong.
+
+So the integration table now carries **"running in production, not
+acceptance-tested"** for that one row, and the six other providers keep *written,
+never run* unchanged. A deployment supplied one credential, not seven. Edge 1
+was rewritten from *"the provider has never run"* to *"the provider's refresh
+path has never been watched"*, which is the claim that is actually true and
+actually load-bearing.
+
+`docs/remaining-work.md` §5 — Brief D, the acceptance pass — is now the prompt
+to use rather than a prompt to hold, and its two placeholders can be filled in.
+
+### Serverless stopped being a warning and became a shape
+
+§3 of `docs/deployment-and-android.md` said *"Not Vercel serverless: every page
+is force-dynamic and src/lib/db/index.ts holds a pool."* The reasoning behind it
+is untouched and still exactly right — **a pool is an asset in a process that
+outlives the request and a liability in one that does not** — and it resolves
+the other way now, because it only bites while the app pools for itself.
+`DATABASE_POOL_MAX=1` and `DATABASE_PREPARE=false` against Supabase's
+transaction pooler hand the pooling to Supavisor, and what is left in the
+process is one connection held for one invocation.
+
+The section presents container and serverless as **two supported shapes with
+their own settings** rather than a recommendation and a warning. Neither is a
+code branch on `process.env.VERCEL`: `poolMax()` reads an environment variable
+because the shape of a deployment is a deployment decision and belongs in the
+deployment's own configuration. The single exception is `next.config.ts`
+dropping `output: 'standalone'` on Vercel, which is about build output rather
+than behaviour.
+
+### Brief A is a record now, and it is not a clean sheet
+
+Rewritten from a brief into what shipped against what was specified. Phases 1–4
+landed, including the three things the brief refused on purpose — no
+service-role client, no SDK, no local JWT verification — and Phase 3's hardest
+constraint held: invites needed **no column** on `space_invites`.
+
+Two departures are called out rather than smoothed over:
+
+- **"One migration … the only one this brief authorises"** became four. 0014,
+  0015 and 0016 all arrived in session 13, each argued before it was written.
+  They exist because Brief A left a real account able to sign in and then own
+  nothing, and a space is what every space-scoped table requires.
+- **"You cannot test against a real Supabase project"** was true when written
+  and is the sentence this whole session is about.
+
+The three gotchas were checked individually rather than declared resolved.
+Gotcha 1 — `profiles.id` = `auth.uid()` — is the one that mattered and the one
+worth reading: 0012's trigger resolved it for accounts created **after** the
+trigger existed, and on a real project the accounts are normally there **first**,
+so it failed anyway, silently, exactly as predicted and through a door the
+prediction did not cover. Gotcha 2 was never fixed in code and should not be:
+`0000_bootstrap.sql` still replaces `auth.uid()` unguarded, and the runbook's
+answer is to expect the refusal and run that file with `ON_ERROR_STOP=0`.
+Gotcha 3 is documented commands, and nothing in this repository records anybody
+confirming `orbit_app` owns nothing on the live project — said plainly rather
+than assumed.
+
+### Brief B stays a brief, and keeps the paragraph worth keeping
+
+The Android client is not started and §5 remains a brief. Its scope discipline
+is reproduced unchanged, including *"if you find yourself porting recurrence.ts,
+rules.ts, travel.ts or conflict.ts, stop: you have left the scope"* — that is
+still the most valuable paragraph in the file and the reason calendar is
+read-only.
+
+Two things underneath it had moved and would have sent the next session at
+stale material:
+
+- **The colours.** It said "reuse the colours from `src/app/globals.css`". Every
+  one of them changed: session 12 merged the palette into single `light-dark()`
+  declarations and session 13 re-solved the ten category colours. Kotlin has no
+  `light-dark()`, so the brief now says to take **both halves** of each token —
+  a port that reads only the first ships an app with no dark mode against an app
+  whose dark mode is half of every token — and to convert oklch→sRGB once and
+  check against the ratios `tests/contrast.test.ts` asserts.
+- **The launcher icon.** Session 13 produced the icon set, so the brief now
+  points at the committed SVG sources in `public/icons/src` and names
+  `orbit-icon-maskable.svg` as the adaptive foreground: its safe zone is already
+  drawn for the constraint Android's mask imposes. Redrawing the mark is
+  forbidden rather than merely discouraged.
+
+### A section that did not exist: the PWA and the APK are different things
+
+Nothing in the file distinguished installing the web app from sideloading a
+native client, because when it was written there was only one plan. They are at
+opposite ends now — the PWA is manifest, icon set, service worker and a phone
+layout, all shipped; the APK is a brief and an empty directory — so §0 states
+both, what each gives you, and which one to use today. It also says plainly that
+the PWA covers more than Brief B does, which is the honest reason Brief B keeps
+losing its case.
+
+### Verified against
+
+- `pnpm build` — clean, per `CLAUDE.md`, because a smoke run against a stale
+  build is a green pass for code nobody wrote.
+- `pnpm smoke` — **456/456**, the full suite rather than a filtered run. Session
+  13 recorded 455; the extra one is its own, not this session's.
+- `./scripts/db-test.sh` and `pnpm test` were **not** run: the standing rule is
+  smoke only unless asked, and no migration, policy or pure module was touched.

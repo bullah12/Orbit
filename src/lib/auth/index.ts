@@ -13,8 +13,10 @@ import { currentSupabaseUser } from './supabase';
  * every smoke check depend on it. It is the default and it stays the default.
  *
  * `supabase` verifies a real Supabase session server-side and hands the JWT's
- * `sub` to the existing `asUser()`. It is **written, never run**: there is no
- * project and no credential here. See `src/lib/auth/supabase.ts`.
+ * `sub` to the existing `asUser()`. It **runs in production** against a real
+ * project; there is still no project and no credential *here*, so nothing in a
+ * test or a smoke run exercises it. See `src/lib/auth/supabase.ts` for which of
+ * its paths have actually been watched.
  *
  * Nothing that calls `getCurrentUser()` had to change when the second provider
  * arrived, which is what the interface was for.

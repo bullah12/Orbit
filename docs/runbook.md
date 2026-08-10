@@ -4,9 +4,16 @@ The steps a person has to do, in order, with what to check after each one and
 what going wrong looks like. `docs/deploy.md` is the reference; this is the
 sequence.
 
-**Nothing in this file has been run from this repository.** There is no
-Supabase project, no hosting account and no network here. Where a step cannot
-be verified from a session, it says so.
+**Corrected session 14.** This used to say there is no Supabase project and no
+hosting account. There are both: Orbit is deployed on Vercel against a real
+Supabase project with `AUTH_PROVIDER=supabase`, and this sequence is what got it
+there. **None of it has been run *from this repository*** — there is still no
+network in a session — so every step is written to be verified by the person
+running it, and where something cannot be checked from here it says so.
+
+What the deployment does **not** establish: the refresh path, magic links and a
+real invitation redeemed by a second account are all still unwatched. See
+`docs/remaining-work.md` §5.
 
 Two conventions throughout:
 
@@ -510,9 +517,11 @@ Honest list, none of it new:
 ## After the first real run
 
 `docs/remaining-work.md` §5 is **Brief D**, written for the session that follows
-this one. It is the acceptance pass: it turns "written, never run" into either
-"works" or a numbered list of what broke, and it is written to be handed to an
-agent with the deployed URL filled in.
+this one. It is the acceptance pass: it turns "running in production" into
+either "works" or a numbered list of what broke, and it is written to be handed
+to an agent with the deployed URL filled in. **Session 14: this is now the next
+thing to do** — the deployment exists, so the brief is no longer waiting on
+anything.
 
 Its one rule is worth repeating here: *the thing that would make that session a
 failure is coming back with "authentication works" without having watched the

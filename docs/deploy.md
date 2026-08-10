@@ -1,14 +1,21 @@
 # Deploying Orbit
 
-Written session 9. **Nothing in this file has been run.** There is no Supabase
-project, no hosting account and no credential in this repository, and none was
-created — this is a set of commands somebody can follow, not a report of a
-deployment. Where a step cannot be verified from here, it says so.
+Written session 9. **`docs/runbook.md` is more current than this file** — it
+carries the Vercel path and the ordered sequence a person actually follows. This
+one remains the reference for the database and the three gotchas.
+
+**Corrected session 14.** This file used to open *"Nothing in this file has been
+run."* The **commands** here have still not been run from a session — there is
+no network in this container — but the **outcome** has happened: Orbit is
+deployed on Vercel against a real Supabase project, with `AUTH_PROVIDER=supabase`
+serving it. Where a step cannot be verified from here, it still says so.
 
 Orbit needs two things: a Postgres database with its migrations applied, and a
-long-lived Node process. This describes Supabase for the first and Fly.io or
-Railway for the second, because those are what §3 of
-`docs/deployment-and-android.md` picked and why.
+Node process to serve it — **either a long-lived container or a serverless
+function**. This describes Supabase for the first and Fly.io or Railway for the
+second; `docs/runbook.md` §4 covers Vercel, which is what is running.
+`docs/deployment-and-android.md` §3 sets out both shapes and why the choice
+changed.
 
 ---
 
@@ -23,10 +30,12 @@ Railway for the second, because those are what §3 of
   Supavisor and serverless is a good fit — a better one for an app opened a few
   times a day that nobody wants to pay to keep warm. `docs/runbook.md` §4 has
   the settings for all three hosts.
-- **`AUTH_PROVIDER=supabase` is written, never run.** It is a real
-  implementation of the GoTrue REST API and no line of it has ever sent a
-  request. The first sign-in on a real project is the first time any of it
-  executes, and it is where surprises will be.
+- **`AUTH_PROVIDER=supabase` runs in production, and most of it is still
+  unwatched — corrected session 14.** This bullet used to say *written, never
+  run*. Signing in has happened on a real project; the **refresh path**, magic
+  links, sign-up with email confirmation on, and an invitation redeemed by a
+  second account have not been observed by anybody who wrote it down. Expect
+  surprises there rather than at the front door.
 - **Seeded data is development data.** A real deployment starts empty: sign up,
   create a space, invite somebody. Do not run `pnpm seed` against a real
   project — the trigger in migration 0012 will refuse an account whose email

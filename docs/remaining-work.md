@@ -7,8 +7,20 @@
 > edge 16), **B7** (the remaining edges) and **B8** (shared lists). §1 and §2
 > below describe the repository as it was *before* that session and are kept as
 > written rather than edited after the fact; **`docs/STATUS.md` is the current
-> contract.** Bucket A is untouched and still blocks everything — §5's Prompt B
-> is the one to use once somebody has done it.
+> contract.**
+>
+> **Corrected session 14.** The last sentence of that note used to read *"Bucket
+> A is untouched and still blocks everything."* **Bucket A has been done.**
+> There is a real Supabase project, the migrations are applied, `orbit_app`
+> exists, Orbit is **deployed on Vercel** with `AUTH_PROVIDER=supabase`, and
+> somebody has signed up — which is what surfaced the bugs migrations 0014–0016
+> fix. §3's Bucket A is marked up accordingly and §1–§2 are left as the historical
+> record they were always meant to be, with two exceptions noted in §2.
+>
+> What Bucket A did **not** produce is the acceptance pass: the refresh path, a
+> magic link and a real invitation redeemed by a second account are all still
+> unwatched. **§5's Prompt B is now the one to use, and its two placeholders can
+> be filled in.**
 
 
 Written session 11, 2026-08-08, on branch `claude/project-completion-status-kkqpxo`.
@@ -74,36 +86,74 @@ Every phase in `docs/phase-plan.md` is ticked except two boxes at the very end:
 | Session 10 — settings and a light/dark override | **not started**, blocked on a decision |
 | Session 10 — a service worker | **not started** |
 
-A fair headline number: **feature work is ~90% done; the project as a
-*deployed, in-use thing* is ~60%**, because nothing has ever been deployed and
-the single most important code path — real authentication — has never executed.
+**Two rows of that table are the exceptions promised in the note at the top:
+the last two are done.** Session 12 built `/settings` with a light/dark
+override — the blocking decision was made on purpose, `light-dark()`, and is
+recorded — and a service worker that caches the shell and no page rendered for
+anybody. They are left in the table because the table is session 11's snapshot;
+`docs/STATUS.md` is the contract.
 
-### The one sentence that governs everything below
+A fair headline number, as of session 11: **feature work is ~90% done; the
+project as a *deployed, in-use thing* is ~60%**, because nothing had ever been
+deployed and the single most important code path — real authentication — had
+never executed.
 
-**`AUTH_PROVIDER=supabase` has never run.** It is a complete implementation of
-GoTrue's REST API and not one line of it has ever sent a request. The same is
-true of `calendar:google`, `ics:http`, `geocoding:nominatim`,
-`travel:openrouteservice`, `push:webpush` and `ai:anthropic`. Every one of them
-is *written, never run*. No session in this container can change that, because
-there is no project, no credential and no network for them.
+### The one sentence that governed everything below, and what replaced it
+
+This section used to read: ***`AUTH_PROVIDER=supabase` has never run.*** That
+was true for four sessions and is **no longer true, corrected session 14.**
+
+Orbit is deployed on Vercel against a real Supabase project and the `supabase`
+provider is what serves it. Signing in has run — two of session 13's bugs were
+reported from that project, one naming a real account id. What has **not** run,
+and is now the sentence that governs the work below: **nobody has watched the
+refresh path, a magic link, or an invitation redeemed by a second real
+account.** "Running in production" is not "works", and the gap between them is
+§5's job.
+
+The other six are unchanged. `calendar:google`, `ics:http`,
+`geocoding:nominatim`, `travel:openrouteservice`, `push:webpush` and
+`ai:anthropic` are each still *written, never run* — a deployment supplied one
+credential, not seven — and no session in this container can change that.
 
 ---
 
 ## 3. What remains, in three buckets
 
-### Bucket A — only a human can do it (blocks everything else)
+### Bucket A — only a human could do it — **done, session 14 correction**
 
-1. **Create the Supabase project**, run `supabase/migrations/*.sql` in order,
-   create the `orbit_app` login role with no ownership and no BYPASSRLS, and
-   check the `on_auth_user_created` trigger exists. `docs/deploy.md` §1 is the
-   command list, including the three gotchas — of which *"`profiles.id` must
-   equal `auth.uid()`"* is the one that fails **silently**: every policy returns
-   zero rows and the app looks empty rather than broken.
-2. **Deploy the container** to Fly.io or Railway (not Vercel serverless — every
-   page is `force-dynamic` and `src/lib/db/index.ts` holds a pool). `docs/deploy.md` §2.
-3. **Sign up once**, and confirm `u.id = p.id`.
+All three happened. They are kept here because they are the sequence for any new
+project, and because what they proved is narrower than it looks.
 
-Until those three happen, "signing in works" stays proven by nothing.
+1. ~~**Create the Supabase project**~~ — **done.** Migrations applied, a login
+   role in place that the deployment connects with, and the
+   `on_auth_user_created` trigger working — the app serves pages and writes
+   rows, which is what proves all three. What is *not* on record anywhere is
+   anybody confirming that role owns nothing and holds no BYPASSRLS; that check
+   is gotcha 3 and it is still worth running once.
+   `docs/runbook.md` is the ordered sequence and is more current than
+   `docs/deploy.md` §1. The three gotchas and how each actually resolved are now
+   written up in `docs/deployment-and-android.md` §2 — including the one that
+   fails **silently**, *"`profiles.id` must equal `auth.uid()`"*, which was
+   resolved by migration 0012's trigger and then **failed anyway** for accounts
+   that existed in Supabase Auth before Orbit's schema did. A trigger on insert
+   cannot fire for a row already there. `0016_adopt_existing_accounts.sql` is
+   the fix; the symptom was signing in fine and seeing nothing at all.
+2. ~~**Deploy the container** to Fly.io or Railway (not Vercel serverless)~~ —
+   **done, and on Vercel.** That parenthesis is superseded. It was right that a
+   pool is a liability in a process that does not outlive the request, and it
+   holds only while the app pools for itself: against Supabase's **transaction
+   pooler** with `DATABASE_POOL_MAX=1` and `DATABASE_PREPARE=false`, the pooling
+   happens in Supavisor and serverless fits — better, for an app opened a few
+   times a day that nobody wants to pay to keep warm. Container and serverless
+   are two supported shapes now, each with its own settings:
+   `docs/deployment-and-android.md` §3, `docs/runbook.md` §4.
+3. ~~**Sign up once**, and confirm `u.id = p.id`~~ — **done**, and it is what
+   surfaced items 1 and 2's real behaviour.
+
+**What is still proven by nothing** is everything past the first sign-in: the
+refresh path, magic links, sign-up with email confirmation on, and an invitation
+redeemed by a second real account. §5 is the prompt that closes it.
 
 ### Bucket B — an agent can finish these, unattended
 
@@ -252,8 +302,13 @@ Paste into a fresh session. Written to run without check-ins.
 ## 5. Prompt B — the acceptance pass, once Bucket A is done
 
 Use this **after** somebody has done the by-hand steps in §3 Bucket A. It is not
-a building prompt; it is the one that turns "written, never run" into either
-"works" or a list of what broke. Fill in the two placeholders.
+a building prompt; it is the one that turns "running in production" into either
+"works" or a list of what broke.
+
+**Session 14: this is now the prompt to use.** Bucket A is done, so the two
+placeholders below can be filled in with the real project ref and the deployed
+URL. They are left as placeholders here on purpose — neither belongs in a
+committed document, and the credentials never do.
 
 > ## Brief D: first run against a real project, and the acceptance pass
 >
@@ -267,10 +322,14 @@ a building prompt; it is the one that turns "written, never run" into either
 > - Credentials are in the environment; do not print them, do not commit them,
 >   and do not write them into any document.
 >
-> **This is the first time `AUTH_PROVIDER=supabase` has ever executed.** STATUS
-> has said for three sessions that this is where surprises will be, and names
-> the refresh path as the part most likely to be wrong. Treat every claim about
-> it as unproven until you have watched it.
+> **`AUTH_PROVIDER=supabase` is what serves that deployment, and almost none of
+> it has been watched.** Signing in has run: it is how the deployment is used at
+> all, and two of session 13's bugs were reported from this project. What nobody
+> has seen execute is **the refresh path** — named for four sessions as the part
+> most likely to be wrong — a **magic link**, a sign-up with email confirmation
+> on, or **an invitation redeemed by a second real account**. Treat every claim
+> about those as unproven until you have watched it. Sign-in working is not
+> evidence about any of them.
 >
 > ### 1. Prove the ground is right before blaming the app
 >
@@ -307,10 +366,11 @@ a building prompt; it is the one that turns "written, never run" into either
 >
 > ### 4. What to produce
 >
-> - **Update the integration table in `docs/STATUS.md`**: `auth:supabase` moves
->   out of "written, never run" **only for the paths you personally watched
->   execute**. Split the row if only some of it ran. The other six providers stay
->   where they are unless you ran them too.
+> - **Update the integration table in `docs/STATUS.md`**: `auth:supabase` is
+>   currently *"running in production, not acceptance-tested"*. It moves to
+>   **works** only for the paths you personally watched execute. Split the row if
+>   only some of it ran. The other six providers stay where they are unless you
+>   ran them too.
 > - **A numbered list of everything that broke**, each with the exact reproduction
 >   and the layer it is in (database, provider, app, deployment).
 > - **Fix what is small and safe and provable from here**, in the same commit as
@@ -330,7 +390,12 @@ a building prompt; it is the one that turns "written, never run" into either
 
 ## 6. If you only do one thing
 
-Do Bucket A. Everything in Bucket B improves an app nobody can reach yet, and
-the riskiest code in the repository — the one path that fails silently and
-looks like an empty app rather than an error — cannot be tested until somebody
-creates a project and signs up once.
+**Corrected session 14.** This used to say *"Do Bucket A"*. Bucket A is done —
+the project exists, the migrations are applied, Orbit is deployed on Vercel, and
+somebody has signed up.
+
+So: **do §5, the acceptance pass.** Everything in Bucket B still improves an app
+whose riskiest path is unproven, and that path is no longer "cannot be tested" —
+it is "can be tested now, and has not been". The one thing that would make that
+session a failure is coming back with "authentication works" without having
+watched the refresh path run.
