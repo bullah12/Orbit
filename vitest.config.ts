@@ -17,6 +17,16 @@ export default defineConfig({
     env: { TZ: 'Europe/London' },
   },
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // `server-only` throws on import unless the resolver is asked for React's
+      // `react-server` condition, which Vitest has no reason to ask for. Without
+      // this alias `src/lib/auth/supabase.ts` cannot be imported by a test at
+      // all — which is most of why the provider's HTTP layer went four sessions
+      // without a single line of it executing. The marker still does its real
+      // job: it is the *bundler* that must refuse a client import, and the
+      // bundler resolves this package for itself.
+      'server-only': fileURLToPath(new URL('./node_modules/server-only/empty.js', import.meta.url)),
+    },
   },
 });

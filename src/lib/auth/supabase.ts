@@ -14,17 +14,23 @@ import {
 /**
  * Supabase Auth, written against the published GoTrue REST API.
  *
- * **Running in production, and mostly unwatched.** This said "written, never
- * run" for four sessions and that is no longer true: Orbit is deployed against
- * a real Supabase project and this provider is what serves it. Signing in has
- * run — it is how two of session 13's bugs were reported.
+ * **Running in production. Executed against a stub, never against the project.**
+ * Orbit is deployed against a real Supabase project and this provider is what
+ * serves it; signing in has run, and it is how two of session 13's bugs were
+ * reported.
  *
- * What nobody has watched execute: `refreshSession` (named for four sessions as
- * the part most likely to be wrong), `sendMagicLink`/`verifyEmailToken`, and a
- * sign-up against a project with email confirmation on. There is still no
- * project and no credential *in this repository*, so nothing here exercises any
- * of it — do not let `AUTH_PROVIDER=dev` passing stand in for it, and do not
- * read "deployed" as "tested".
+ * Session 15 pointed `SUPABASE_URL` at a stub GoTrue and ran the HTTP layer for
+ * the first time — `tests/auth-gotrue.test.ts`. That found two bugs nobody
+ * could see by reading: `redirect_to` was being sent somewhere GoTrue does not
+ * read, so every magic link went to the wrong place, and an unreachable project
+ * threw instead of refusing. Both are fixed and pinned by that file.
+ *
+ * **A stub is not the project.** What still nobody has watched, against real
+ * Supabase: a magic link arriving in a real inbox, a sign-up with email
+ * confirmation on, and `refreshSession` against a server that genuinely rotates
+ * and genuinely revokes. The last one has a known bug that a stub cannot show —
+ * see `currentSupabaseUser` and edge 36. Do not read "tested" here as more than
+ * "the requests are the right shape".
  *
  * Three things this provider deliberately does not do:
  *
@@ -79,21 +85,61 @@ export function supabaseIsConfigured(): boolean {
   }
 }
 
+/**
+ * One call to GoTrue.
+ *
+ * `redirectTo` is a *query* parameter and not a body field, which is not a
+ * detail: GoTrue reads the address it should send somebody back to from
+ * `?redirect_to=` and from nowhere else. Sending it in the body — which this
+ * did, as `options.email_redirect_to`, copying the shape supabase-js takes from
+ * its *caller* rather than the shape it puts on the wire — is silently ignored,
+ * so every magic link and every confirmation email went to the project's Site
+ * URL instead of `/auth/callback`. Nothing fails when that happens; the link
+ * simply lands somewhere that cannot finish signing anybody in.
+ *
+ * A transport failure comes back as a refusal rather than an exception. Every
+ * caller is a server action that renders `{ok:false}` as a sentence on the
+ * sign-in page, and a throw instead escapes to the generic error page — which
+ * says Orbit cannot reach its *database* and names the wrong thing entirely.
+ */
 async function gotrue(
   path: string,
-  init: { method: 'GET' | 'POST'; body?: unknown; accessToken?: string },
+  init: {
+    method: 'GET' | 'POST';
+    body?: unknown;
+    accessToken?: string;
+    redirectTo?: string;
+  },
 ): Promise<{ ok: boolean; status: number; body: unknown }> {
   const { url, anonKey } = config();
-  const res = await fetch(`${url}/auth/v1${path}`, {
-    method: init.method,
-    headers: {
-      apikey: anonKey,
-      authorization: `Bearer ${init.accessToken ?? anonKey}`,
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
-    },
-    body: init.body ? JSON.stringify(init.body) : undefined,
-    cache: 'no-store',
-  });
+  const target = new URL(`${url}/auth/v1${path}`);
+  if (init.redirectTo) target.searchParams.set('redirect_to', init.redirectTo);
+
+  let res: Response;
+  try {
+    res = await fetch(target, {
+      method: init.method,
+      headers: {
+        apikey: anonKey,
+        authorization: `Bearer ${init.accessToken ?? anonKey}`,
+        ...(init.body ? { 'content-type': 'application/json' } : {}),
+      },
+      body: init.body ? JSON.stringify(init.body) : undefined,
+      cache: 'no-store',
+    });
+  } catch {
+    // Deliberately not the underlying message: it is a Node internal
+    // ("fetch failed", "bad port") and says nothing anybody can act on.
+    return {
+      ok: false,
+      status: 0,
+      body: {
+        message:
+          'Supabase could not be reached. The project may be paused, or this server may have no route to it.',
+      },
+    };
+  }
+
   const text = await res.text();
   let body: unknown = null;
   try {
@@ -143,12 +189,12 @@ export async function signUpWithPassword(
 ): Promise<AuthResult<{ session: SupabaseSession | null; confirmationRequired: boolean }>> {
   const res = await gotrue('/signup', {
     method: 'POST',
+    redirectTo,
     body: {
       email,
       password,
       data: { display_name: displayName },
       gotrue_meta_security: {},
-      options: { email_redirect_to: redirectTo },
     },
   });
   if (!res.ok) return failed(res.status, res.body);
@@ -167,7 +213,8 @@ export async function sendMagicLink(
 ): Promise<AuthResult<null>> {
   const res = await gotrue('/otp', {
     method: 'POST',
-    body: { email, create_user: false, email_redirect_to: redirectTo },
+    redirectTo,
+    body: { email, create_user: false, gotrue_meta_security: {} },
   });
   return res.ok ? { ok: true, value: null } : failed(res.status, res.body);
 }
@@ -224,7 +271,15 @@ export async function sessionFromTokens(
   };
 }
 
-async function refreshSession(refreshToken: string): Promise<AuthResult<SupabaseSession>> {
+/**
+ * Trade a refresh token for a new session.
+ *
+ * Exported so it can be driven from a test. GoTrue **rotates**: the answer
+ * carries a *new* refresh token and the one just spent stops working once the
+ * reuse interval passes. Whoever calls this owns storing what comes back — see
+ * the note on `currentSupabaseUser`, which is where that goes wrong.
+ */
+export async function refreshSession(refreshToken: string): Promise<AuthResult<SupabaseSession>> {
   const res = await gotrue('/token?grant_type=refresh_token', {
     method: 'POST',
     body: { refresh_token: refreshToken },
@@ -322,9 +377,21 @@ export async function currentSupabaseUser(): Promise<SessionUser | null> {
     const refreshed = await refreshSession(refreshToken);
     if (refreshed.ok) {
       session = refreshed.value;
-      // Best effort: a Server Component may not write cookies, and a page that
-      // renders is worth more than a rotated token. The next server action or
-      // route handler persists it; until then the refresh token still works.
+      // KNOWN BROKEN — edge 36, argued in docs/decisions-log.md (session 15).
+      //
+      // This said "the next server action persists it; until then the refresh
+      // token still works", and that is wrong. GoTrue **rotates**: the token
+      // just spent is revoked once the reuse interval lapses (10s by default),
+      // and presenting it again is read as theft — Supabase then revokes the
+      // entire token family. A Server Component cannot write cookies, so on a
+      // page render this `persistSession` always throws and the rotated token
+      // is dropped. The cookie still holds the spent one.
+      //
+      // So the first page load after the access token expires renders; the
+      // next one ~10s later refreshes with the same spent token, is refused,
+      // and the session is dead beyond recovery. The fix belongs in a context
+      // that can write cookies — middleware — and is not made here because it
+      // cannot be tested against a real project from this repository.
       try {
         await persistSession(session);
       } catch {

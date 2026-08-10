@@ -2138,3 +2138,216 @@ losing its case.
   13 recorded 455; the extra one is its own, not this session's.
 - `./scripts/db-test.sh` and `pnpm test` were **not** run: the standing rule is
   smoke only unless asked, and no migration, policy or pure module was touched.
+
+---
+
+## Session 15 — Brief D, the acceptance pass that could not be run as written
+
+Branch `claude/orbit-acceptance-real-project-merods`.
+
+### The premise was false, and saying so is the first deliverable
+
+Brief D opens: *"There is a real Supabase project and a real deployment …
+Credentials are in the environment; do not print them, do not commit them."*
+They are not in the environment. There is no `SUPABASE_URL`, no
+`SUPABASE_ANON_KEY`, no `DATABASE_URL`, no `ADMIN_URL` and no `APP_URL` in this
+container; `.env` does not exist and `.env.example` is the committed template it
+has always been. The brief's own **"Supabase project ref"** line is blank — the
+placeholder was never filled in.
+
+So §1 of the brief could not be attempted at all. Every check in it —
+`on_auth_user_created` on `auth.users`, `u.id = p.id` after a sign-up,
+`orbit_app` owning nothing and holding no `BYPASSRLS`,
+`app.provision_missing_accounts()`, `./scripts/db-test.sh` against the real
+project — needs an admin connection string. **None of them ran, and nothing
+below should be read as evidence about any of them.** They are still the first
+thing the next session with a credential should do, in that order, for the
+reason the runbook gives: if `u.id ≠ p.id` every policy returns zero rows and
+says nothing, and the app looks empty rather than broken.
+
+The deployment itself is reachable, and some of it is checkable without a
+credential. That is where this session went.
+
+### What was decided instead, and why
+
+The brief says to work autonomously, choose the option that keeps the local
+checks green, and write the choice down. Three choices:
+
+**1. No accounts were created on the production project.** The brief asks for a
+sign-up, and the deployment would have accepted one. It was not done, for
+reasons that compound:
+
+- **The result could not be checked.** The brief's own gate is `u.id = p.id`,
+  read over `auth.users` — an admin query. Without it a sign-up proves that a
+  form submits, which was never the question.
+- **Every path downstream dead-ends.** Magic link, email confirmation and an
+  invitation to a second account all require receiving mail. There is no
+  mailbox here.
+- **The rows could not be removed afterwards.** No admin connection, so
+  anything created stays in somebody else's production database permanently.
+
+A sign-up under those three conditions is litter with no verification value.
+The `pnpm seed` prohibition in the brief shows the owner already cares about
+what lands in that project; this is the same instinct applied one step further.
+
+**2. The provider was run against a stub GoTrue instead.** This is the
+substitute, and its limits are stated wherever its results are. A stub answers
+the way Supabase's documentation says GoTrue answers — it is proof about the
+*requests Orbit makes* and about *what Orbit does with an answer*, and it is not
+proof about the real project. It found three bugs anyway, one of them the exact
+one `docs/STATUS.md` has named for four sessions.
+
+**3. The deployed build was checked without signing in.** `/health`, the
+redirect for a signed-out visitor, and the sign-in page's own markers. This is
+enough to settle edge 22 on the live deployment and nothing more.
+
+### Edge 36 — the refresh path loses the rotated token, and the session dies
+
+**This is the finding of the session, and it was watched rather than reasoned
+about.** The app was built, pointed at a stub GoTrue with a 45-second access
+token and Supabase's real rotation semantics, and driven in a browser.
+
+GoTrue **rotates**: every refresh returns a *new* refresh token and revokes the
+one just spent, with a 10-second reuse grace that exists specifically so a
+server-rendered app can use the same token twice in quick succession. Reuse
+*outside* that grace is treated as theft — Supabase revokes the entire token
+family, and every token in it stops working for good.
+
+`currentSupabaseUser()` refreshes during a **Server Component render**, and a
+Server Component cannot write cookies. `persistSession()` therefore throws every
+time, into a `catch` that discards it. The cookie keeps the spent token. The
+comment above that `catch` said *"the next server action or route handler
+persists it; until then the refresh token still works"* — and that is the whole
+mistake, stated in the code, for four sessions.
+
+Watched, in the stub's log:
+
+```
+07:27:06.955  POST /token?grant_type=refresh_token -> 200  rotated refresh-2 -> refresh-3
+07:27:21.533  POST /token?grant_type=refresh_token -> 400  !! REUSE after grace (age 14.6s)
+                                                           -> FAMILY family-1 REVOKED
+```
+
+and in the browser: the first page load after expiry **renders normally**, with
+the cookie still holding `refresh-2`; the next load fourteen seconds later
+bounces to `/auth/signin`, and every load after that does too. Signing in again
+is the only way out.
+
+**Reproduction, exactly:** sign in; leave the tab idle until the access token
+expires (one hour on Supabase's default); load a page — it works; wait more than
+ten seconds; load another — you are signed out.
+
+**Why it was not fixed here.** The fix belongs in a context that may write
+cookies, which means middleware: read the access cookie, and when it is expired
+and a refresh cookie exists, refresh, set both cookies on the response, and
+forward the new access token to the render. That is a real change to the request
+path of a live deployment, and three things about it cannot be settled from this
+container:
+
+- **Runtime.** Middleware runs on the Edge runtime by default. It cannot import
+  `src/lib/auth/supabase.ts`, which pulls in `server-only` and the `postgres`
+  pool. The refresh call itself is pure `fetch` and would have to be lifted into
+  its own module with no database import — a small refactor, but one whose
+  correctness is a bundling question that only a real deployment answers.
+- **Rotation against the real server.** A stub cannot prove the cookie set in
+  middleware survives the redirect chains the auth screens use.
+- **The downside is unbounded.** Getting middleware auth wrong signs *everybody*
+  out on *every* request, which is strictly worse than a bug that bites after an
+  hour of idling.
+
+So it is written down rather than shipped, per the brief's instruction to leave
+what needs a decision as a written argument. What *was* done is to correct the
+comment that asserted the opposite, and to stop the app making the bug worse —
+see edge 37.
+
+### Edge 37 — identity was resolved twice per render, and it burnt the grace
+
+The stub log showed the refresh being called **twice, one millisecond apart**.
+`getCurrentUser()` was a plain function; the root layout resolves identity and
+so does every page under it. Under `supabase` that is two GoTrue round trips and
+two `app.identity_profile` queries on every page anybody opens.
+
+The cost is the smaller half. The duplicate landed *inside* the refresh path:
+the second call re-presented a refresh token the first had already spent,
+consuming Supabase's ten-second reuse grace at an age of **0.0 seconds** — on
+the very request that created it. That grace exists for server-rendered apps,
+and Orbit was spending it on itself before anything else could use it.
+
+Fixed with React's `cache()`, which memoises for the lifetime of one request and
+nothing wider — each request gets its own store, so this cannot hand one
+person's identity to another's request. Watched: the double refresh is gone.
+Edge 36 is unchanged by it; this stops it being self-inflicted twice over.
+
+### Edge 38 — `redirect_to` was sent where GoTrue does not read it
+
+`sendMagicLink` and `signUpWithPassword` computed a callback URL, passed it
+down, and put it in the **JSON body** as `options.email_redirect_to`. GoTrue
+reads the redirect target from a **`redirect_to` query parameter** and from
+nowhere else; `options` is a supabase-js concept that never reaches the wire.
+Confirmed against `auth-js`, where `signInWithOtp` and `signUp` pass
+`redirectTo` as a request *option* and `lib/fetch.ts` turns it into
+`qs['redirect_to']`.
+
+Nothing errors when this happens. GoTrue falls back to the project's **Site
+URL**, so every magic link and every confirmation email pointed at the app's
+root instead of `/auth/callback` — and `?next=` was lost with it. The tokens
+arrive in the URL *fragment*, `CompleteSignIn` only renders on `/auth/callback`,
+so nobody reads them: the link appears to do nothing at all.
+
+This also quietly falsifies a line in the runbook. Step 5.5 says the magic-link
+path *"is where a mis-set Redirect URL shows up, and Orbit's callback screen
+prints the sentence Supabase refused with"*. With the target never sent,
+Supabase never refuses — there is nothing to print, and the failure is silent.
+
+Fixed, and pinned by `tests/auth-gotrue.test.ts`, which asserts on the query
+string of the request actually put on the wire. **A test that asserted on
+arguments could not have caught this**, which is why the new suite drives a real
+HTTP server rather than a mock.
+
+### Edge 39 — an unreachable project threw instead of refusing
+
+`gotrue()` did not catch `fetch` rejecting. A paused project, a DNS failure or a
+network partition therefore threw out of the server action into the generic
+error page — which says *"Orbit can't reach its database"* and names the wrong
+component entirely. Every caller already renders `{ok:false}` as a sentence, so
+the fix is to return one. The underlying message is deliberately not used: it is
+a Node internal (`fetch failed`, `bad port`) and says nothing anybody can act on.
+
+### `server-only` is why none of this had ever been executed
+
+The provider's HTTP layer could not be imported by a test at all. `server-only`
+throws on import unless the resolver is asked for React's `react-server`
+condition, and Vitest has no reason to ask for it. That single line is most of
+why `docs/STATUS.md` could say "not one line of it has ever executed" for four
+sessions while the file sat in the repository looking testable.
+
+Vitest now aliases `server-only` to its own `empty.js`. The marker still does
+its real job — it is the *bundler* that must refuse a client import, and the
+bundler resolves the package for itself. This is the cheapest change in the
+session and it is the one that made the other four findings possible.
+
+### What a stub does not prove, said plainly
+
+`tests/auth-gotrue.test.ts` proves the shape of every request Orbit sends and
+what it does with every answer. It does not prove:
+
+- that the real project's email templates use the shape the callback expects;
+- that a magic link arrives, or that its link works when it does;
+- that a sign-up with confirmation on behaves as modelled;
+- that `auth.users` → `profiles` fires, or that the ids match;
+- anything whatsoever about RLS on the live project.
+
+Rotation, the reuse interval and the revocation-on-reuse are modelled from
+Supabase's published behaviour, not observed on the project. Edge 36 is
+therefore **watched against a faithful stub** and still unwatched against
+Supabase — though the mechanism is documented, not inferred, and the app's half
+of it (a cookie that cannot be written during a render) is certain regardless.
+
+### Verified against
+
+- `pnpm build` — clean.
+- `pnpm smoke` — **456/456**, full suite, and again without a reseed per edge 3.
+- `pnpm test` — **860** across 22 files, up from 828/21: the new file is 20 of
+  them. Run because `src/lib/auth/` is a pure module by the standing rule.
+- `./scripts/db-test.sh` — **not run**. No policy and no definer function was
+  touched, and the real project could not be reached to run it there.
