@@ -1,12 +1,20 @@
 import Link from 'next/link';
 
 /**
- * Today / Week / Month, on Now rather than on the calendar.
+ * Today / Week / Month / All, on Now rather than on the calendar.
  *
  * The instinct is to put these words on the calendar, because that is where
  * they live in other products. But the calendar is a placement tool and this
- * page answers a question — what do I need to deal with — at three grains. Same
+ * page answers a question — what do I need to deal with — at four grains. Same
  * query, same layout, one parameter.
+ *
+ * **All** is the one that is not just a wider window. Today, Week and Month
+ * widen the *calendar* only: the task sections underneath have always been
+ * "due today" and "overdue", whichever of the three is selected, because a task
+ * with no date is not due in any window. All is where those tasks finally have
+ * somewhere to appear — it is the `all` smart list, "everything still open",
+ * next to a year of calendar. Without it the home page could not answer "what
+ * have I got on at all", only "what is due".
  *
  * Links rather than buttons: the range lives in the URL, so it survives a
  * reload, it can be sent to somebody, and the back button means what it says.
@@ -18,13 +26,14 @@ import Link from 'next/link';
  * cannot drift apart.
  */
 
-export const RANGES = ['today', 'week', 'month'] as const;
+export const RANGES = ['today', 'week', 'month', 'all'] as const;
 export type Range = (typeof RANGES)[number];
 
 const LABELS: Record<Range, string> = {
   today: 'Today',
   week: 'Week',
   month: 'Month',
+  all: 'All',
 };
 
 export function isRange(v: string | undefined): v is Range {
