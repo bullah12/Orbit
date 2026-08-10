@@ -16,10 +16,11 @@ import {
 /**
  * The auth rules that are decisions rather than I/O.
  *
- * None of this talks to Supabase, because there is no Supabase project here —
- * the provider itself is written and never run, exactly like the Google
- * calendar provider, and no test in this file pretends otherwise. What is
- * covered is everything that decides an outcome once an answer has arrived:
+ * None of this talks to Supabase, and nothing in this file pretends to. The
+ * half that *asks* is driven against a stub GoTrue in `auth-gotrue.test.ts`,
+ * which is a separate file precisely so that the distinction stays visible:
+ * these are rules, those are requests. What is covered here is everything that
+ * decides an outcome once an answer has arrived:
  * which provider is live, whether a token is worth using, what a display name
  * becomes, and what a failure is allowed to say.
  */

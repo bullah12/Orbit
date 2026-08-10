@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { pool } from '@/lib/db';
@@ -14,9 +15,11 @@ import { currentSupabaseUser } from './supabase';
  *
  * `supabase` verifies a real Supabase session server-side and hands the JWT's
  * `sub` to the existing `asUser()`. It **runs in production** against a real
- * project; there is still no project and no credential *here*, so nothing in a
- * test or a smoke run exercises it. See `src/lib/auth/supabase.ts` for which of
- * its paths have actually been watched.
+ * project. There is still no credential *here*, so no smoke run exercises it —
+ * but `tests/auth-gotrue.test.ts` now drives its HTTP layer against a stub, and
+ * the app can be run against one too (`docs/STATUS.md`, "Running the app
+ * against a stub GoTrue"). See `src/lib/auth/supabase.ts` for which paths have
+ * actually been watched, and edge 36 for the one that was watched and failed.
  *
  * Nothing that calls `getCurrentUser()` had to change when the second provider
  * arrived, which is what the interface was for.
@@ -103,7 +106,28 @@ export function authProvider(): AuthProvider {
   return provider;
 }
 
-export const getCurrentUser = () => authProvider().getCurrentUser();
+/**
+ * Who is asking — resolved once per request, however many callers ask.
+ *
+ * `cache()` is memoisation for the lifetime of one request and nothing wider:
+ * React gives each request its own store, so this can never hand one person's
+ * identity to another's request. It is not an optimisation that was guessed at.
+ * The root layout resolves identity and so does every page under it, so a plain
+ * function meant **two** identity resolutions per render — under `supabase`,
+ * two round trips to GoTrue plus two `app.identity_profile` queries, on every
+ * page anybody opened.
+ *
+ * Watched, against a stub GoTrue: a signed-in page load made two `GET /user`
+ * calls before this and makes one after. Worse than the cost, the duplicate
+ * landed *inside* the refresh path — the second call re-presented a refresh
+ * token the first had already spent, burning Supabase's 10-second reuse grace
+ * at an age of 0.0 seconds, on the very request that created it. That grace
+ * exists precisely for server-rendered apps, and Orbit was spending it on
+ * itself. Edge 36 is still edge 36; this stops making it worse.
+ */
+export const getCurrentUser = cache(async (): Promise<SessionUser | null> =>
+  authProvider().getCurrentUser(),
+);
 
 /**
  * Who you could become. Empty unless the dev provider is live — the switcher is

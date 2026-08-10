@@ -1,325 +1,178 @@
 # STATUS — handoff contract
 
-Last rewritten: **session 12**, 2026-08-08. Branch:
-`claude/brief-c-settings-offline-shell-0l1q6x`.
+Rewritten in full: **session 15**, 2026-08-10. Branch
+`claude/orbit-acceptance-real-project-merods`. This file takes precedence over
+your assumptions about what is done.
 
-**Corrected in session 14, 2026-08-09**, on `claude/orbit-docs-refresh`, without
-rewriting: **Orbit is deployed on Vercel against a real Supabase project and
-`AUTH_PROVIDER=supabase` is the provider serving it.** The sections below that
-said otherwise are fixed in place and each correction is marked. This file has
-not been rewritten since session 12, so **its counts are session 12's**; session
-13's are noted beside them. Nothing else was upgraded: every provider still
-without a credential is *written, never run*, and the Android client is unbuilt.
+Read this, then `docs/decisions-log.md` (session 15 is the long entry at the
+bottom), then `docs/runbook.md`, then pick from **Next three things**.
 
-This file takes precedence over your assumptions about what is done. Read it,
-then `docs/design-review.md`, then `docs/decisions-log.md`, then get the
-database up and pick from **Next three things** at the bottom.
+---
 
-**Where the project is: Orbit was finished at the end of session 8, made usable
-by a real person in session 9, made usable *on a phone* in session 10, and given
-its settings surface and its offline shell in session 12.** Session 12 was Brief
-C from `docs/remaining-work.md` §4. Brief C added **no table and no
-migration** — the one expected for edge 7 was argued down rather than skipped,
-and the argument is in `docs/decisions-log.md`. A **second pass** then closed
-the four things worth doing before a deployment, and that one *did* need a
-migration: `0013_free_busy_recurrence.sql`, for edge 35.
+## Read this first: what was watched, and what was not
 
-**The one sentence worth carrying forward from this session:** the offline work
-was built on the rule that no page rendered for one person may ever be stored,
-and then the smoke run found the browser's own HTTP cache re-serving
-`/tasks/all` complete — sidebar, counts, every row — with the network disabled.
-The service worker had cached nothing. It called `fetch()`, and `fetch()` was
-answered from disk. That was not on any edge list, and it was only found because
-the check drives a real browser with the network really off rather than
-asserting that a file exists.
+Session 15 was handed **Brief D, the acceptance pass against the real project**.
+Its one stated failure condition was *"coming back with 'authentication works'
+without having watched the refresh path run"*.
 
-**Five commands were the whole truth about this repo.** All five were run at the
-end of session 12, and all five were green:
+**The refresh path was watched. It is broken.** It is edge 36 below, and it is
+the finding of the session.
+
+But the brief could only be half-run, and the reason matters more than the
+result:
+
+> **There are no credentials in this container.** Brief D says *"Credentials are
+> in the environment"*. They are not — no `SUPABASE_URL`, no
+> `SUPABASE_ANON_KEY`, no `DATABASE_URL`, no admin connection string, no `.env`.
+> The brief's own **"Supabase project ref"** line is blank; the placeholder was
+> never filled in.
+
+So there are three different kinds of claim in this file and they must not be
+run together:
+
+| | What it means |
+|---|---|
+| **Watched against the real project** | Done from this container over the network, signed out. `/health`, the signed-out redirect, and the sign-in page's markers. That is all of it. |
+| **Watched against a stub GoTrue** | The app, built and running with `AUTH_PROVIDER=supabase` pointed at a stub speaking GoTrue's REST shapes with Supabase's real rotation semantics, driven in a browser. This is where the refresh path ran. |
+| **Not watched at all** | Everything needing an admin connection or a mailbox. Listed explicitly below, not left to inference. |
+
+**Nobody signed in to the real project this session, and no account was created
+on it.** Why not is argued in the decisions log; briefly, the brief's own gate
+(`u.id = p.id`, an admin query) was unavailable, every path downstream needs a
+mailbox, and nothing created could have been removed afterwards.
+
+### Not watched at all — the whole of Brief D §1, and most of §2
+
+None of this ran. Do not read anything below as evidence about any of it.
+
+- `on_auth_user_created` existing on `auth.users`.
+- `u.id = p.id` after a real sign-up. **This is still the gate**: if it is not
+  `t`, every policy returns zero rows and says nothing, and the app looks empty
+  rather than broken.
+- `orbit_app` on the live project: that it can log in, owns nothing, and holds
+  no `BYPASSRLS`. Still nothing on record confirms this, and
+  `./scripts/db-test.sh`'s premise is worthless if the deployed role differs.
+- `app.provision_missing_accounts()` — the inspection was never run.
+- `./scripts/db-test.sh` against the real project.
+- A real sign-up, sign-in, sign-out or magic link **on the real project**.
+- Email confirmation on, in any form.
+- An invitation redeemed by a second real account; any role, including
+  `free_busy`; accept, decline, expire, revoke, remove.
+- Brief D §3 in full — Today, capture, calendar, recurrence, search, offline
+  edits and conflicts **against the real project's RLS**. They were exercised
+  against the local database, which is what `pnpm smoke` has always done and is
+  not the question Brief D asked.
+
+A second thing blocked part of this: **the browser cannot reach the deployment
+from here.** Egress policy allows `curl` and Node's `fetch` to
+`orbit-taj.vercel.app` but resets Chromium's connections, so the deployed app
+could not be driven with Playwright. Everything checked against the real
+project was checked over HTTP.
+
+---
+
+## What broke — numbered, with the layer and the reproduction
+
+Five real defects. Four are fixed in this branch with their tests; one is
+written up and deliberately not fixed.
+
+### 1. The refresh path throws the rotated token away, and the session dies — **app (provider)**, edge 36, NOT FIXED
+
+The one `docs/STATUS.md` has named for four sessions as most likely to be wrong.
+It is wrong.
+
+GoTrue **rotates**: every refresh returns a new refresh token and revokes the
+one just spent, with a 10-second reuse grace. Reuse outside that grace is
+treated as theft — Supabase revokes the **entire token family**, permanently.
+
+`currentSupabaseUser()` refreshes during a Server Component render, and a Server
+Component cannot write cookies, so `persistSession()` throws into a `catch` that
+discards it. The cookie keeps the spent token.
+
+**Reproduction:** sign in; leave the tab idle until the access token expires
+(one hour by default); load a page — it works; wait more than ten seconds; load
+another — you are signed out, and signing in again is the only way back.
+
+Watched, in the stub's log:
 
 ```
-./scripts/db-test.sh   112/112 pgTAP assertions   (was 106; migration 0013)
-pnpm build             clean
-pnpm typecheck         clean (needs the build first on a fresh clone)
-pnpm test              816 Vitest tests in 21 files   (was 735)
-pnpm smoke             455/455 against the running app   (was 402; needs pnpm start)
+07:27:06.955  POST /token?grant_type=refresh_token -> 200  rotated refresh-2 -> refresh-3
+07:27:21.533  POST /token?grant_type=refresh_token -> 400  !! REUSE after grace (age 14.6s)
+                                                           -> FAMILY family-1 REVOKED
 ```
 
-**Corrected in session 14.** Two things have moved since that block was written.
+The code carried a comment asserting the opposite — *"until then the refresh
+token still works"*. That comment is now a description of the bug.
 
-*The counts are out of date*, because session 13 added three migrations
-(0014–0016) and did not rewrite this file. Its recorded figures:
-`./scripts/db-test.sh` **175/175**, `pnpm test` **828**, `pnpm smoke`
-**455/455**, build and typecheck clean.
+**Not fixed** because the fix is middleware (the only context that may write
+cookies), which needs the refresh call lifted out of a module importing
+`server-only` and the `postgres` pool, and because getting middleware auth wrong
+signs everybody out on every request. Argued in full in the decisions log.
 
-*The rule changed.* `CLAUDE.md` is now the authority on what to run: **`pnpm
-build` then `pnpm smoke`**, and nothing else unless asked. `pnpm build`
-type-checks, so a separate `pnpm typecheck` is redundant on a change that
-builds; `./scripts/db-test.sh` and `pnpm test` cover what smoke structurally
-cannot see — policies and definer functions, and the pure modules in
-`src/lib/` — and are run on request. Session 14 ran `pnpm build` (clean) and
-`pnpm smoke` in full (**456/456**, one more than session 13 recorded) and did
-not run the other three. It changed no behaviour — two doc comments in
-`src/lib/auth/` that still said this provider had never run, and documents.
+### 2. `redirect_to` was sent where GoTrue does not read it — **app (provider)**, edge 38, FIXED
 
-`pnpm smoke` was also run **twice in a row without a reseed**, which is edge 3's
-standing rule, and passed both times.
+`sendMagicLink` and `signUpWithPassword` put the callback URL in the JSON body
+as `options.email_redirect_to`. GoTrue reads it from a **`redirect_to` query
+parameter** and nowhere else.
 
-**One migration was written**, `0013_free_busy_recurrence.sql`, in the second
-pass — the first schema change since 0012. Brief C itself needed none.
+Nothing errors. GoTrue falls back to the project's **Site URL**, so every magic
+link and every confirmation email pointed at the app root instead of
+`/auth/callback`, losing `?next=` with it. The tokens arrive in the URL
+*fragment*; `CompleteSignIn` only renders on `/auth/callback`; so nobody reads
+them and **the link appears to do nothing at all**.
 
----
+**Reproduction:** ask for a magic link, follow it, and land signed out.
 
-## Where the tables are
+Fixed, and pinned by `tests/auth-gotrue.test.ts` asserting on the query string
+of the request actually put on the wire. This also falsifies runbook step 5.5:
+with the target never sent, Supabase never refuses, so there is no sentence for
+the callback screen to print.
 
-**Orbit's tables live in the `orbit` schema, not `public`**, and its helper
-functions and RLS generator in `app`. That is what lets Orbit share a Postgres
-instance with another application: `profiles` alone exists in both, and two
-applications in one schema is a collision waiting to happen.
+### 3. Identity was resolved twice on every render — **app**, edge 37, FIXED
 
-Every reference in the repository is schema-qualified — `orbit.tasks`, never a
-bare `tasks` — so this is the name of the objects and not a `search_path` a
-different connection could resolve differently. `scripts/db-reset.sh` builds the
-local database the same way, so the tested shape and the deployed shape are the
-same shape.
+The root layout resolves identity and so does every page under it, and
+`getCurrentUser()` was a plain function. Under `supabase` that is two GoTrue
+round trips and two `app.identity_profile` queries per page.
 
-Moved in session 12's third pass; the decisions log records the three things
-that say `public` and are *not* the schema, each of which had to be left alone.
+The cost is the smaller half: the duplicate landed *inside* the refresh path,
+re-presenting a token the first call had already spent and consuming the
+ten-second reuse grace at an age of **0.0 seconds** — on the request that
+created it. Fixed with React's `cache()`. Watched: the double refresh is gone.
 
----
+### 4. An unreachable project threw a 500 instead of saying so — **app (provider)**, edge 39, FIXED
 
-## The one thing to understand before you touch anything
+`gotrue()` did not catch `fetch` rejecting, so a paused project or a DNS failure
+threw out of the server action into the generic error page — which says *"Orbit
+can't reach its database"* and names the wrong component. Now a sentence, like
+every other refusal.
 
-**Corrected in session 14. This section said `AUTH_PROVIDER=supabase` had never
-run. It has.**
+### 5. The provider's HTTP layer could not be imported by a test — **tooling**, FIXED
 
-**Orbit is deployed on Vercel against a real Supabase project, and
-`AUTH_PROVIDER=supabase` is the provider serving it.** The claim that there is
-no project and no credential was true for four sessions and is now false. It was
-already falsified inside this repository before session 14 said so: two of
-session 13's bugs were **reported from a real project**, one of them naming a
-real account id, and migrations 0014–0016 exist because of them.
+`server-only` throws on import unless the resolver is asked for React's
+`react-server` condition, which Vitest has no reason to ask for. That one line
+is most of why this file could say "not one line of it has ever executed" for
+four sessions. Vitest now aliases it to its own `empty.js`; the marker still
+does its real job, which is making the *bundler* refuse a client import.
 
-**What has run, and what has not.** Signing in has run — that is what produced
-those reports — and so has the profile/adoption path underneath it. Nobody has
-yet watched **the refresh path**, a **magic link**, a sign-up with email
-confirmation on, or **an invitation redeemed by a second real account**. The
-refresh path is the one this file has named for four sessions as most likely to
-be wrong, and it is still unwatched.
+This is the cheapest change in the session and it is what made findings 1–4
+possible.
 
-So the honest label is **running in production, not acceptance-tested** — which
-is neither "never run" nor "works". `docs/remaining-work.md` §5 is the prompt
-for the session that closes the gap, and §6 of
-`docs/deployment-and-android.md` lists what is left by hand.
+### And one that is not a code defect — **handover**
 
-**Nothing else moved with it.** `calendar:google`, `ics:http`,
-`geocoding:nominatim`, `travel:openrouteservice`, `push:webpush` and
-`ai:anthropic` are still *written, never run* — a deployment is not a
-credential — and the Android client is still unbuilt.
-
----
-
-## Works — verified by running it
-
-Everything here was executed and watched.
-
-### New in session 12
-
-**The theme can be pinned, and the choice arrives before the first paint.**
-`/settings` offers system, light or dark. The server reads a cookie and writes
-`<html data-theme>`, so the correct palette is resolved by the browser on its
-first parse — there is deliberately no `useEffect`, no inline script and no
-`localStorage` read, because each of those runs *after* something has been
-painted, which is the flash. Watched in a real browser: with the OS in light
-mode, pinning dark yields `data-theme="dark"` in the raw server HTML and a body
-background of `oklch(0.165 0.008 265)`.
-
-**`globals.css` is one palette now, not two.** The `globals.css` decision that
-blocked this since session 10 was made on purpose: **`light-dark()`**, as
-`docs/design-review.md` recommended. All 42 colour tokens hold both values in
-one declaration and both `@media (prefers-color-scheme: dark)` blocks are gone,
-so the override is two `color-scheme` lines and there is no second copy of the
-palette to drift.
-
-- **The conversion was generated and verified, not typed.** One script emitted
-  the merged declarations from the old file; a second read them back out of the
-  new one and compared. 42 pairs, identical, no token left as a single value.
-- **The dark-value comments were carried across**, as a block above the merged
-  tokens, rather than dropped.
-- **`tests/contrast.test.ts` still computes real WCAG ratios for both themes.**
-  The brace-matching is gone, as the review predicted, and three new guards
-  replace it — because the failure mode inverted. A parse that returned the same
-  half twice would compute every ratio and pass every assertion while silently
-  checking one theme twice. So: the two halves must differ, no token may escape
-  the pair, and no media query may redeclare a colour. **Mutation-tested** —
-  making the parse return the light half for both turns it red.
-
-**`/settings` exists, under More beside Rules, Sync and AI.** Administrative, so
-not beside Today. Built from existing tokens with no new colour.
-
-- **Theme**, above.
-- **Week start**, Monday or Sunday. Display only, and that is enforced by
-  construction: `WKST` is an RFC 5545 property of the *rule* and decides which
-  occurrences a weekly rule has, so recurrence never sees this preference. The
-  test asserts the consequence — the same rule expands identically under both
-  settings, while `WKST` in the rule text genuinely changes it.
-- **Default compose space**, re-validated against the caller's writable spaces
-  on every read, so the cookie is a hint and never a capability.
-- **Devices**, with revoke and restore.
-
-**Edge 4 is closed: `devices.revoked_at` has its first ever write.** It has
-existed since migration 0001 with nothing writing it. What makes revoking more
-than a label is that `advanceCursor` refuses to move a revoked device's cursor,
-written as a guarded insert so the `on conflict do update` is skipped too. The
-smoke run asserts it **with a control beside it** — an active device advances
-(`01/01/1970` → `just now`) and a revoked one does not (`01/01/1970` →
-`01/01/1970`). Without the control, a cursor that never moved would pass for
-free.
-
-**Edge 33 is closed: there is a service worker, and it caches no page anybody
-rendered.** Shell only, and the restriction is the design rather than a
-limitation of it.
-
-- A navigation is **network-only**, falling back to `/offline`. What is cached
-  is `/offline`, the manifest and `/_next/static/` — content-hashed, immutable,
-  nobody's data.
-- **`/offline` is a route handler returning standalone HTML, not a page
-  component.** That is the security decision: a page component is wrapped in the
-  root layout, and the sidebar's space names and task counts would be baked into
-  a cache entry held indefinitely. Nothing on the route reads a cookie, a user
-  or the database.
-- The policy is **data**, in `src/lib/offline.ts`, tested by Vitest and injected
-  into the generated worker as JSON — so the tested rules and the shipped rules
-  cannot disagree. `swDecision` is total and defaults to `network-only`.
-- **There is a way out**: a version bump deletes every other cache on activate,
-  and `/settings` can unregister the worker and empty its caches. A service
-  worker with no escape hatch is how an app ships that cannot be fixed.
-- Driven with the network **actually disabled** in the browser context.
-
-**Authenticated pages now say `no-store`** (`src/middleware.ts`), with
-`_next/static` keeping its immutable year. This is the hole described at the top
-of this file. Both halves are asserted.
-
-**Edge 7 is closed, and it had more teeth than the entry said.** Dismissing lost
-the edit — but for three of the four conflict kinds the edit was *already* gone:
-`settle` takes a conflicted write out of the queue, and `clashes[]` carries the
-typed values only for `field_conflict`. A `deleted_elsewhere`,
-`locked_elsewhere` or `moved_space` conflict discarded somebody's typing the
-moment it was raised, before they had touched anything.
-
-- `settle` now **holds the write behind every conflict**, and dismissing moves
-  it to a discard log rather than deleting it.
-- `/sync` lists what was dismissed, what each one would have written, and offers
-  to **put it back** — the floor was a record, and this is the record plus the
-  undo. A restored write goes to the end of the queue with a new sequence
-  number, keeping its `base`, so the next send judges it against the row as it is
-  now.
-- **No migration**, and the argument was not close: an unsent edit has never
-  been anywhere but this browser, and one of the four kinds is
-  `locked_elsewhere`, so the naive server table would hold the plaintext of an
-  edit to an end-to-end-encrypted row, which decision 1 forbids.
-- Capped at 50, oldest dropped — an unbounded log in `localStorage` would
-  eventually be why an edit could not be saved.
-
-**Edge 32 is closed: an assignee picker on the task row.** Still **not on the
-compose bar**, which is recorded twice and stands. Its own action rather than a
-trip through `updateTask`, which would need every other field posted back with
-it. Only `owner`, `admin` and `member` are offered — exactly the set the write
-accepts — and a locked row gets no control, because the write would refuse.
-
-**The one red smoke check was the check, not the app.** Session 11 recorded one
-of 402 failing with its name lost. It was *"a busy block carries no title, no
-category and no link"*, and it was a false positive, verified before it was
-touched: the check scanned the whole page for a hardcoded word list described as
-"the seeded Work titles", but three of the four are not seeded titles and
-`'Stand-up'` is in the seed's generic `EVENT_TITLES` filler, drawn from for
-**every** space. The match was `aria-label="Stand-up, all day, Danny"` — the
-partner's own event in his own space. Every busy block carried `Work | Busy` and
-nothing else. It now asserts the property its name claims, on the blocks
-themselves, and the leak scan is kept with its forbidden set *derived* from the
-app rather than guessed.
-
-### New in the second pass — before a deployment
-
-The Supabase migrations were applied by hand between the two passes. These are
-the four things worth closing before anything is public.
-
-**Edge 22 is enforced, not warned about.** `AUTH_PROVIDER=dev` on a production
-build is refused: every page returns a sentence naming what to set instead.
-`switchUser` is impersonation by design and **`dev` is the default**, so the
-dangerous case was never a typo — it was forgetting to set a variable. The
-escape hatch is where the design is: `pnpm start` sets `ORBIT_ALLOW_DEV_AUTH=1`
-so the zero-credential run and `pnpm smoke` are untouched, and the **Dockerfile
-does not** — it runs `node server.js`, so nothing in `package.json` can leak
-into an image. Thrown from `authProvider()` so every entry point fails closed,
-and given its own page in the layout because the existing catch would have
-called it *"Orbit can't reach its database"*. Only the exact string `'1'`
-disarms it. Verified against a real production server both ways.
-
-**`/health` runs `select 1`** and answers `200` or `503`. The most likely
-production failure is a `DATABASE_URL` that does not work, and the default check
-on Fly and Railway is "did the port open", which is true of a container that
-cannot serve a page. It returns one key and no error text on purpose — it is
-unauthenticated by necessity. Verified with a working and a broken URL.
-
-**`fly.toml` is committed**, because two `fly launch` defaults are wrong here
-and both fail quietly: `auto_stop_machines` throws the connection pool away
-between requests, and `internal_port` defaults to 8080 while Next listens on
-3000. `AUTH_PROVIDER` is deliberately absent from `[env]`, so a deployment that
-forgets it meets the guard above.
-
-**Edge 35 is closed — migration 0013.** `app.free_busy_blocks()` filtered on the
-*stored* row, and a repeating event is stored once at its DTSTART, so a weekly
-stand-up that began in March never overlapped "this week": a `free_busy` grantee
-saw **none** of somebody's recurring commitments. The direction was the safe one
-— less, never more — which is exactly what hid it, while the availability view
-answered "free" about the busiest hour of the week.
-
-- The pgTAP fixture had recurrence *rules* and no event pointing at one, so
-  nothing exercised the join. That is how this survived from Phase 2.
-- `free_busy_blocks` is one-offs only now; `app.free_busy_recurring()` returns
-  the series, and the app expands it with the one tested implementation.
-  Duplicating RFC 5545 expansion in PL/pgSQL would be a second answer to *which
-  occurrences exist*, and the two would disagree visibly.
-- **That choice lets a grantee's session obtain the rule text**, which is a real
-  departure from *"the shape of somebody's week is content"*. Argued in the
-  decisions log; what is rendered is unchanged, and `BusyBlock` has no field a
-  rule could live in.
-- Watched: Priya has nine Work events in a week, five of them stand-up
-  occurrences. Danny saw four busy blocks before and sees nine now, with no
-  title leaked. The smoke check asserts the two **agree** rather than counting
-  blocks — counting alone passed throughout the bug.
-
-### Session 10 and earlier — unchanged and still green
-
-It works on a phone: `viewport`, a bottom tab bar and a drawer below `md`, task
-rows that keep the title on screen, `--tabbar` as one token, a manifest.
-Navigation says where you are, via `aria-current` and weight rather than hue.
-Today queries events, with a range switch on `?range=`, a summary strip whose
-numbers are the lists beneath them, and an agenda with the now-line in position.
-Assignment on the row and `/tasks/mine`. The calendar opens at now. Keyboard
-shortcuts, with the rules in `src/lib/shortcuts.ts` as pure functions.
-
-Real accounts, the `auth.users`→`profiles` join, space invites, `/spaces`,
-`/invite/[token]`, the account panel. Smart lists; tasks, notes with versions and
-Markdown, people with contacts, dates and linking; the merged week/day/month
-calendar with anonymous free/busy blocks, recurrence expanded from one row plus
-an RRULE, ICS import, provider pull and push; places with geocoding, visits and
-links; travel with trips and derived journeys; the rules engine with its dry
-run, audit trail and notifications; search across five kinds; local-only
-natural-language capture; AI off by default with per-feature, per-space consent;
-`/sync` with its outbox, named conflicts and per-device cursors.
+Brief D's premise. The credentials it says are in the environment are not, and
+its project-ref placeholder is empty. §1 could not be attempted.
 
 ---
 
 ## Stubbed / fixture-backed
 
-Unchanged from session 9. Every `*_PROVIDER` variable genuinely selects an
-implementation; the default is the one that needs no credential; an unknown
-value is a hard error rather than a silent fall back.
+Every `*_PROVIDER` variable genuinely selects an implementation; the default is
+the one that needs no credential; an unknown value is a hard error rather than a
+silent fall back.
 
 | Interface | Default (runs here) | Real |
 |---|---|---|
-| `AuthProvider` | `auth:dev` | `auth:supabase` — **running in production, not acceptance-tested** (corrected session 14) |
+| `AuthProvider` | `auth:dev` | `auth:supabase` — **split, see below** |
 | `CalendarProvider` | `calendar:fake` | `calendar:google` — **written, never run** |
 | `IcsProvider` | `ics:fake` | `ics:http` — **written, never run** |
 | `GeocodingProvider` | `geocoding:fake` | `geocoding:nominatim` — **written, never run** |
@@ -327,75 +180,153 @@ value is a hard error rather than a silent fall back.
 | `PushProvider` | `push:fake` | `push:webpush` — **written, never run** |
 | `AiProvider` | `ai:fake` | `ai:anthropic` — **written, never run** |
 
-**"Written, never run" means exactly that.** None of the six providers still
-carrying the label has ever sent a request. Do not describe one as working, and
-do not let a fake stand in for one in a "Works" claim. `auth:supabase` left the
-label by being deployed and signed into, not by being improved — and it has not
-reached "Works", which in this file means *executed and watched*.
+**`auth:supabase` does not move to "works".** Brief D said to move it there only
+for paths personally watched execute, and to split the row if only some of it
+ran. Only some of it ran:
+
+| Path | Label |
+|---|---|
+| Password sign-in, sign-out, session read | **Exercised against a stub GoTrue.** Request shapes and answer handling are proved; the real project is still unwatched from here. In production it demonstrably works — it is how the deployment is used and how two of session 13's bugs were reported. |
+| **Refresh** | **Watched, and broken.** Edge 36. The app's half — a cookie that cannot be written during a render — is certain regardless of the stub. |
+| **Magic link** | **Never observed end to end.** One bug found and fixed (edge 38) that would have broken every link. No link has ever been sent, received or followed. |
+| **Sign-up with email confirmation on** | **Never observed.** Both answers are handled and only the stub's version of them has run. |
+| **Invitation redeemed by a second real account** | **Never observed**, on any project. |
+| Unreachable-project behaviour | **Watched against a stub**, fixed (edge 39). |
+
+The six other providers are unchanged: **"written, never run" means exactly
+that.** None has ever sent a request. A deployment is not a credential.
 
 Also still fixture-backed or absent: **locked items** have no client-side
 crypto; **there is no scheduler**; **`AUTH_COOKIE_SECRET` still signs nothing.**
 
-The service worker is no longer on this list — see above — but note what it is
-*not*: it is a shell, not offline browsing. Offline **editing** is a different
-mechanism entirely and it is real; it lives in `src/lib/sync/` and the offline
-page says so and links to `/sync`.
+---
+
+## The deployment, and what is actually confirmed about it
+
+Orbit is deployed on Vercel at **`orbit-taj.vercel.app`** against a real
+Supabase project, with `AUTH_PROVIDER=supabase`.
+
+**Confirmed this session, over HTTP, signed out:**
+
+- **`/health` returns `{"status":"ok"}`.** The deployed app can reach its
+  database. This is the one fact about the live database anybody has recorded.
+- **A signed-out visitor is redirected to `/auth/signin`** from `/`, `/spaces`,
+  `/settings` and `/sync`.
+- **Edge 22 is settled on the live build.** The sign-in page renders the real
+  provider's branch: an email and password form and a magic-link button are
+  present; *"This build is not using accounts"*, *"AUTH_PROVIDER=dev"* and
+  *"Viewing as"* are all absent. Nobody can become anybody on that URL.
+- **`SUPABASE_URL` and `SUPABASE_ANON_KEY` are set on it.** The page's
+  *"This server has no SUPABASE_URL…"* notice — which renders when
+  `supabaseIsConfigured()` is false — is absent.
+- **Authenticated HTML says `no-store`**, as the middleware intends.
+
+`ORBIT_ALLOW_DEV_AUTH` could not be read directly, and does not matter here: it
+only disarms the guard when `AUTH_PROVIDER` is `dev`, and the deployed build is
+demonstrably not the dev build.
+
+**Everything else about the deployment is unconfirmed**, including every item in
+the "not watched at all" list above.
 
 ---
 
-## Not started
+## Works — verified by running it
 
-- ~~**Nothing was deployed.**~~ **Corrected in session 14: Orbit is deployed**,
-  on Vercel, against a real Supabase project. `docs/runbook.md` §4 is the
-  current sequence and `docs/deployment-and-android.md` §3 explains why
-  serverless is now a supported shape rather than a warning — the pool is an
-  asset in a process that outlives the request and a liability in one that does
-  not, and against Supabase's transaction pooler with `DATABASE_POOL_MAX=1` and
-  `DATABASE_PREPARE=false` the app stops pooling for itself. `docs/deploy.md`
-  still opens with "nothing in this file has been run"; that line is now about
-  the *commands*, not the outcome.
-- **The acceptance pass has not happened.** Deployed is not tested: the refresh
-  path, magic links and a real invitation redeemed by a second account are all
-  still unwatched. This is the first item under **Next three things**.
-- **The Android client (Brief B)** has not been started, and session 10 weakened
-  the case considerably: the web app is usable on a phone and installable, which
-  was most of what Brief B was for. Session 12 weakens it further — an installed
-  Orbit now behaves when the signal drops.
-- **Shared lists (shopping)** — the one household verb genuinely missing, per
-  the comparison table in `docs/design-review.md`. Large, and needs a migration.
+Unchanged from session 12–14 unless noted. Everything here was executed and
+watched, against the **local** database under `AUTH_PROVIDER=dev`.
+
+**New in session 15: the Supabase provider's HTTP layer is executed by a test.**
+`tests/auth-gotrue.test.ts` stands up a real HTTP server speaking GoTrue's
+shapes and drives sign-in, sign-up (confirmation on and off), magic link,
+`/verify`, `/user`, refresh (including rotation and reuse-after-grace), and an
+unreachable project. Twenty checks. It asserts on the **request Orbit puts on
+the wire** — method, path, query string, headers, body — rather than on
+arguments, which is the only reason edge 38 was catchable.
+
+**Session 12's work stands**: the theme pinned before first paint via a cookie
+and `<html data-theme>` with no `useEffect`; `globals.css` as one `light-dark()`
+palette with 42 tokens generated and verified rather than typed;
+`tests/contrast.test.ts` computing real WCAG ratios for both halves, mutation-
+tested; `/settings` with theme, week start (display-only, and enforced by
+construction — `WKST` belongs to the rule), default compose space re-validated
+against writable spaces on every read, and devices with revoke/restore; edge 4
+closed with `devices.revoked_at` getting its first write and a control beside
+the assertion; edge 33 closed with a service worker that caches shell only,
+`/offline` as a route handler rather than a page component so no sidebar or
+count is ever stored, the policy as tested data in `src/lib/offline.ts`, and a
+version bump that deletes every other cache; `no-store` on authenticated pages;
+edge 7 closed with conflicts held rather than discarded and a dismissal log that
+can put an edit back; edge 32 closed with an assignee picker on the row.
+
+**Session 13's** three migrations (0014–0016) and the account-adoption path, and
+**session 14's** documentation corrections, stand unchanged.
+
+**Session 10 and earlier**: phone layout with a bottom tab bar and drawer below
+`md`; navigation saying where you are via `aria-current` and weight rather than
+hue; Today with ranges, a summary strip whose numbers are the lists beneath
+them, and an agenda with the now-line in position; the calendar opening at now;
+keyboard shortcuts as pure functions. Real accounts, the `auth.users`→`profiles`
+join, space invites, `/spaces`, `/invite/[token]`, the account panel. Smart
+lists; tasks; notes with versions and Markdown; people with contacts, dates and
+linking; the merged week/day/month calendar with anonymous free/busy blocks;
+recurrence expanded from one row plus an RRULE; ICS import; provider pull and
+push; places with geocoding, visits and links; travel with trips and derived
+journeys; the rules engine with its dry run, audit trail and notifications;
+search across five kinds; local-only natural-language capture; AI off by default
+with per-feature, per-space consent; `/sync` with its outbox, named conflicts
+and per-device cursors.
+
+---
+
+## The five commands
+
+All run at the end of session 15 except `db-test.sh`, which was not needed:
+
+```
+pnpm build             clean
+pnpm smoke             456/456 against the running app — and again without a
+                       reseed, per edge 3's standing rule
+pnpm test              860 Vitest tests in 22 files   (was 828 in 21; the new
+                       auth-gotrue suite is 20 of the difference)
+pnpm typecheck         redundant — pnpm build type-checks
+./scripts/db-test.sh   not run: no policy or definer function was touched, and
+                       the real project could not be reached to run it there
+```
+
+`CLAUDE.md` is the authority: **`pnpm build` then `pnpm smoke`**, and nothing
+else unless asked. `pnpm test` was run here because `src/lib/auth/` is a pure
+module by that rule's own carve-out.
 
 ---
 
 ## Known bugs and rough edges
 
-**31 entries.** Session 10's 33 carried over; **4, 7, 32 and 33 are closed** and
-are not renumbered, because the numbers are referred to by three other
-documents. Two are new.
+**34 entries.** 4, 7, 32, 33 and 35 are closed and are not renumbered, because
+the numbers are referred to by three other documents. **36, 37, 38 and 39 are
+new**; 37, 38 and 39 are closed in the same branch that opened them.
 
-### New in session 12
+### New in session 15
 
-34. **A preference belongs to a browser, not to an account.** Theme, week start
-    and default compose space are cookies, so a second device starts at the
-    defaults. For a theme that is arguably correct — a phone at night and a
-    desktop at noon want different answers — and for the default space it is a
-    mild annoyance. Moving them onto `profiles` is a migration *and* a decision
-    about whether they are per-account or per-device.
-35. **Closed in the second pass.** A `free_busy` viewer saw none of somebody's
-    recurring commitments. See below.
+36. **The refresh path discards the rotated token, and the session dies.**
+    Finding 1 above. **Open, and the most serious thing in this list**: an idle
+    hour costs you your session, permanently, on the live deployment. Needs
+    middleware; argued in the decisions log.
+37. **Closed.** Identity was resolved twice per render, and the duplicate burnt
+    Supabase's reuse grace at age 0.0s. `cache()`.
+38. **Closed.** `redirect_to` was sent in the body, where GoTrue does not read
+    it, so every magic link and confirmation email went to the Site URL.
+39. **Closed.** An unreachable Supabase threw into the database error page
+    instead of returning a sentence.
 
 ### Carried over
 
-1. **The `supabase` provider's refresh path has never been watched**, and it is
-   still the part most likely to be wrong. *Corrected in session 14: the
-   provider itself has run — it is what serves the deployment — so this entry is
-   now about the one path inside it that nobody has seen execute, not about the
-   whole of it.*
+1. **The `supabase` provider's refresh path.** *Superseded by 36: it has now
+   been watched, and it is broken. This entry is kept only because three
+   documents point at the number.*
 2. **A raw invitation token lands in the browser's history.**
 3. **`pnpm smoke` leaves invitation rows behind** — two per run. `pnpm seed`
    clears them. The suite is checked to pass **twice in a row without a
-   reseed**, and session 12's new sections were written to hold that: the
-   revoke section rewinds the cursor it advanced, because a caught-up cursor
-   empties the "changed since" feed a later check reads.
+   reseed**, and it did again this session.
 5. **Editing one occurrence's *details* is not built.**
 6. **A trip's journeys are not re-checked against its dates.**
 8. **The queue survives a user switch** and a sign-out.
@@ -405,8 +336,8 @@ documents. Two are new.
 11. **`applyWrite` interpolates column names with `tx.unsafe`** from a closed
     list re-checked in the server action.
 12. **The push window is every dirty event, capped at 200, oldest first.**
-13. **A push does not delete.** Now the one with the most teeth, edge 7 having
-    been closed.
+13. **A push does not delete.** Still the one with the most teeth among the
+    integration edges: a cancelled event stays in somebody's Google calendar.
 14. **The repeat builder cannot type "the third Thursday", nor a `COUNT`.**
 15. **The weekly review reads seven days from `now()`**, not the range Today is
     showing.
@@ -417,49 +348,30 @@ documents. Two are new.
 20. **Derived journeys are re-derived on every render.**
 21. **The calendar pull window is fixed at −180/+365 days.**
 22. **`switchUser` is impersonation by design.** Unreachable whenever
-    `AUTH_PROVIDER` is not `dev`, but **a build deployed with
-    `AUTH_PROVIDER=dev` is a build where anybody can become anybody.**
-23. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.** Session 12
-    hit this the ordinary way: `/settings` is a new route, and typed routes do
-    not know about it until a build has run.
+    `AUTH_PROVIDER` is not `dev`, and **confirmed absent on the live
+    deployment** this session. The entry stays for its description of what
+    `switchUser` is.
+23. **`pnpm typecheck` needs a `pnpm build` first on a fresh clone.**
 24. **The Markdown subset has no tables, no images, no task lists.**
 25. **The people list's "next date" is computed twice.**
 26. **A person's category is resolved back from its *name*** on the detail page.
 27. **Contacts cannot be edited, only added and removed.**
 28. **Search covers five kinds and no more.**
-29. **Capture's space hint is one token**, a captured note gets an empty body.
+29. **Capture's space hint is one token**; a captured note gets an empty body.
 30. **The AI result is carried on the URL**, on three pages.
 31. **Environment and tooling.** Postgres does not survive container restarts;
-    `pg_ctlcluster 16 main start` brings it back without reseeding, which
-    `./scripts/db-reset.sh` would not. Use
-    `pgrep -f 'next-serv[e]r' | while read pid; do kill "$pid"; done`, note the
-    bracket. There is no linting, out of scope by instruction. `pnpm smoke`
-    needs a running server, Chromium at
+    `pg_ctlcluster 16 main start` brings it back without reseeding.
+    Use `pgrep -f 'next-serv[e]r' | while read pid; do kill "$pid"; done` — note
+    the bracket, **and use the same trick for any other process name you kill
+    from a shell**: session 15 killed its own shell twice with
+    `pkill -f stub-gotrue`, because the command line contains the pattern.
+    There is no linting, out of scope by instruction. `pnpm smoke` needs a
+    running server, Chromium at
     `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` and **port 3101 free**.
-    `pnpm start` prints a warning about `output: 'standalone'`; it is harmless
-    and the suite drives that server.
-
-### Closed in session 12
-
-- **22 — a build deployed with `AUTH_PROVIDER=dev`** is one where anybody can
-  become anybody. Orbit now refuses to serve any page on a production build
-  unless a real provider is chosen. The escape hatch is `ORBIT_ALLOW_DEV_AUTH=1`,
-  set by `pnpm start` and deliberately not by the Dockerfile. Entry 22 above is
-  kept for its description of what `switchUser` is.
-- **35 — a recurring event was not busy time.** `app.free_busy_blocks()`
-  filtered on the *stored* row, and a series is stored once at its DTSTART, so a
-  weekly stand-up that began in March never overlapped "this week". Migration
-  0013 splits one-offs from series; the app expands the rule with the one tested
-  implementation rather than growing a second one in SQL. That choice lets a
-  grantee's session obtain the rule text, which is a real departure from a
-  recorded position and is argued in the decisions log.
-- **4 — a device row nothing could revoke.** `/settings` revokes and restores,
-  and a revoked device stops advancing its cursor.
-- **7 — a dismissed conflict lost the edit.** Kept, shown on `/sync`, and
-  restorable. No migration; the argument is in the decisions log.
-- **32 — assignment could not be set from a list.** A picker on the row.
-- **33 — installable with no service worker.** There is one, and it caches no
-  page anybody rendered.
+    `pnpm start` prints a harmless `output: 'standalone'` warning.
+34. **A preference belongs to a browser, not to an account.** Theme, week start
+    and default compose space are cookies, so a second device starts at the
+    defaults.
 
 ---
 
@@ -472,16 +384,13 @@ cd /home/user/Orbit
 pnpm install
 pg_ctlcluster 16 main start    # if Postgres is not already up
 ./scripts/db-reset.sh          # installs extensions if needed, migrates, seeds
-./scripts/db-test.sh           # 106/106 must be green
 pnpm build                     # also generates the typed-route definitions
-pnpm typecheck                 # needs the build above on a fresh clone
-pnpm test                      # 816 Vitest tests
 pnpm start                     # http://localhost:3000
-pnpm seed && pnpm smoke        # 455 checks; also starts a second server on :3101
+pnpm smoke                     # 456 checks; also starts a second server on :3101
 ```
 
-If Postgres has stopped but the data is still there, start it rather than
-resetting: `pg_ctlcluster 16 main start`.
+On request only: `./scripts/db-test.sh` (175 pgTAP assertions) and `pnpm test`
+(860 Vitest tests).
 
 Start the server so it survives the shell that launched it:
 
@@ -489,21 +398,8 @@ Start the server so it survives the shell that launched it:
 setsid nohup pnpm start > /tmp/next.log 2>&1 < /dev/null & disown
 ```
 
-Stop it without killing your own shell:
-
-```sh
-pgrep -f 'next-serv[e]r' | while read pid; do kill "$pid"; done
-```
-
-Dev loop: `pnpm dev`. Reseed without touching schema: `pnpm seed`.
-Rebuild schema without seeding: `./scripts/db-reset.sh --no-seed`.
-
 **Env vars** — copy `.env.example` to `.env`; every value has a working default
-and **no credential is required**. Session 12 added no variable. It added three
-**cookies**, all unsigned and none of them a permission: `orbit_theme`,
-`orbit_week_start` and `orbit_space`. The last is validated against the caller's
-writable spaces on every read, so a forged value can at most prefer a space they
-can already write to.
+and **no credential is required**.
 
 **Seeded profiles** — switch between them in the sidebar:
 
@@ -513,67 +409,53 @@ can already write to.
 | Danny Whitehouse | `…0002` | Danny, Home; `free_busy` on Work — the partner |
 | Sam Okafor | `…00ff` | nothing at all — the outsider |
 
-**A five-minute demo of what session 12 added.**
+### Running the app against a stub GoTrue
 
-Open `http://localhost:3000` and go to **More → Settings**. Press **Dark**. The
-page is dark before it is drawn — reload it and watch: there is no pale flash,
-because the choice is in the `<html>` tag the browser parses first rather than
-in an effect that runs after a paint. Set your operating system to light mode
-and it stays dark; press **System** and it follows the OS again.
+This is how the refresh path was watched, and it is worth keeping. It needs no
+credential and it is the only way to exercise `AUTH_PROVIDER=supabase` here.
 
-Press **Sunday** under *Week starts on*, then open the **Calendar**. The week
-begins on Sunday and the month grid's column headings have moved with it — and
-the events are all still there, because the query range is cut from the same
-preference as the grid. Set it back to Monday.
+Write a stub serving `/auth/v1/token` (both grants), `/auth/v1/user`,
+`/auth/v1/otp`, `/auth/v1/signup` and `/auth/v1/logout`. Issue access tokens
+with a short `exp` and a `sub` equal to a **seeded profile id**, so
+`app.identity_profile` finds a row. Rotate refresh tokens, keep a 10-second
+reuse grace, and revoke the family on reuse after it — that is Supabase's
+documented behaviour and it is what makes edge 36 visible.
 
-Scroll to **Devices**. Press **Revoke** beside one, then go to **Sync**, pick
-that device and press **Mark caught up**. The cursor does not move. Press
-**Restore** on Settings and try again: it moves. That column has existed since
-migration 0001 and nothing had ever written it.
+```sh
+AUTH_PROVIDER=supabase SUPABASE_URL=http://127.0.0.1:54321 \
+SUPABASE_ANON_KEY=anything \
+DATABASE_URL='postgres://orbit_app:orbit_dev_password@localhost:5432/orbit' \
+APP_URL=http://localhost:3000 NODE_ENV=production npx next start -p 3000
+```
 
-Now the offline shell. On **Sync**, tick **Work offline**, edit a task, and come
-back — then use your browser's dev tools to go offline properly and reload. You
-get a page that says what Orbit can and cannot do without a network and links
-back to Sync, rather than a browser error. It is deliberately not your
-`/tasks/home`: every page is rendered for you specifically, and a stored copy
-could be shown to whoever picks the phone up next.
-
-Finally, on **All open**, use the small control on a row to give a task to
-Danny. It is on the row and not on the compose bar, deliberately — and if a
-conflict ever comes back on **Sync**, pressing **Dismiss** no longer loses what
-you typed: it drops into a *Dismissed* list underneath with a **Put it back**
-button.
+Sign in, idle past the access token's life, load a page, wait ten seconds, load
+another. You will be signed out. That is edge 36.
 
 ---
 
 ## Next three things, in order
 
-**`docs/runbook.md` is the ordered sequence for item 1** — the console and CLI
-steps, with what to check after each and what going wrong looks like. Its step 0
-matters: migration `0013` was written *after* the migrations were applied by
-hand, so it still needs running.
-
-1. **Corrected in session 14 — the by-hand steps are done; the acceptance pass
-   is not.** The project exists, the migrations are applied, the app is deployed
-   on Vercel and somebody has signed up: that is what closed the loop, and what
-   surfaced the bugs migrations 0014–0016 fix. What remains is **driving real
-   authentication end to end and writing down what happened** — sign in, sign
-   out, a magic link, and letting a session expire so **the refresh path**
-   runs, then a second account and an invitation with each offerable role
-   including `free_busy`, accepted, declined, expired and revoked.
-   `docs/remaining-work.md` §5 is the prompt for exactly that session, and its
-   two placeholders can now be filled in. Still first by a distance: everything
-   below improves an app whose riskiest path is still unproven.
-2. **Edge 13 — a push does not delete**, and **edge 16 — nothing runs a
-   `schedule` rule on a schedule.** With 7 closed, 13 is the one with the most
-   teeth: a provider push that cannot delete means a cancelled event stays in
-   somebody's Google calendar for good. 16 is the reason the rules engine's
-   `schedule` trigger is a shape with nothing behind it.
-3. **Edge 35, the new one** — a `free_busy` viewer does not see a recurring
-   event's occurrences as busy blocks, so the partner's availability view says
-   she is free at 10:30 when she is not. Small, probably, and it is a
-   correctness bug in the one feature the product owner settled by name
-   (decision 3).
+1. **Edge 36 — make the refresh path keep the token it was given.** Nothing else
+   in this list matters as much: on the live deployment, an idle hour costs
+   somebody their session and only a fresh sign-in recovers it. The shape of the
+   fix is in the decisions log — refresh in middleware, which is the only
+   context that may write cookies, with the GoTrue call lifted into a module
+   that imports neither `server-only` nor the pool. It needs a real project to
+   verify, so it belongs with item 2.
+2. **The acceptance pass Brief D actually asked for, with credentials.** Every
+   item under *"Not watched at all"* above, in the runbook's order, starting
+   with the database ground: the trigger, `u.id = p.id`, `orbit_app`'s
+   privileges, `provision_missing_accounts()`, then `db-test.sh` against the
+   real project. Then a magic link received and followed — **edge 38's fix is
+   unverified against a real project and the whole flow is unobserved** — then a
+   second account and an invitation with each role including `free_busy`.
+   Note the two environment constraints found this session: the browser cannot
+   reach the deployment from a container like this one, and `pnpm seed` must
+   never be run against the real project.
+3. **Edge 13 — a push does not delete**, and **edge 16 — nothing runs a
+   `schedule` rule on a schedule.** 13 means a cancelled event stays in
+   somebody's Google calendar for good; 16 is why the rules engine's `schedule`
+   trigger is a shape with nothing behind it.
 
 After those, **shared lists (shopping)** is the one household verb genuinely
 missing, and it is large and needs a migration.

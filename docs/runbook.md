@@ -477,12 +477,31 @@ psql "$ADMIN_URL" -c "\
 mis-set *Redirect URL* shows up, and Orbit's callback screen prints the sentence
 Supabase refused with rather than a code.
 
+> **Corrected session 15.** That was not true until this session, and the
+> correction is worth carrying: Orbit sent the redirect target in the request
+> *body*, where GoTrue does not read it, so Supabase was never given a target to
+> refuse. It fell back to the project's **Site URL** and every link landed
+> somewhere `CompleteSignIn` does not run — the link silently did nothing rather
+> than showing you a sentence. Fixed, but **the fix has never been checked
+> against a real project**: watch this step properly, and if the link works,
+> that is the first time anybody has seen it work.
+
 **6. Let a session expire so the refresh path runs.** This is the specific line
-`docs/STATUS.md` has flagged for three sessions as most likely to be wrong. The
-provider is a complete implementation of GoTrue's REST API and **not one line of
-it has ever executed**. Either wait out the access-token lifetime (Authentication
-→ Sessions) or shorten it temporarily. If you do not watch this, you have not
-tested authentication — you have tested signing in.
+`docs/STATUS.md` flagged for four sessions as most likely to be wrong.
+
+> **Corrected session 15: it ran, and it is broken — edge 36.** Watched against
+> a stub GoTrue with Supabase's rotation semantics. The refresh happens during a
+> Server Component render, which cannot write cookies, so the **rotated** token
+> is discarded and the spent one is presented again on the next request. Outside
+> Supabase's ten-second reuse grace that is read as theft and the whole token
+> family is revoked. Expect: the first page load after expiry works, and one
+> ten seconds later signs you out for good.
+>
+> So do still run this step — but run it to confirm the failure on the real
+> project, and to check the fix once somebody has written it. Either wait out
+> the access-token lifetime (Authentication → Sessions) or shorten it
+> temporarily. If you do not watch this, you have not tested authentication —
+> you have tested signing in.
 
 **7. Create a space, invite a second account.** Spaces → People and invites.
 Send the link to a different browser, accept it. That is the end-to-end proof: an
