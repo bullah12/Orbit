@@ -57,16 +57,28 @@ export function londonMidnight(iso: DateOnly): Date {
   return new Date(`${day}T00:00:00Z`);
 }
 
+/**
+ * Hoisted, and it is not a micro-optimisation.
+ *
+ * Constructing an `Intl.DateTimeFormat` costs far more than using one — tens of
+ * microseconds against a fraction of one — and this was being constructed *per
+ * call*, from inside `londonMidnight`, which the calendar calls once per event
+ * and once per day cell. A CPU profile of `/calendar/month` put this one line
+ * at **2.45 seconds of 4.3 seconds of actual work**, the largest single entry
+ * in the app by a factor of thirty.
+ */
+const hhmmFmt = new Intl.DateTimeFormat('en-GB', {
+  timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+});
+
 export function londonTimeHHMM(d: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(d);
+  return hhmmFmt.format(d);
 }
 
 const partsCache = new Map<string, Intl.DateTimeFormat>();
 
-/** What the wall clock in `tz` reads at this instant, minus UTC, in milliseconds. */
-function zoneOffsetMs(tz: string, at: Date): number {
+/** The uncached answer: one `formatToParts`, which costs about 7µs. */
+function readZoneOffsetMs(tz: string, at: Date): number {
   let fmt = partsCache.get(tz);
   if (!fmt) {
     fmt = new Intl.DateTimeFormat('en-CA', {
@@ -81,6 +93,62 @@ function zoneOffsetMs(tz: string, at: Date): number {
   // Some engines render midnight as hour 24; % 24 makes that the same instant.
   const asIfUtc = Date.UTC(n('year'), n('month') - 1, n('day'), n('hour') % 24, n('minute'), n('second'));
   return asIfUtc - at.getTime();
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * `tz|utcDayNumber` → the offset that holds all day, or `null` for a day the
+ * offset changes during. Bounded, and cleared wholesale rather than evicted:
+ * the entries are 16 bytes and the cost of being wrong is a slow render, not a
+ * wrong one.
+ */
+const dayOffsets = new Map<string, number | null>();
+const MAX_DAY_OFFSETS = 20_000;
+
+/**
+ * What the wall clock in `tz` reads at this instant, minus UTC, in milliseconds.
+ *
+ * Cached per UTC day, because this is the hottest arithmetic in the app and it
+ * was costing 7µs a call. `expandRecurrence` walks one period at a time from an
+ * event's DTSTART to the window being rendered, calling this twice per step, so
+ * an ordinary daily event that started two years ago cost **25ms to expand — on
+ * every render, for every range, including Today**. That is where the month and
+ * all ranges were spending their second.
+ *
+ * The cache cannot move an event by an hour, which is the failure that would
+ * matter: a day is only cached once the offset at its first and last instant
+ * agree, so the two days a year a transition lands on are recomputed exactly,
+ * every time. That check costs two reads on the first touch of a day and none
+ * afterwards, and the map is module-level, so a warm server pays neither.
+ *
+ * Zones do not transition twice within one UTC day anywhere in the IANA
+ * database. If one ever did, the endpoints would still have to differ for the
+ * day to be mis-cached, and they would only agree if the zone returned to the
+ * same offset within 24 hours.
+ */
+function zoneOffsetMs(tz: string, at: Date): number {
+  const t = at.getTime();
+  if (!Number.isFinite(t)) return readZoneOffsetMs(tz, at);
+
+  const day = Math.floor(t / DAY_MS);
+  const key = `${tz}|${day}`;
+  let offset = dayOffsets.get(key);
+
+  if (offset === undefined) {
+    // Both probes land on a whole second. `formatToParts` has no millisecond
+    // field, so `readZoneOffsetMs` at 23:59:59.999 reports an offset 999ms
+    // short of the real one — probing there made every ordinary day look like a
+    // transition day and the cache never held anything.
+    const first = readZoneOffsetMs(tz, new Date(day * DAY_MS));
+    const last = readZoneOffsetMs(tz, new Date(day * DAY_MS + DAY_MS - 1000));
+    offset = first === last ? first : null;
+    if (dayOffsets.size >= MAX_DAY_OFFSETS) dayOffsets.clear();
+    dayOffsets.set(key, offset);
+  }
+
+  // `null` is a transition day: no single answer holds across it, so ask.
+  return offset ?? readZoneOffsetMs(tz, at);
 }
 
 /**
@@ -263,11 +331,14 @@ export function formatTime(value: string | Date): string {
   return timeFmt.format(typeof value === 'string' ? new Date(value) : value);
 }
 
+/** Hoisted for the same reason as `hhmmFmt`: this one is per row on three pages. */
+const dayMonthFmt = new Intl.DateTimeFormat(LOCALE, {
+  timeZone: TZ, day: 'numeric', month: 'short',
+});
+
 export function formatDateTime(value: string | Date): string {
   const d = typeof value === 'string' ? new Date(value) : value;
-  return `${new Intl.DateTimeFormat(LOCALE, {
-    timeZone: TZ, day: 'numeric', month: 'short',
-  }).format(d)}, ${formatTime(d)}`;
+  return `${dayMonthFmt.format(d)}, ${formatTime(d)}`;
 }
 
 /** "2 hours ago", "3 days ago". Used for note timestamps, nothing else. */

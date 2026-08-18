@@ -16,6 +16,7 @@ import {
   addDaysISO,
   formatDate,
   formatLongDate,
+  londonDayISO,
   londonMidnight,
   plural,
   todayISO,
@@ -27,8 +28,18 @@ import { runAiFeatureFor } from '@/app/actions';
 
 export const dynamic = 'force-dynamic';
 
-/** How many days each range covers, starting today. Month is a rolling 30. */
-const SPAN: Record<Range, number> = { today: 1, week: 7, month: 30 };
+/**
+ * How many days each range covers, starting today. Month is a rolling 30.
+ *
+ * `all` is a year rather than everything, and the number is a real constraint
+ * rather than a shrug: `listCalendarItems` *expands* recurrence across the
+ * window it is given, so a daily event costs one row per day of it. Ten years
+ * of "all" would be three and a half thousand rows for one repeating event, to
+ * render a page nobody scrolls to the end of. A year is the longest window that
+ * stays honest about the cost, and the header says so rather than implying the
+ * calendar has no horizon.
+ */
+const SPAN: Record<Range, number> = { today: 1, week: 7, month: 30, all: 365 };
 
 export default async function TodayPage({
   searchParams,
@@ -40,14 +51,17 @@ export default async function TodayPage({
 
   const user = await requireUser();
   const today = todayISO();
-  const days: DateOnly[] = Array.from({ length: SPAN[range] }, (_, i) => addDaysISO(today, i));
 
-  const [spaces, categories, dueNow, overdue, items, yesterday, dates, consents] =
+  const [spaces, categories, dueNow, overdue, allOpen, items, yesterday, dates, consents] =
     await Promise.all([
       listSpaces(user.id),
       categoriesBySpace(user.id),
       listTasks(user.id, 'today', { limit: 100 }),
       listTasks(user.id, 'overdue', { limit: 100 }),
+      // Only asked for on All. The other three ranges do not render it, and a
+      // query nobody reads is a round trip nobody should pay for — this page
+      // already costs more of them than anything else in the app.
+      range === 'all' ? listTasks(user.id, 'all', { limit: 200 }) : Promise.resolve([]),
       // The events this page has been missing since Phase 0. It answered "what
       // is due" and "whose birthday is near" but never "what is on", which is
       // the question a household calendar exists to answer.
@@ -60,6 +74,15 @@ export default async function TodayPage({
       upcomingDates(user.id, range === 'today' ? 21 : SPAN[range]),
       listConsents(user.id),
     ]);
+
+  // A day per row of the window, except on All — 365 headings, 360 of them
+  // empty, is not a list. `Agenda` drops the days with nothing on them anyway,
+  // so handing it exactly the days that have something is the same page for a
+  // fraction of the work.
+  const days: DateOnly[] =
+    range === 'all'
+      ? [...new Set(items.map((i) => londonDayISO(i.startsAt)))].sort()
+      : Array.from({ length: SPAN[range] }, (_, i) => addDaysISO(today, i));
 
   // Consent is per feature *and* per space, so a weekly review is offered once
   // per space rather than once. There is no "all my spaces" version: a review
@@ -75,6 +98,12 @@ export default async function TodayPage({
   const overdueIds = new Set(overdue.map((t) => t.id));
   const dueToday = dueNow.filter((t) => !overdueIds.has(t.id));
 
+  // On All, "everything still open" is a superset of both sections above it, so
+  // the ones already rendered come out — otherwise a task due today is listed
+  // twice on one screen and the counts stop agreeing with the lists.
+  const dueIds = new Set(dueNow.map((t) => t.id));
+  const restOpen = allOpen.filter((t) => !dueIds.has(t.id));
+
   // Every number in the strip is the length of a list this page renders, which
   // is the whole reason for counting here rather than asking the database
   // separately: a summary that disagrees with what is underneath it is worse
@@ -83,6 +112,9 @@ export default async function TodayPage({
     events: items.length,
     tasks: dueToday.length,
     overdue: overdue.length,
+    // Same rule, one range further: the number is the length of the list this
+    // page renders underneath it, plus the two it renders above.
+    open: restOpen.length + dueToday.length + overdue.length,
   };
 
   return (
@@ -100,15 +132,28 @@ export default async function TodayPage({
               a section label two inches below it. Back to the system's page
               title from `md` up, where nothing about the old size was wrong. */}
           <h1 className="text-3xl font-semibold tracking-[-0.02em] md:text-xl md:tracking-tight">
-            {range === 'today' ? 'Today' : range === 'week' ? 'This week' : 'This month'}
+            {range === 'today'
+              ? 'Today'
+              : range === 'week'
+                ? 'This week'
+                : range === 'month'
+                  ? 'This month'
+                  : 'Everything'}
           </h1>
           {/* Spelled out rather than 01/08/2026. A page title is read, not
               scanned down a column, and a numeric date at the top of the app is
               the one place the DD/MM–MM/DD ambiguity actually costs something. */}
+          {/* On All the window is not what the eye should read off the header —
+              the point of the range is the tasks with no date at all. It says
+              what the calendar half covers, because a year *is* a horizon and
+              pretending otherwise would make an empty agenda look like an
+              empty diary. */}
           <p className="muted mt-1 text-base md:mt-0.5 md:text-xs">
             {range === 'today'
               ? formatLongDate(today)
-              : `${formatLongDate(today)} – ${formatLongDate(days[days.length - 1]!)}`}
+              : range === 'all'
+                ? 'Everything still open, and the year ahead'
+                : `${formatLongDate(today)} – ${formatLongDate(days[days.length - 1]!)}`}
           </p>
         </div>
         <SearchButton />
@@ -124,7 +169,11 @@ export default async function TodayPage({
         style={{ background: 'var(--bg)' }}
       >
         <Stat n={counts.events} label={counts.events === 1 ? 'event' : 'events'} />
-        <Stat n={counts.tasks} label={counts.tasks === 1 ? 'task due' : 'tasks due'} />
+        {range === 'all' ? (
+          <Stat n={counts.open} label={counts.open === 1 ? 'task open' : 'tasks open'} />
+        ) : (
+          <Stat n={counts.tasks} label={counts.tasks === 1 ? 'task due' : 'tasks due'} />
+        )}
         {/* The only coloured stat. Overdue is a state worth naming in --danger;
             nothing else on this strip is. */}
         <Stat n={counts.overdue} label="overdue" danger={counts.overdue > 0} />
@@ -144,7 +193,7 @@ export default async function TodayPage({
       </div>
 
       <SectionHeading>What’s on</SectionHeading>
-      <Agenda items={items} days={days} today={today} />
+      <Agenda items={items} days={days} today={today} labelDays={range !== 'today'} />
 
       {reviews.length > 0 && (
         <section className="hairline border-b px-5 py-3" aria-labelledby="week-review-heading">
@@ -249,6 +298,28 @@ export default async function TodayPage({
         </section>
       )}
 
+      {/* All only. This is the section the range exists for: a task with no
+          date is in none of the three windows above, so until now the home page
+          had no way to show one. Capped at 50 with a way through to the full
+          list, the same shape Overdue already uses. */}
+      {range === 'all' && restOpen.length > 0 && (
+        <section>
+          <SectionHeading>
+            Open
+            {restOpen.length > 50 && (
+              <Link href="/tasks/all" className="faint ml-2 font-normal">
+                see all {restOpen.length}
+              </Link>
+            )}
+          </SectionHeading>
+          <ul>
+            {restOpen.slice(0, 50).map((t) => (
+              <TaskRow key={t.id} task={t} />
+            ))}
+          </ul>
+        </section>
+      )}
+
       {spaces.length === 0 ? (
         <div className="muted px-5 py-10 text-sm">
           <p className="mb-1">You are not a member of any space.</p>
@@ -259,8 +330,11 @@ export default async function TodayPage({
         </div>
       ) : (
         dueNow.length === 0 &&
-        items.length === 0 && (
-          <p className="faint px-5 py-10 text-sm">Nothing due. That is allowed.</p>
+        items.length === 0 &&
+        restOpen.length === 0 && (
+          <p className="faint px-5 py-10 text-sm">
+            {range === 'all' ? 'Nothing open at all. That is allowed.' : 'Nothing due. That is allowed.'}
+          </p>
         )
       )}
     </div>

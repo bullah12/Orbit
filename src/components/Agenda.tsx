@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import Link from 'next/link';
 import { Icon } from './Icon';
 import { SpaceIndicator } from './SpaceIndicator';
@@ -34,11 +35,23 @@ export function Agenda({
   days,
   today,
   now = new Date(),
+  labelDays = days.length > 1,
 }: {
   items: CalendarItem[];
   days: DateOnly[];
   today: DateOnly;
   now?: Date;
+  /**
+   * Whether each day gets a heading. Derived from the window by default, which
+   * is right for a fixed one — a single day needs no heading because the page
+   * header already said which day it is.
+   *
+   * All passes it explicitly, because there the day list is derived from the
+   * events rather than from the window: a year with everything falling on one
+   * afternoon would produce `days.length === 1` and drop the only thing telling
+   * the reader which afternoon it was.
+   */
+  labelDays?: boolean;
 }) {
   const withEvents = days
     .map((day) => ({ day, timed: splitDay(items, day) }))
@@ -47,7 +60,7 @@ export function Agenda({
   if (withEvents.length === 0) {
     return (
       <p className="faint px-5 py-6 text-sm">
-        Nothing in the calendar{days.length > 1 ? ' for this range' : ' today'}.
+        Nothing in the calendar{days.length === 1 ? ' today' : ' for this range'}.
       </p>
     );
   }
@@ -58,7 +71,7 @@ export function Agenda({
         <section key={day} aria-label={formatLongDate(day)}>
           {/* A single day needs no heading — the page header already said which
               day it is. A range does, or the blocks run together. */}
-          {days.length > 1 && (
+          {labelDays && (
             <h3 className="section-label mb-1.5">
               {day === today ? `Today — ${formatLongDate(day)}` : formatLongDate(day)}
             </h3>
@@ -69,14 +82,25 @@ export function Agenda({
               <AgendaRow key={item.key} item={item} allDay />
             ))}
             {timed.timed.map((item, i) => (
-              <li key={item.key} className="contents">
+              // A Fragment, and it has to be. This was `<li className="contents">`
+              // wrapping two components that each render an `<li>` of their own,
+              // and an `<li>` may not descend from an `<li>`: the parser closes
+              // the outer one on sight of the inner, so the DOM the browser built
+              // was not the tree React had described. Hydration failed on every
+              // render of this page, React threw the server's markup away and
+              // rebuilt the whole page on the client — and the rebuilt tree never
+              // got the router's click handlers, which is why pressing Today,
+              // Week or Month did nothing at all. `display: contents` had made it
+              // invisible to layout, so nothing about the page moves now that the
+              // wrapper is gone.
+              <Fragment key={item.key}>
                 {/* The now-line goes between the last block that has started
                     and the first that has not, which is the only place it can
                     go in a list — an agenda has no fixed vertical scale to
                     position it against, unlike the calendar grid. */}
                 {shouldPrecedeNowLine(timed.timed, i, day, now, today) && <NowLine now={now} />}
                 <AgendaRow item={item} isNow={containsNow(item, now)} />
-              </li>
+              </Fragment>
             ))}
             {endsAfterLastBlock(timed.timed, day, now, today) && <NowLine now={now} />}
           </ul>
