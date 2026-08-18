@@ -63,6 +63,17 @@ networking has no IPv6 route, so the direct host is simply unreachable —
 → **Connect** → *Session pooler* gives you an IPv4 host; the username becomes
 `postgres.YOUR-REF`. See `docs/windows.md`.
 
+**Guard `$ADMIN_URL` before every command that writes.** An unset connection
+string makes `psql` fall back to a local database, where migrations can succeed
+against the wrong target. Keep the credential outside the repository and fail
+closed when a new terminal has not loaded it:
+
+```sh
+umask 077 && printf '%s\n' "export ADMIN_URL='postgresql://…'" > ~/.orbit-admin.env
+source ~/.orbit-admin.env
+: "${ADMIN_URL:?ADMIN_URL is not set — refusing to touch a local database}"
+```
+
 ```sh
 # The connection string from Settings → Database → Connection string → URI.
 # Session mode, port 5432, as the `postgres` user: migrations create roles and
@@ -109,9 +120,9 @@ done
 | `0011_travel_leg_identity.sql` | the partial unique index on a derived journey |
 | `0012_auth_user_profiles.sql` | **the one this all turns on**: the `auth.users` → `public.profiles` trigger, and `app.space_invite()` |
 
-### The three gotchas
+### The four gotchas
 
-These are from §2 of `docs/deployment-and-android.md`. All three are things to
+The first three are from §2 of `docs/deployment-and-android.md`. All four are things to
 check rather than assume, and the first is the one that fails silently.
 
 **1. `profiles.id` must equal `auth.uid()`.** `public.profiles.id` defaults to
@@ -155,7 +166,22 @@ Read the errors rather than suppressing them: `create schema if not exists auth`
 `create role`, and `create extension` are all expected to be no-ops there. Only
 the `auth.uid()`/`auth.role()` replacements may legitimately fail.
 
-**3. `orbit_app` must exist, be able to log in, own nothing, and hold no
+**3. A shared project may already have triggers on `auth.users`.** Orbit's
+`on_auth_user_created` is not necessarily the only one. Inspect them before
+testing sign-up:
+
+```sh
+psql "$ADMIN_URL" -c "select tgname, tgenabled from pg_trigger \
+  where tgrelid='auth.users'::regclass and not tgisinternal order by tgname"
+```
+
+Another application's trigger can refuse an insert before Orbit sees it. An
+email allowlist is a common example: it makes inviting somebody a two-step
+operation, because the address must be allowed before the recipient can create
+the account needed to redeem the invite. Treat unfamiliar triggers as part of
+the shared project's deployment contract, not as Orbit data to modify.
+
+**4. `orbit_app` must exist, be able to log in, own nothing, and hold no
 BYPASSRLS.** The whole security model is that the application connects as a role
 the policies apply to in full — `./scripts/db-test.sh` asserts exactly that
 locally, and it is worthless if the deployed role is different.
@@ -164,7 +190,7 @@ locally, and it is worthless if the deployed role is different.
 psql "$ADMIN_URL" <<'SQL'
 create role orbit_app login password 'PUT A REAL PASSWORD HERE' noinherit;
 grant connect on database postgres to orbit_app;
-grant usage on schema orbit, app, auth to orbit_app;
+grant usage on schema orbit, app to orbit_app;
 grant authenticated, anon to orbit_app;
 
 -- The identity seam: two narrow functions, no table grants at all.
@@ -172,6 +198,12 @@ grant execute on function app.identity_profile(uuid) to orbit_app;
 grant execute on function app.identity_profiles() to orbit_app;
 SQL
 ```
+
+Do not grant directly on Supabase's `auth` schema: it belongs to
+`supabase_auth_admin`, and `authenticated` already has the access used after
+`asUser()` executes `set local role authenticated`. Through the session pooler,
+use `orbit_app.YOUR-REF` as the username; a bare `orbit_app` is not routed to
+the project.
 
 Then confirm what it is *not*:
 
@@ -204,16 +236,27 @@ If you must use 6543, set **`DATABASE_PREPARE=false`**, which turns
 rather than a code edit because "remember to change this line before deploying"
 is an instruction somebody eventually does not follow.
 
-### Optionally, run the pgTAP suite against the real project
+### Run the pgTAP suite against the real project
+
+The suite rolls back its fixtures, but pgTAP failures are output rows rather
+than SQL errors. `ON_ERROR_STOP=1` alone can therefore exit successfully after
+a failed assertion. Capture unaligned TAP output and inspect it explicitly:
 
 ```sh
-psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_isolation_test.sql
+psql "$ADMIN_URL" -c 'create extension if not exists pgtap'
+psql "$ADMIN_URL" -X -q --no-align --tuples-only -v ON_ERROR_STOP=1 -P pager=off \
+  -f supabase/tests/rls_isolation_test.sql > /tmp/orbit-pgtap.log 2>&1
+
+grep -c '^ok' /tmp/orbit-pgtap.log
+grep '^not ok' /tmp/orbit-pgtap.log
+grep 'Looks like you' /tmp/orbit-pgtap.log
 ```
 
-It runs in a transaction and rolls back, so it leaves nothing behind. Three of
-its 106 assertions are about the local `auth.users` shim and the trigger; those
-are the ones worth watching on a real project, because they are the ones this
-container could only test against a shim.
+The final grep catches a plan-count mismatch, which is not reported as a
+`not ok` line. On a real project, the assertion saying every table outside the
+known-empty ledger contains a row may fail because genuine deployments have
+unused tables. That coverage warning is expected; any policy, trigger, or
+invite-flow failure is not.
 
 ---
 
