@@ -2581,6 +2581,10 @@ the same as the design deleting it.
 
 ## 2026-08-21 — Vite rebuild release hardening
 
+- Kept browser tables and reviewed RPC wrappers together in the one exposed
+  `orbit` schema. The proposed `orbit_api` namespace added operational overhead
+  without changing the RLS boundary; `app` remains the unexposed implementation
+  schema, and each browser RPC retains explicit execute grants and invoker rights.
 - Added one RLS-preserving, security-invoker search RPC because instrumentation
   showed that global search otherwise made five parallel entity requests.
 - Tightened browser RPC search paths so they do not trust the mutable `public`

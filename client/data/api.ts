@@ -1,4 +1,4 @@
-import { orbitApi, supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { addDays, isoDate, startOfDay } from '../lib/date';
 import type { ChecklistItem, Event, Member, Note, Person, PersonContact, PersonDate, Place, Profile, SearchResult, Space, Task } from './types';
 
@@ -24,7 +24,7 @@ export async function listSpaces(): Promise<Space[]> {
 }
 
 export async function createSpace(name: string): Promise<string> {
-  const result = await orbitApi.rpc('create_space', { p_name: name });
+  const result = await supabase.rpc('create_space', { p_name: name });
   return value(result.data as string | null, result.error);
 }
 
@@ -49,7 +49,7 @@ export async function createInvite(spaceId: string, ownerId: string, role: Membe
 }
 
 export async function inviteAction(token: string, action: 'preview' | 'accept' | 'decline'): Promise<Record<string, unknown>> {
-  const result = await orbitApi.rpc(`invite_${action}`, { p_token: token });
+  const result = await supabase.rpc(`invite_${action}`, { p_token: token });
   return value(result.data as Record<string, unknown> | null, result.error);
 }
 
@@ -132,7 +132,7 @@ export type TodayData = { tasks: Task[]; events: Event[]; dates: (PersonDate & {
 export async function getToday(range: number): Promise<TodayData> {
   const start = startOfDay(new Date());
   const end = addDays(start, range);
-  const result = await orbitApi.rpc('dashboard', { p_from: start.toISOString(), p_to: end.toISOString() });
+  const result = await supabase.rpc('dashboard', { p_from: start.toISOString(), p_to: end.toISOString() });
   return value(result.data as TodayData | null, result.error);
 }
 
@@ -140,8 +140,8 @@ export async function listEvents(from: Date, to: Date, freeBusySpaceIds: string[
   const result = await supabase.from('events').select('*, recurrence_rules:recurrence_rule_id(*)').lt('starts_at', to.toISOString()).neq('status', 'cancelled').order('starts_at').limit(500);
   const rows = value((result.data ?? []) as unknown as Event[], result.error);
   const anonymous = await Promise.all(freeBusySpaceIds.flatMap((spaceId) => [
-    orbitApi.rpc('free_busy_blocks', { p_space_id: spaceId, p_from: from.toISOString(), p_to: to.toISOString() }),
-    orbitApi.rpc('free_busy_recurring', { p_space_id: spaceId, p_from: from.toISOString(), p_to: to.toISOString() }),
+    supabase.rpc('free_busy_blocks', { p_space_id: spaceId, p_from: from.toISOString(), p_to: to.toISOString() }),
+    supabase.rpc('free_busy_recurring', { p_space_id: spaceId, p_from: from.toISOString(), p_to: to.toISOString() }),
   ]));
   const busy: Event[] = anonymous.flatMap((response, responseIndex) => {
     if (response.error) throw new Error(response.error.message);
@@ -268,6 +268,6 @@ export async function linkNote(note: Note, entityKind: 'task' | 'person' | 'even
 export async function globalSearch(query: string): Promise<SearchResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
-  const result = await orbitApi.rpc('search', { p_query: q, p_limit: 8 });
+  const result = await supabase.rpc('search', { p_query: q, p_limit: 8 });
   return value((result.data ?? []) as SearchResult[], result.error);
 }

@@ -4,7 +4,7 @@
 -- dates). This SECURITY INVOKER wrapper changes only transport shape: every
 -- select still runs as the signed-in caller against the existing policies.
 
-create or replace function orbit_api.dashboard(
+create or replace function orbit.dashboard(
   p_from timestamptz,
   p_to timestamptz
 )
@@ -48,8 +48,8 @@ as $$
   )
 $$;
 
-revoke execute on function orbit_api.dashboard(timestamptz, timestamptz) from public;
-grant execute on function orbit_api.dashboard(timestamptz, timestamptz) to authenticated;
+revoke execute on function orbit.dashboard(timestamptz, timestamptz) from public;
+grant execute on function orbit.dashboard(timestamptz, timestamptz) to authenticated;
 
-comment on function orbit_api.dashboard(timestamptz, timestamptz) is
+comment on function orbit.dashboard(timestamptz, timestamptz) is
   'RLS-scoped Today payload added after measuring three direct route requests.';

@@ -7,7 +7,10 @@ const server = await preview({
 });
 
 const cli = fileURLToPath(new URL('../node_modules/playwright/cli.js', import.meta.url));
-const child = spawn(process.execPath, [cli, 'test', ...process.argv.slice(2)], {
+const forwardedArgs = process.argv.slice(2);
+if (forwardedArgs[0] === '--') forwardedArgs.shift();
+
+const child = spawn(process.execPath, [cli, 'test', ...forwardedArgs], {
   cwd: fileURLToPath(new URL('..', import.meta.url)),
   env: process.env,
   stdio: 'inherit',

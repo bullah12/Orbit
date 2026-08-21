@@ -1,15 +1,11 @@
 -- 0018_browser_api.sql — the narrow PostgREST surface used by the browser app.
 --
--- Orbit's tables stay in `orbit` and its privileged implementation functions
--- stay in `app`. Supabase only needs to expose `orbit` and this schema. Every
--- wrapper is SECURITY INVOKER: the authenticated caller's JWT and the existing
+-- Browser-facing tables and RPC wrappers stay together in `orbit`; privileged
+-- implementation functions stay in the unexposed `app` schema. Every wrapper
+-- is SECURITY INVOKER, so the authenticated caller's JWT and the existing
 -- RLS/underlying function checks remain the authority.
 
-create schema if not exists orbit_api;
-revoke all on schema orbit_api from public;
-grant usage on schema orbit_api to authenticated;
-
-create or replace function orbit_api.ensure_account()
+create or replace function orbit.ensure_account()
 returns jsonb
 language sql
 security invoker
@@ -22,7 +18,7 @@ as $$
   from app.ensure_account() result
 $$;
 
-create or replace function orbit_api.ensure_default_spaces()
+create or replace function orbit.ensure_default_spaces()
 returns integer
 language sql
 security invoker
@@ -31,7 +27,7 @@ as $$
   select app.ensure_default_spaces()
 $$;
 
-create or replace function orbit_api.create_space(
+create or replace function orbit.create_space(
   p_name text,
   p_short_label text default null,
   p_kind text default 'personal',
@@ -46,34 +42,34 @@ as $$
   select app.create_space(p_name, p_short_label, p_kind, p_colour, p_icon)
 $$;
 
-create or replace function orbit_api.invite_preview(p_token text)
+create or replace function orbit.invite_preview(p_token text)
 returns jsonb
 language sql
 security invoker
 set search_path = pg_catalog, orbit, app, pg_temp
 as $$
-  select to_jsonb(result) from app.space_invite(p_token, 'preview') result
+  select to_jsonb(result) from app.space_invite(p_token, 'preview'::text) result
 $$;
 
-create or replace function orbit_api.invite_accept(p_token text)
+create or replace function orbit.invite_accept(p_token text)
 returns jsonb
 language sql
 security invoker
 set search_path = pg_catalog, orbit, app, pg_temp
 as $$
-  select to_jsonb(result) from app.space_invite(p_token, 'accept') result
+  select to_jsonb(result) from app.space_invite(p_token, 'accept'::text) result
 $$;
 
-create or replace function orbit_api.invite_decline(p_token text)
+create or replace function orbit.invite_decline(p_token text)
 returns jsonb
 language sql
 security invoker
 set search_path = pg_catalog, orbit, app, pg_temp
 as $$
-  select to_jsonb(result) from app.space_invite(p_token, 'decline') result
+  select to_jsonb(result) from app.space_invite(p_token, 'decline'::text) result
 $$;
 
-create or replace function orbit_api.space_move_preview(
+create or replace function orbit.space_move_preview(
   p_entity_kind text,
   p_entity_id uuid,
   p_target_space_id uuid
@@ -102,7 +98,7 @@ as $$
   ) result
 $$;
 
-create or replace function orbit_api.free_busy_blocks(
+create or replace function orbit.free_busy_blocks(
   p_space_id uuid,
   p_from timestamptz,
   p_to timestamptz
@@ -116,7 +112,7 @@ as $$
   select * from app.free_busy_blocks(p_space_id, p_from, p_to)
 $$;
 
-create or replace function orbit_api.free_busy_recurring(
+create or replace function orbit.free_busy_recurring(
   p_space_id uuid,
   p_from timestamptz,
   p_to timestamptz
@@ -137,25 +133,22 @@ as $$
   select * from app.free_busy_recurring(p_space_id, p_from, p_to)
 $$;
 
-revoke execute on function orbit_api.ensure_account() from public;
-revoke execute on function orbit_api.ensure_default_spaces() from public;
-revoke execute on function orbit_api.create_space(text, text, text, text, text) from public;
-revoke execute on function orbit_api.invite_preview(text) from public;
-revoke execute on function orbit_api.invite_accept(text) from public;
-revoke execute on function orbit_api.invite_decline(text) from public;
-revoke execute on function orbit_api.space_move_preview(text, uuid, uuid) from public;
-revoke execute on function orbit_api.free_busy_blocks(uuid, timestamptz, timestamptz) from public;
-revoke execute on function orbit_api.free_busy_recurring(uuid, timestamptz, timestamptz) from public;
+revoke execute on function orbit.ensure_account() from public;
+revoke execute on function orbit.ensure_default_spaces() from public;
+revoke execute on function orbit.create_space(text, text, text, text, text) from public;
+revoke execute on function orbit.invite_preview(text) from public;
+revoke execute on function orbit.invite_accept(text) from public;
+revoke execute on function orbit.invite_decline(text) from public;
+revoke execute on function orbit.space_move_preview(text, uuid, uuid) from public;
+revoke execute on function orbit.free_busy_blocks(uuid, timestamptz, timestamptz) from public;
+revoke execute on function orbit.free_busy_recurring(uuid, timestamptz, timestamptz) from public;
 
-grant execute on function orbit_api.ensure_account() to authenticated;
-grant execute on function orbit_api.ensure_default_spaces() to authenticated;
-grant execute on function orbit_api.create_space(text, text, text, text, text) to authenticated;
-grant execute on function orbit_api.invite_preview(text) to authenticated;
-grant execute on function orbit_api.invite_accept(text) to authenticated;
-grant execute on function orbit_api.invite_decline(text) to authenticated;
-grant execute on function orbit_api.space_move_preview(text, uuid, uuid) to authenticated;
-grant execute on function orbit_api.free_busy_blocks(uuid, timestamptz, timestamptz) to authenticated;
-grant execute on function orbit_api.free_busy_recurring(uuid, timestamptz, timestamptz) to authenticated;
-
-comment on schema orbit_api is
-  'Least-privilege Data API wrappers for Orbit browser operations. Expose this and orbit, never app.';
+grant execute on function orbit.ensure_account() to authenticated;
+grant execute on function orbit.ensure_default_spaces() to authenticated;
+grant execute on function orbit.create_space(text, text, text, text, text) to authenticated;
+grant execute on function orbit.invite_preview(text) to authenticated;
+grant execute on function orbit.invite_accept(text) to authenticated;
+grant execute on function orbit.invite_decline(text) to authenticated;
+grant execute on function orbit.space_move_preview(text, uuid, uuid) to authenticated;
+grant execute on function orbit.free_busy_blocks(uuid, timestamptz, timestamptz) to authenticated;
+grant execute on function orbit.free_busy_recurring(uuid, timestamptz, timestamptz) to authenticated;

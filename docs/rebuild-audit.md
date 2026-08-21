@@ -155,7 +155,7 @@ lists, calendar items, yesterday notes, upcoming dates, and AI consent. The
 summary counts are computed consistently from the returned lists, but obtaining
 those lists is expensive.
 
-Target: add an optional `orbit_api.dashboard(from_date, to_date)` RPC after the
+Target: add an optional `orbit.dashboard(from_date, to_date)` RPC after the
 first browser version works, or issue a maximum of two cached Data API queries.
 Return raw recurrence rules and expand them in the existing pure TypeScript
 logic if needed.
@@ -267,7 +267,7 @@ flowchart LR
   D --> E["Supabase Auth"]
   D --> F["PostgREST Data API"]
   F --> G["Existing orbit tables + RLS"]
-  F --> H["Optional orbit_api RPCs"]
+  F --> H["Narrow orbit RPCs"]
 ```
 
 Recommended stack:
@@ -292,8 +292,8 @@ be in the browser. A service-role key must never enter a `VITE_*` variable.
 
 ### Required before the browser app can read data
 
-1. Add `orbit` and the new `orbit_api` schema to Supabase **Data API → Exposed
-   schemas**.
+1. Add only `orbit` to Supabase **Data API → Exposed schemas**. Keep the
+   implementation-only `app` schema unexposed.
 2. Use `supabase.schema('orbit')` (or set `db.schema = 'orbit'`) in the client.
 3. Verify the existing grants and RLS with a real authenticated JWT.
 
@@ -305,8 +305,8 @@ not require a table migration.
 
 Add `0018_browser_api.sql`. Direct table CRUD should continue through the
 `orbit` schema, but several existing behaviors intentionally use narrow `app.*`
-functions and cannot be reproduced safely with table writes alone. Create an
-`orbit_api` schema with least-privilege wrappers for only:
+functions and cannot be reproduced safely with table writes alone. Add
+least-privilege wrappers to `orbit` for only:
 
 - `ensure_account` / `ensure_default_spaces` for pre-migration accounts;
 - `create_space`, because the first membership has to be created atomically;
@@ -333,7 +333,7 @@ may remain browser-local, even this migration is unnecessary.
 
 ### Optional performance migration, only after the direct client works
 
-Add a security-invoker dashboard RPC to the dedicated `orbit_api` schema that
+Add a security-invoker dashboard RPC to the exposed `orbit` schema that
 returns the Today payload in one call. Grant only the function's `EXECUTE`
 permission, and keep RLS active on all underlying tables. Do not add a new
 `SECURITY DEFINER` path unless it has a proven need and dedicated RLS tests.

@@ -103,8 +103,8 @@ changing components.
 The current database uses the custom `orbit` schema. Before running the browser
 app, document the required project setting:
 
-- Supabase Dashboard → Data API → Exposed schemas → include `orbit` and the new
-  `orbit_api` schema.
+- Supabase Dashboard → Data API → Exposed schemas → include only `orbit`.
+  Keep the implementation-only `app` schema unexposed.
 
 The existing migrations already grant schema usage and authenticated CRUD while
 RLS limits rows. Verify this with a real signed-in user and the existing RLS
@@ -116,7 +116,7 @@ be expressed as safe direct table writes. Add migrations only for these concrete
 requirements:
 
 1. `0018_browser_api.sql`:
-   - create `orbit_api` and grant schema usage only to `authenticated`;
+   - add the reviewed browser wrappers to the existing `orbit` schema;
    - add least-privilege, Data-API-friendly wrappers for
      `ensure_account`/`ensure_default_spaces`, `create_space`, invite
      preview/accept/decline, space-move preview, and free/busy one-off/recurring
@@ -136,9 +136,9 @@ requirements:
    - add nullable `profiles.default_space_id` referencing `orbit.spaces(id)`
      with `ON DELETE SET NULL`;
    - preserve existing `locale` and `week_starts_on`.
-3. A later additive `orbit_api` dashboard RPC, only after the direct browser
+3. A later additive `orbit` dashboard RPC, only after the direct browser
    client works and measurements show multiple requests are still material.
-   Make it `SECURITY INVOKER`, expose only the new API schema, and grant only
+   Make it `SECURITY INVOKER`, keep only `orbit` exposed, and grant only
    the minimum execute permissions.
 4. A new index only when production-shaped `EXPLAIN (ANALYZE, BUFFERS)` output
    proves it is needed.

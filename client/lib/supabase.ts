@@ -19,5 +19,3 @@ export const supabase = createClient(
     realtime: { params: { eventsPerSecond: 0 } },
   },
 );
-
-export const orbitApi = supabase.schema('orbit_api');

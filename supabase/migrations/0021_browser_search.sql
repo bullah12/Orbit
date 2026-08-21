@@ -1,7 +1,7 @@
 -- 0021_browser_search.sql — one RLS-scoped request for global search.
 -- Five parallel entity requests are combined without changing authorisation.
 
-create or replace function orbit_api.search(p_query text, p_limit integer default 8)
+create or replace function orbit.search(p_query text, p_limit integer default 8)
 returns table (id uuid, type text, title text, subtitle text, space_id uuid, path text)
 language sql
 stable
@@ -54,8 +54,8 @@ as $$
   union all select * from place_results
 $$;
 
-revoke execute on function orbit_api.search(text, integer) from public;
-grant execute on function orbit_api.search(text, integer) to authenticated;
+revoke execute on function orbit.search(text, integer) from public;
+grant execute on function orbit.search(text, integer) to authenticated;
 
-comment on function orbit_api.search(text, integer) is
+comment on function orbit.search(text, integer) is
   'RLS-scoped global search payload added after measuring five browser requests.';

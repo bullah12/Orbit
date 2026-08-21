@@ -4,6 +4,7 @@ Date: 2026-08-21
 
 ## Decisions and deviations
 
+- Browser tables and reviewed RPC wrappers share the single exposed `orbit` schema. The separate proposed `orbit_api` namespace was removed before deployment; RLS, `SECURITY INVOKER`, safe search paths, and per-function execute grants remain the security controls, while the implementation-only `app` schema stays unexposed.
 - Global search measured five parallel entity requests. Migration `0021_browser_search.sql` reduces that to one security-invoker RPC; every branch remains RLS-scoped and locked rows remain excluded.
 - The direct Today implementation measured three domain requests. Migration `0020_browser_dashboard.sql` was therefore added under the rebuild brief's measured-performance exception, reducing Today to one route payload while retaining security-invoker RLS behaviour.
 - Free/busy calendar spaces use the two narrow wrappers from `0018`; a user with multiple availability-only spaces can exceed the ordinary two-request route target. This is retained for privacy correctness rather than adding a broader API surface without production measurements.

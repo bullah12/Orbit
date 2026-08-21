@@ -1,7 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { createContext, use, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { isSupabaseConfigured, orbitApi, supabase } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 type AuthState = {
   session: Session | null;
@@ -28,7 +28,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
       setLoading(false);
-      if (next) void orbitApi.rpc('ensure_account');
+      if (next) void supabase.rpc('ensure_account');
     });
     return () => {
       active = false;

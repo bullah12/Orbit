@@ -20,18 +20,27 @@
 -- ---------------------------------------------------------------------------
 -- auth.users, shimmed locally only.
 --
--- On Supabase this table exists, owned by supabase_auth_admin, and `create
--- table if not exists` is a no-op. Locally there is no GoTrue, so the columns
--- the trigger reads are declared here — otherwise the trigger could not be
--- attached and none of it could be tested. Nothing in the app writes to it: the
--- dev provider does not use auth.users at all.
+-- On Supabase this table exists and is owned by supabase_auth_admin. Even
+-- `create table if not exists auth.users` requires CREATE permission on that
+-- managed schema, so the DDL must not be issued there at all. Locally there is
+-- no GoTrue, so create the small shim only when the relation is genuinely
+-- absent. Nothing in the app writes to it: the dev provider does not use
+-- auth.users at all.
 -- ---------------------------------------------------------------------------
-create table if not exists auth.users (
-  id                 uuid primary key default gen_random_uuid(),
-  email              text,
-  raw_user_meta_data jsonb not null default '{}'::jsonb,
-  created_at         timestamptz not null default now()
-);
+do $orbit_auth_users$
+begin
+  if to_regclass('auth.users') is null then
+    execute $create_auth_users$
+      create table auth.users (
+        id                 uuid primary key default gen_random_uuid(),
+        email              text,
+        raw_user_meta_data jsonb not null default '{}'::jsonb,
+        created_at         timestamptz not null default now()
+      )
+    $create_auth_users$;
+  end if;
+end
+$orbit_auth_users$;
 
 -- The local shim holds identities. Nobody may read it through the app: the pool
 -- role has no grant on it and RLS with no policy refuses everything.
