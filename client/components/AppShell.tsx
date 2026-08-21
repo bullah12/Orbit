@@ -16,7 +16,7 @@ const primary = [
   { to: '/places', label: 'Places', icon: MapPin },
 ];
 
-const mobile = [primary[0]!, primary[1]!, primary[2]!, { to: '/more', label: 'More', icon: MoreHorizontal }];
+const mobile = [primary[0]!, primary[2]!, primary[3]!, { to: '/more', label: 'More', icon: MoreHorizontal }];
 
 function NavItem({ item }: { item: { to: string; label: string; icon: typeof Home; end?: boolean } }) {
   const Icon = item.icon;
@@ -31,6 +31,7 @@ export function AppShell() {
   const auth = useAuth();
   const profile = useProfile();
   const spaces = useSpaces();
+  const peopleMapOpen = location.pathname === '/people' && new URLSearchParams(location.search).get('view') === 'map';
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -68,7 +69,7 @@ export function AppShell() {
       <main className={s.content}><Outlet /></main>
     </div>
     <nav className={s.bottomNav} aria-label="Mobile navigation">{mobile.map((item) => <NavItem key={item.to} item={item} />)}</nav>
-    <button className={s.fab} onClick={() => setCreate(true)} aria-label="Create item"><Plus size={24} /></button>
+    <button className={`${s.fab} ${peopleMapOpen ? s.fabHiddenMobile : ''}`} onClick={() => setCreate(true)} aria-label="Create item"><Plus size={24} /></button>
     <CommandPalette open={palette} onClose={() => setPalette(false)} />
     <CreateDialog open={create} onClose={() => setCreate(false)} />
   </div>;

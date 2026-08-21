@@ -2596,3 +2596,23 @@ the same as the design deleting it.
 - Treat Chromium and WebKit as locally passed. Firefox and all live Supabase and
   pgTAP checks remain explicit release-environment gates; details and exact
   commands are in `docs/rebuild-deviations.md`.
+
+## 2026-08-21 — mobile calendar and People directory repair
+
+- Restored the intended four-tab phone navigation as Home, Calendar, People,
+  More. Tasks remains available from Home and More; People no longer requires
+  opening a secondary menu.
+- Replaced the phone calendar's CSS-only column hiding with an explicit mobile
+  interaction model: a selectable seven-day strip for week view, a genuine
+  seven-column month picker, and a daily agenda for the selected date. The date
+  remains in the URL so Back, refresh, and shared links preserve context.
+- Treat `tags`/`taggings` as the People filter authority rather than inventing
+  another category field. Multiple selected tags use AND semantics, and list
+  and map consume the same filtered collection.
+- Added `orbit.people_directory()` as one security-invoker, RLS-scoped payload
+  for people, their optional home place, and person tags. This keeps view
+  switching local and preserves the one-domain-request budget for the route.
+- Person map pins use the explicit `people.home_place_id` relationship. People
+  without coordinates remain counted and are called out instead of silently
+  disappearing; coincident household pins receive small deterministic offsets
+  so each remains tappable.

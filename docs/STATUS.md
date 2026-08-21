@@ -466,3 +466,26 @@ Stop building at about three-quarters of your context. Get the tree to a state
 that runs, rewrite this file completely, keep `docs/phase-plan.md` accurate,
 append to `docs/decisions-log.md`, and push. The container is ephemeral. Push at
 least hourly.
+
+---
+
+## 2026-08-21 — mobile calendar and People follow-up
+
+The current Vite client now restores **People** to the phone bottom bar (Home,
+Calendar, People, More). People has URL-backed List and Map views, search across
+names/places/tags, multi-tag filtering, person pins sourced from
+`people.home_place_id`, and an honest count for people without coordinates.
+Migration `0022_people_directory.sql` supplies this as one RLS-preserving
+browser request. Seed data now includes Friends, Family, and Colleagues person
+tags.
+
+The phone calendar no longer hides six of seven rendered columns. Week view has
+a selectable seven-day strip, month view is a tappable seven-column grid, and
+all phone views show the selected day's agenda. Date and view remain URL-backed.
+
+`pnpm build` is clean. The repository's handoff instructions require
+`pnpm smoke`, but the current `package.json` has no `smoke` script; invoking it
+fails with `Command "smoke" not found`. Focused Playwright coverage was added
+for the new phone navigation, People filters/views, and calendar day selection,
+but was not run because the same instructions prohibit other suites unless
+asked.

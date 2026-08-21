@@ -15,6 +15,10 @@ async function mockSignedIn(page: Page) {
     else if (url.pathname.includes('/rpc/dashboard')) body = { tasks: [{ id: 'task-1', space_id: 'space-1', owner_id: userId, category_id: null, recurrence_rule_id: null, title: 'Put the bins out', body_md: '', status: 'todo', priority: 'normal', visibility: 'space', is_locked: false, due_on: new Date().toISOString().slice(0, 10), due_at: null, deferred_until: null, assignee_id: userId, waiting_on: null, completed_at: null, updated_at: new Date().toISOString() }], events: [], dates: [] };
     else if (url.pathname.endsWith('/tasks')) body = [{ id: 'task-1', space_id: 'space-1', owner_id: userId, category_id: null, recurrence_rule_id: null, title: 'Put the bins out', body_md: '', status: 'todo', priority: 'normal', visibility: 'space', is_locked: false, due_on: new Date().toISOString().slice(0, 10), due_at: null, deferred_until: null, assignee_id: userId, waiting_on: null, completed_at: null, updated_at: new Date().toISOString() }];
     else if (url.pathname.endsWith('/events')) body = [];
+    else if (url.pathname.includes('/rpc/people_directory')) body = [
+      { id: 'person-1', space_id: 'space-1', owner_id: userId, category_id: null, display_name: 'Amina Shah', given_name: 'Amina', family_name: 'Shah', nickname: null, pronouns: null, notes_md: '', is_locked: false, archived_at: null, home_place_id: 'place-1', home_place: { id: 'place-1', name: 'Kings Heath', address_text: 'High Street', city: 'Birmingham', geom: { type: 'Point', coordinates: [-1.89, 52.43] } }, tags: [{ id: 'tag-1', name: 'Friends', slug: 'friends' }] },
+      { id: 'person-2', space_id: 'space-1', owner_id: userId, category_id: null, display_name: 'Ravi Shah', given_name: 'Ravi', family_name: 'Shah', nickname: null, pronouns: null, notes_md: '', is_locked: false, archived_at: null, home_place_id: null, home_place: null, tags: [{ id: 'tag-2', name: 'Family', slug: 'family' }] },
+    ];
     else if (url.pathname.endsWith('/person_dates')) body = [];
     else if (url.pathname.includes('/rpc/ensure_account')) body = { profile: 'exists', spaces_created: 0 };
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'content-range': '0-0/1' } });
@@ -100,6 +104,31 @@ test('authenticated major routes have no horizontal overflow at required widths'
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${path} overflowed at ${width}px`).toBe(true);
     }
   }
+});
+
+test('phone navigation exposes People and People filters drive both views', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'Responsive interaction runs once.');
+  await mockSignedIn(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
+  const nav = page.getByRole('navigation', { name: 'Mobile navigation' });
+  await expect(nav.getByRole('link', { name: 'People' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Tasks' })).toHaveCount(0);
+  await nav.getByRole('link', { name: 'People' }).click();
+  await expect(page.getByText('Amina Shah')).toBeVisible();
+  await page.getByRole('button', { name: /Family 1/ }).click();
+  await expect(page.getByText('Ravi Shah')).toBeVisible();
+  await expect(page.getByText('Amina Shah')).toHaveCount(0);
+  await page.getByLabel('People view').getByRole('button', { name: 'Map' }).click();
+  await expect(page.getByText('0 of 1 filtered people have a place')).toBeVisible();
+});
+
+test('phone calendar selects days instead of hiding the active date', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'Responsive interaction runs once.');
+  await mockSignedIn(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/calendar?view=week&date=2026-08-21');
+  const days = page.getByLabel('Choose a day').getByRole('button');
+  await expect(days).toHaveCount(7);
+  await days.nth(0).click();
+  await expect(page).toHaveURL(/date=2026-08-17/);
+  await expect(page.getByRole('heading', { name: 'Monday, 17 August' })).toBeVisible();
 });
 
 test('every major route stays within one domain request', async ({ page }, testInfo) => {

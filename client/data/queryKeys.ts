@@ -6,7 +6,7 @@ export const queryKeys = {
   task: (id: string) => ['task', id] as const,
   today: (range: number) => ['today', range] as const,
   calendar: (from: string, to: string) => ['calendar', from, to] as const,
-  people: (query: string) => ['people', query] as const,
+  people: ['people'] as const,
   person: (id: string) => ['person', id] as const,
   places: (query: string) => ['places', query] as const,
   notes: (query: string) => ['notes', query] as const,

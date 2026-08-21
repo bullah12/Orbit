@@ -192,6 +192,11 @@ const NOTE_SEEDS = [
 ];
 
 const TAGS = ['urgent', 'waiting', 'errand', 'phone-call', 'weekend', 'money', 'reading'];
+const PEOPLE_TAGS = [
+  { slug: 'friends', name: 'Friends', category: 'social' },
+  { slug: 'family', name: 'Family', category: 'family' },
+  { slug: 'colleagues', name: 'Colleagues', category: 'work' },
+];
 
 // --- writers ---------------------------------------------------------------
 
@@ -840,6 +845,24 @@ async function main() {
           on conflict do nothing
         `;
       }
+    }
+    for (const personTag of PEOPLE_TAGS) {
+      const id = uid();
+      await sql`
+        insert into orbit.tags (id, space_id, owner_id, name, slug)
+        values (${id}, ${space}, ${PRIYA}, ${personTag.name}, ${personTag.slug})
+        on conflict (space_id, slug) do update set name = excluded.name
+        returning id
+      `;
+      await sql`
+        insert into orbit.taggings (space_id, owner_id, tag_id, entity_kind, entity_id)
+        select p.space_id, ${PRIYA}, t.id, 'person', p.id
+        from orbit.people p
+        join orbit.categories c on c.id = p.category_id
+        join orbit.tags t on t.space_id = p.space_id and t.slug = ${personTag.slug}
+        where p.space_id = ${space} and c.slug = ${personTag.category}
+        on conflict do nothing
+      `;
     }
   }
 

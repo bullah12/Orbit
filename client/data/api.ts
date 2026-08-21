@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { addDays, isoDate, startOfDay } from '../lib/date';
-import type { ChecklistItem, Event, Member, Note, Person, PersonContact, PersonDate, Place, Profile, SearchResult, Space, Task } from './types';
+import type { ChecklistItem, Event, Member, Note, Person, PersonContact, PersonDate, PersonDirectoryEntry, Place, Profile, SearchResult, Space, Task } from './types';
 
 function value<T>(data: T | null, error: { message: string } | null): T {
   if (error) throw new Error(error.message);
@@ -189,6 +189,11 @@ export async function listPeople(search = ''): Promise<Person[]> {
   if (search.trim()) query = query.ilike('display_name', `%${search.trim()}%`);
   const result = await query;
   return value((result.data ?? []) as Person[], result.error);
+}
+
+export async function getPeopleDirectory(): Promise<PersonDirectoryEntry[]> {
+  const result = await supabase.rpc('people_directory');
+  return value((result.data ?? []) as PersonDirectoryEntry[], result.error);
 }
 
 export async function getPerson(id: string): Promise<{ person: Person; contacts: PersonContact[]; dates: PersonDate[]; events: Event[] }> {
