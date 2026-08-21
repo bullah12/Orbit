@@ -20,7 +20,7 @@ const mobile = [primary[0]!, primary[1]!, primary[2]!, { to: '/more', label: 'Mo
 
 function NavItem({ item }: { item: { to: string; label: string; icon: typeof Home; end?: boolean } }) {
   const Icon = item.icon;
-  return <NavLink to={item.to} end={item.end} className={({ isActive }: { isActive: boolean }) => `${s.navLink} ${isActive ? s.navActive : ''}`}><Icon size={20} aria-hidden /><span>{item.label}</span></NavLink>;
+  return <NavLink to={item.to} {...(item.end === undefined ? {} : { end: item.end })} className={({ isActive }: { isActive: boolean }) => `${s.navLink} ${isActive ? s.navActive : ''}`}><Icon size={20} aria-hidden /><span>{item.label}</span></NavLink>;
 }
 
 export function AppShell() {
@@ -50,11 +50,11 @@ export function AppShell() {
   useEffect(() => { document.getElementById('route-heading')?.focus({ preventScroll: true }); }, [location.pathname]);
   return <div className={s.shell}>
     <aside className={s.sidebar} aria-label="Primary navigation">
-      <NavLink className={s.brand} to="/"><span className={s.brandMark}>O</span><span>Orbit</span></NavLink>
+      <NavLink className={s.brand ?? ''} to="/"><span className={s.brandMark}>O</span><span>Orbit</span></NavLink>
       <button className={s.createButton} onClick={() => setCreate(true)}><Plus size={19} /><span>Create</span></button>
       <nav className={s.nav}>{primary.map((item) => <NavItem key={item.to} item={item} />)}</nav>
       <nav className={`${s.nav} ${s.spaceNav}`} aria-label="Spaces">
-        {spaces.data?.map((space) => <NavLink key={space.id} className={s.navLink} to={`/spaces/${space.id}`}><span className={s.spaceDot} aria-hidden /><span>{space.name}</span></NavLink>)}
+        {spaces.data?.map((space) => <NavLink key={space.id} className={s.navLink ?? ''} to={`/spaces/${space.id}`}><span className={s.spaceDot} aria-hidden /><span>{space.name}</span></NavLink>)}
       </nav>
       <nav className={`${s.nav} ${s.sidebarBottom}`}>
         <NavItem item={{ to: '/settings', label: 'Settings', icon: Settings }} />

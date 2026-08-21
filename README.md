@@ -50,6 +50,7 @@ The original migrations `0000`–`0017`, their tables, data, policies, seed and 
 - `0018_browser_api.sql` adds the least-privilege `orbit_api` wrappers needed by the Data API.
 - `0019_browser_preferences.sql` adds cross-device `theme` and `default_space_id` profile preferences.
 - `0020_browser_dashboard.sql` combines the measured three-request Today payload into one security-invoker RPC. It does not bypass RLS.
+- `0021_browser_search.sql` combines the measured five-request global search into one security-invoker RPC. Locked rows remain excluded and RLS still filters every branch.
 
 For the existing plain-Postgres harness:
 

@@ -13,7 +13,7 @@ create or replace function orbit_api.ensure_account()
 returns jsonb
 language sql
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select jsonb_build_object(
     'profile', result.profile,
@@ -26,7 +26,7 @@ create or replace function orbit_api.ensure_default_spaces()
 returns integer
 language sql
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select app.ensure_default_spaces()
 $$;
@@ -41,7 +41,7 @@ create or replace function orbit_api.create_space(
 returns uuid
 language sql
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select app.create_space(p_name, p_short_label, p_kind, p_colour, p_icon)
 $$;
@@ -50,7 +50,7 @@ create or replace function orbit_api.invite_preview(p_token text)
 returns jsonb
 language sql
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select to_jsonb(result) from app.space_invite(p_token, 'preview') result
 $$;
@@ -59,7 +59,7 @@ create or replace function orbit_api.invite_accept(p_token text)
 returns jsonb
 language sql
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select to_jsonb(result) from app.space_invite(p_token, 'accept') result
 $$;
@@ -68,7 +68,7 @@ create or replace function orbit_api.invite_decline(p_token text)
 returns jsonb
 language sql
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select to_jsonb(result) from app.space_invite(p_token, 'decline') result
 $$;
@@ -88,7 +88,7 @@ returns table (
 language sql
 stable
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select result.change,
          result.profile_id,
@@ -111,7 +111,7 @@ returns table (starts_at timestamptz, ends_at timestamptz, all_day boolean)
 language sql
 stable
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select * from app.free_busy_blocks(p_space_id, p_from, p_to)
 $$;
@@ -132,7 +132,7 @@ returns table (
 language sql
 stable
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select * from app.free_busy_recurring(p_space_id, p_from, p_to)
 $$;

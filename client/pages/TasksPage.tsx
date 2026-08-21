@@ -11,7 +11,7 @@ const filters: TaskFilter[] = ['mine', 'today', 'upcoming', 'inbox', 'waiting', 
 
 export default function TasksPage() {
   const [params, setParams] = useSearchParams();
-  const { filter: routeFilter = 'today' } = useParams();
+  const { list: routeFilter = 'today' } = useParams();
   const filter = filters.includes(routeFilter as TaskFilter) ? routeFilter as TaskFilter : 'today';
   const space = params.get('space') ?? ''; const assignee = params.get('assignee') ?? '';
   const spaces = useSpaces(); const tasks = useTasks(filter, space, assignee);

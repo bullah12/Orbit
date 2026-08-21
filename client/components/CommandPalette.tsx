@@ -14,17 +14,32 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const palette = useRef<HTMLElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
   const spaces = useSpaces();
   const results = useQuery({ queryKey: queryKeys.search(query), queryFn: () => globalSearch(query), enabled: open && query.trim().length >= 2, staleTime: 30_000 });
 
-  useEffect(() => { if (open) { setSelected(0); requestAnimationFrame(() => input.current?.focus()); } }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    previousFocus.current = active ?? document.querySelector<HTMLElement>(`button.${s.searchButton}`);
+    setSelected(0);
+    requestAnimationFrame(() => input.current?.focus());
+    return () => { const target = previousFocus.current; requestAnimationFrame(() => target?.focus()); };
+  }, [open]);
   if (!open) return null;
   const rows = results.data ?? [];
   const go = (row: SearchResult) => { navigate(row.path); onClose(); setQuery(''); };
   return (
     <div className={s.paletteBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className={s.palette} role="dialog" aria-modal="true" aria-label="Search Orbit">
+      <section ref={palette} className={s.palette} role="dialog" aria-modal="true" aria-label="Search Orbit" onKeyDown={(event) => {
+        if (event.key !== 'Tab') return;
+        const focusable = Array.from(palette.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), a[href]') ?? []);
+        const first = focusable[0]; const last = focusable.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }}>
         <div style={{ position: 'relative' }}>
           <Search size={20} aria-hidden style={{ position: 'absolute', left: 18, top: 19 }} />
           <input ref={input} className={s.paletteInput} style={{ paddingLeft: 50 }} value={query} onChange={(event) => { setQuery(event.target.value); setSelected(0); }} placeholder="Search tasks, notes, people, events and places" aria-label="Search query" onKeyDown={(event) => {

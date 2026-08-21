@@ -78,7 +78,7 @@ export async function listTasks(filter: TaskFilter, spaceId = '', assigneeId = '
 
 export async function getTask(id: string): Promise<{ task: Task; checklist: ChecklistItem[] }> {
   const [task, checklist] = await Promise.all([
-    supabase.from('tasks').select('*').eq('id', id).single(),
+    supabase.from('tasks').select('*, recurrence_rules:recurrence_rule_id(*)').eq('id', id).single(),
     supabase.from('task_checklist_items').select('*').eq('task_id', id).order('sort_order'),
   ]);
   return { task: value(task.data as Task | null, task.error), checklist: value((checklist.data ?? []) as ChecklistItem[], checklist.error) };
@@ -110,12 +110,18 @@ export async function updateChecklistItem(id: string, done: boolean): Promise<vo
 }
 
 export async function setTaskRecurrence(task: Task, rrule: string): Promise<void> {
+  if ((task.recurrence_rules?.rrule ?? '') === rrule) return;
   if (!rrule) {
     const result = await supabase.from('tasks').update({ recurrence_rule_id: null }).eq('id', task.id);
     if (result.error) throw new Error(result.error.message);
     return;
   }
   const starts = task.due_at ?? `${task.due_on ?? isoDate(new Date())}T09:00:00.000Z`;
+  if (task.recurrence_rule_id) {
+    const updated = await supabase.from('recurrence_rules').update({ rrule, dtstart: starts, space_id: task.space_id }).eq('id', task.recurrence_rule_id).select('id').single();
+    value(updated.data as { id: string } | null, updated.error);
+    return;
+  }
   const created = await supabase.from('recurrence_rules').insert({ space_id: task.space_id, owner_id: task.owner_id, rrule, dtstart: starts }).select('id').single();
   const rule = value(created.data as { id: string } | null, created.error);
   const linked = await supabase.from('tasks').update({ recurrence_rule_id: rule.id }).eq('id', task.id);
@@ -161,9 +167,15 @@ export async function updateEvent(id: string, changes: Partial<Event>): Promise<
 }
 
 export async function setEventRecurrence(event: Event, rrule: string): Promise<void> {
+  if ((event.recurrence_rules?.rrule ?? '') === rrule) return;
   if (!rrule) {
     const result = await supabase.from('events').update({ recurrence_rule_id: null }).eq('id', event.id);
     if (result.error) throw new Error(result.error.message);
+    return;
+  }
+  if (event.recurrence_rule_id) {
+    const updated = await supabase.from('recurrence_rules').update({ rrule, dtstart: event.starts_at, timezone: event.timezone, space_id: event.space_id }).eq('id', event.recurrence_rule_id).select('id').single();
+    value(updated.data as { id: string } | null, updated.error);
     return;
   }
   const created = await supabase.from('recurrence_rules').insert({ space_id: event.space_id, owner_id: event.owner_id, rrule, dtstart: event.starts_at, timezone: event.timezone }).select('id').single();
@@ -256,19 +268,6 @@ export async function linkNote(note: Note, entityKind: 'task' | 'person' | 'even
 export async function globalSearch(query: string): Promise<SearchResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
-  const [tasks, notes, people, events, places] = await Promise.all([
-    supabase.from('tasks').select('id,space_id,title').ilike('title', `%${q}%`).eq('is_locked', false).limit(8),
-    supabase.from('notes').select('id,space_id,title').ilike('title', `%${q}%`).eq('is_locked', false).limit(8),
-    supabase.from('people').select('id,space_id,display_name').ilike('display_name', `%${q}%`).eq('is_locked', false).limit(8),
-    supabase.from('events').select('id,space_id,title,starts_at').ilike('title', `%${q}%`).eq('is_locked', false).limit(8),
-    supabase.from('places').select('id,space_id,name,city').ilike('name', `%${q}%`).eq('is_locked', false).limit(8),
-  ]);
-  for (const result of [tasks, notes, people, events, places]) if (result.error) throw new Error(result.error.message);
-  return [
-    ...((tasks.data ?? []).map((row) => ({ id: row.id, type: 'task' as const, title: row.title, subtitle: 'Task', space_id: row.space_id, path: `/tasks/item/${row.id}` }))),
-    ...((notes.data ?? []).map((row) => ({ id: row.id, type: 'note' as const, title: row.title || 'Untitled note', subtitle: 'Note', space_id: row.space_id, path: `/notes/${row.id}` }))),
-    ...((people.data ?? []).map((row) => ({ id: row.id, type: 'person' as const, title: row.display_name, subtitle: 'Person', space_id: row.space_id, path: `/people/${row.id}` }))),
-    ...((events.data ?? []).map((row) => ({ id: row.id, type: 'event' as const, title: row.title, subtitle: row.starts_at, space_id: row.space_id, path: `/calendar?event=${row.id}` }))),
-    ...((places.data ?? []).map((row) => ({ id: row.id, type: 'place' as const, title: row.name, subtitle: row.city || 'Place', space_id: row.space_id, path: `/places/${row.id}` }))),
-  ];
+  const result = await orbitApi.rpc('search', { p_query: q, p_limit: 8 });
+  return value((result.data ?? []) as SearchResult[], result.error);
 }

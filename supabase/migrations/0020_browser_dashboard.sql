@@ -12,7 +12,7 @@ returns jsonb
 language sql
 stable
 security invoker
-set search_path = pg_catalog, public, orbit, app, pg_temp
+set search_path = pg_catalog, orbit, app, pg_temp
 as $$
   select jsonb_build_object(
     'tasks', coalesce((

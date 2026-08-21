@@ -11,8 +11,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node node_modules/playwright/cli.js test",
-    "test:e2e:ui": "node node_modules/playwright/cli.js test --ui",
+    "test:e2e": "node scripts/playwright-runner.mjs",
+    "test:e2e:ui": "node scripts/playwright-runner.mjs --ui",
     "db:reset": "./scripts/db-reset.sh",
     "db:test": "./scripts/db-test.sh"
   },

@@ -5,7 +5,7 @@ begin;
 set client_min_messages = warning;
 create extension if not exists pgtap;
 
-select plan(19);
+select plan(22);
 
 create schema tests;
 
@@ -65,6 +65,7 @@ select is((select count(*)::int from orbit.spaces where name = 'Browser space'),
 select is((select count(*)::int from orbit.space_members m join orbit.spaces s on s.id = m.space_id where s.name = 'Browser space' and m.user_id = auth.uid()), 1, 'created space includes only the caller as initial member');
 
 select is((orbit_api.invite_preview('api-invite') ->> 'status'), 'already_member', 'invite preview delegates without exposing the invite table');
+select is((select count(*)::int from orbit_api.search('Home')), 1, 'search returns readable matching records');
 
 select is((select count(*)::int from orbit_api.space_move_preview('task', 'aaaaaaaa-1000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001')), 2, 'move preview returns only content-capable membership changes');
 
@@ -78,6 +79,7 @@ select tests.act_as('44444444-4444-4444-4444-444444444444');
 select is((select count(*)::int from orbit_api.free_busy_blocks('aaaaaaaa-0000-0000-0000-000000000001', '2026-08-19 00:00+00', '2026-08-20 00:00+00')), 0, 'outsider cannot widen free-busy results');
 select is((select count(*)::int from orbit_api.free_busy_recurring('aaaaaaaa-0000-0000-0000-000000000001', '2026-08-19 00:00+00', '2026-08-20 00:00+00')), 0, 'outsider cannot obtain recurring free-busy rules');
 select is(jsonb_array_length(orbit_api.dashboard('2026-08-19 00:00+00', '2026-08-20 00:00+00') -> 'tasks'), 0, 'outsider cannot widen dashboard task results');
+select is((select count(*)::int from orbit_api.search('Home')), 0, 'outsider cannot widen search results');
 select throws_ok($$select * from orbit_api.space_move_preview('task', 'aaaaaaaa-1000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001')$$, 'P0002', null, 'outsider cannot inspect a move');
 select is((orbit_api.invite_preview('no-such-token') ->> 'status'), 'unknown', 'unknown invite does not reveal whether a space exists');
 
@@ -87,7 +89,8 @@ select ok(not has_schema_privilege('public', 'orbit_api', 'USAGE'), 'PUBLIC has 
 select ok(has_schema_privilege('authenticated', 'orbit_api', 'USAGE'), 'authenticated has orbit_api schema usage');
 select is((select count(*)::int from information_schema.routine_privileges where specific_schema = 'orbit_api' and grantee = 'PUBLIC' and privilege_type = 'EXECUTE'), 0, 'PUBLIC can execute no browser wrapper');
 select is((select count(*)::int from information_schema.routines where routine_schema = 'orbit_api' and security_type <> 'INVOKER'), 0, 'every browser wrapper is SECURITY INVOKER');
-select is((select count(*)::int from information_schema.routines where routine_schema = 'orbit_api'), 10, 'the browser schema exposes only the ten reviewed wrappers');
+select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'orbit_api' and array_to_string(p.proconfig, ',') like '%public%'), 0, 'browser wrapper search paths contain no public schema');
+select is((select count(*)::int from information_schema.routines where routine_schema = 'orbit_api'), 11, 'the browser schema exposes only the eleven reviewed wrappers');
 
 select * from finish();
 rollback;

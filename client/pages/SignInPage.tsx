@@ -38,7 +38,7 @@ export default function SignInPage() {
         finally { setPending(false); }
       }}>
         <div><div className={s.brand}><span className={s.brandMark}>O</span><span>Orbit</span></div><h1>{mode === 'sign-in' ? 'Welcome back' : mode === 'sign-up' ? 'Create your account' : 'Email me a sign-in link'}</h1><p className={s.muted}>Use your Supabase account to continue.</p></div>
-        <div className={s.segments}>{(['sign-in', 'sign-up', 'magic'] as const).map((item) => <button type="button" className={`${s.segButton} ${mode === item ? s.segActive : ''}`} onClick={() => setMode(item)} key={item}>{item === 'sign-in' ? 'Sign in' : item === 'sign-up' ? 'Sign up' : 'Magic link'}</button>)}</div>
+        <div className={s.segments} aria-label="Authentication method">{(['sign-in', 'sign-up', 'magic'] as const).map((item) => <button type="button" className={`${s.segButton} ${mode === item ? s.segActive : ''}`} aria-pressed={mode === item} onClick={() => setMode(item)} key={item}>{item === 'sign-in' ? 'Sign in' : item === 'sign-up' ? 'Sign up' : 'Magic link'}</button>)}</div>
         <div className={s.field}><label htmlFor="email">Email</label><input className={s.input} id="email" name="email" type="email" autoComplete="email" required /></div>
         {mode !== 'magic' && <div className={s.field}><label htmlFor="password">Password</label><input className={s.input} id="password" name="password" type="password" minLength={8} autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'} required /></div>}
         {error && <div className={s.error} role="alert">{error}</div>}{message && <p className={s.success} role="status">{message}</p>}

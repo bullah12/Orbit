@@ -1,0 +1,8 @@
+{
+  "/page": "app/page.js",
+  "/people/directory/page": "app/people/directory/page.js",
+  "/ai/page": "app/ai/page.js",
+  "/places/page": "app/places/page.js",
+  "/places/[id]/page": "app/places/[id]/page.js",
+  "/tasks/item/[id]/page": "app/tasks/item/[id]/page.js"
+}

@@ -19,6 +19,31 @@ export default function PersonDetailPage() {
     <PageHeader title={record?.is_locked ? 'Locked person' : record?.display_name ?? 'Person'} subtitle={record?.pronouns ?? undefined} actions={<Link className={s.secondaryButton} to="/people"><ArrowLeft size={18} />People</Link>} />
     <AsyncState loading={person.isLoading} error={person.error} retry={() => void person.refetch()}>
       {record?.is_locked ? <div className={s.card}>This encrypted record is unavailable in this release.</div> : record && <>
+        <form className={`${s.card} ${s.form}`} style={{ marginBottom: '1rem' }} onSubmit={async (event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          setStatus('Saving…');
+          try {
+            await updatePerson(record.id, {
+              display_name: String(data.get('display_name')).trim(),
+              given_name: String(data.get('given_name')).trim() || null,
+              family_name: String(data.get('family_name')).trim() || null,
+              nickname: String(data.get('nickname')).trim() || null,
+              pronouns: String(data.get('pronouns')).trim() || null,
+              notes_md: String(data.get('notes_md')),
+            });
+            await refresh();
+            setStatus('Saved');
+          } catch (cause) {
+            setStatus(cause instanceof Error ? cause.message : 'Save failed');
+          }
+        }}>
+          <h2>Details</h2>
+          <div className={s.field}><label htmlFor="person-name">Display name</label><input id="person-name" className={s.input} name="display_name" defaultValue={record.display_name} required /></div>
+          <div className={s.toolbar}><div className={s.field}><label htmlFor="person-given">Given name</label><input id="person-given" className={s.input} name="given_name" defaultValue={record.given_name ?? ''} /></div><div className={s.field}><label htmlFor="person-family">Family name</label><input id="person-family" className={s.input} name="family_name" defaultValue={record.family_name ?? ''} /></div><div className={s.field}><label htmlFor="person-nickname">Nickname</label><input id="person-nickname" className={s.input} name="nickname" defaultValue={record.nickname ?? ''} /></div><div className={s.field}><label htmlFor="person-pronouns">Pronouns</label><input id="person-pronouns" className={s.input} name="pronouns" defaultValue={record.pronouns ?? ''} /></div></div>
+          <div className={s.field}><label htmlFor="person-notes">Notes</label><textarea id="person-notes" className={s.textarea} name="notes_md" defaultValue={record.notes_md} /></div>
+          <button className={s.primaryButton}>Save person</button>
+        </form>
         <div className={`${s.grid} ${s.todayGrid}`}>
           <section className={s.card}><h2>Contact</h2>{person.data?.contacts.length ? <ul className={s.list}>{person.data.contacts.map((contact) => <li className={s.row} key={contact.id}>{contact.kind === 'email' ? <Mail size={18} /> : contact.kind === 'phone' ? <Phone size={18} /> : <MapPin size={18} />}<div className={s.rowMain}><span className={s.rowTitle}>{contact.value}</span><span className={s.rowMeta}>{contact.label}{contact.is_primary && ' · Primary'}</span></div></li>)}</ul> : <p className={s.muted}>No contact details yet.</p>}
             <form className={s.form} onSubmit={async (event) => { event.preventDefault(); const data = new FormData(event.currentTarget); await addPersonContact(record, { kind: String(data.get('kind')), label: String(data.get('label')), value: String(data.get('value')) }); event.currentTarget.reset(); await refresh(); }}><div className={s.toolbar}><select className={s.select} style={{ width: 'auto' }} name="kind"><option value="email">Email</option><option value="phone">Phone</option><option value="address">Address</option><option value="url">URL</option><option value="handle">Handle</option></select><input className={s.input} style={{ maxWidth: 140 }} name="label" placeholder="Label" defaultValue="other" /><input className={s.input} name="value" placeholder="Contact detail" required /><button className={s.secondaryButton}>Add</button></div></form>

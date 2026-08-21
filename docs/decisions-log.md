@@ -2578,3 +2578,17 @@ the same as the design deleting it.
   not run: no pure module changed behaviour.
 - By eye, both schemes, at 390×844: all seven screens screenshotted and read
   against the design's own frames.
+
+## 2026-08-21 — Vite rebuild release hardening
+
+- Added one RLS-preserving, security-invoker search RPC because instrumentation
+  showed that global search otherwise made five parallel entity requests.
+- Tightened browser RPC search paths so they do not trust the mutable `public`
+  schema, and added a pgTAP assertion covering every browser wrapper.
+- Kept recurrence rule identity stable during edits and made unchanged RRULEs
+  no-ops, avoiding duplicate rules and unnecessary writes.
+- Used a small Vite API runner for Playwright because the Playwright-managed
+  preview server did not shut down reliably on Windows.
+- Treat Chromium and WebKit as locally passed. Firefox and all live Supabase and
+  pgTAP checks remain explicit release-environment gates; details and exact
+  commands are in `docs/rebuild-deviations.md`.

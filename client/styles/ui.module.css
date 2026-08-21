@@ -22,8 +22,8 @@
 .pageHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-6); }
 .muted { color: var(--text-muted); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.segments { display: inline-flex; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
-.segButton { min-height: 36px; border: 0; background: transparent; }
+.segments { display: inline-flex; max-width: 100%; overflow-x: auto; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
+.segButton { min-height: 36px; flex: 0 0 auto; border: 0; background: transparent; }
 .segActive { background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / .08); font-weight: 700; }
 .grid { display: grid; gap: var(--space-4); }
 .summaryGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: var(--space-5); }
