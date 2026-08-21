@@ -1,0 +1,15 @@
+export const queryKeys = {
+  profile: (id: string) => ['profile', id] as const,
+  spaces: ['spaces'] as const,
+  members: (spaceId: string) => ['members', spaceId] as const,
+  tasks: (filter: string, space: string, assignee: string) => ['tasks', filter, space, assignee] as const,
+  task: (id: string) => ['task', id] as const,
+  today: (range: number) => ['today', range] as const,
+  calendar: (from: string, to: string) => ['calendar', from, to] as const,
+  people: (query: string) => ['people', query] as const,
+  person: (id: string) => ['person', id] as const,
+  places: (query: string) => ['places', query] as const,
+  notes: (query: string) => ['notes', query] as const,
+  note: (id: string) => ['note', id] as const,
+  search: (query: string) => ['search', query] as const,
+};

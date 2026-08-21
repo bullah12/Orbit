@@ -1,41 +1,40 @@
 {
   "name": "orbit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "ORBIT_ALLOW_DEV_AUTH=1 next start",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
     "seed": "tsx supabase/seed/seed.ts",
-    "icons": "node scripts/icons.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b",
     "test": "vitest run",
-    "smoke": "node scripts/smoke.mjs",
     "test:watch": "vitest",
+    "test:e2e": "node node_modules/playwright/cli.js test",
+    "test:e2e:ui": "node node_modules/playwright/cli.js test --ui",
     "db:reset": "./scripts/db-reset.sh",
     "db:test": "./scripts/db-test.sh"
   },
   "dependencies": {
-    "maplibre-gl": "^6.2.0",
-    "next": "^15.5.22",
-    "postgres": "^3.4.9",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "server-only": "^0.0.1"
+    "@supabase/supabase-js": "^2.110.2",
+    "@tanstack/react-query": "^5.101.2",
+    "lucide-react": "^1.24.0",
+    "maplibre-gl": "^5.24.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.8.2"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "playwright": "^1.62.0",
-    "png-to-ico": "^3.0.2",
-    "postcss": "^8.5.23",
-    "sharp": "^0.35.3",
-    "tailwindcss": "^4.3.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "playwright": "^1.62.1",
+    "postgres": "^3.4.9",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.7"
+    "vite": "^8.0.13",
+    "vitest": "^4.1.10"
   }
 }
