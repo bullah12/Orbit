@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Orbit",
+  "short_name": "Orbit",
+  "description": "Your tasks, plans and people in one place.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f2eb",
+  "theme_color": "#f6f2eb",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Inbox", "url": "/tasks/inbox" },
+    { "name": "Calendar", "url": "/calendar" }
+  ]
+}

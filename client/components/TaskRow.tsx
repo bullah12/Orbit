@@ -22,6 +22,7 @@ export function TaskRow({ task, spaces, compact = false }: { task: Task; spaces?
           {space && <span className={s.spaceChip}><span className={s.spaceDot} />{space.short_label}</span>}
         </span>}
       </Link>
+      {toggle.error && <span className={s.error} role="alert">Could not save. Try again.</span>}
     </li>
   );
 }

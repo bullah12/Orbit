@@ -2,9 +2,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { AuthProvider, ProtectedRoute } from './auth/AuthProvider';
+import { AuthProvider, ProtectedRoute, useAuth } from './auth/AuthProvider';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { AppShell } from './components/AppShell';
+import { SpaceScopeProvider } from './components/SpaceScope';
 import TodayPage from './pages/TodayPage';
 import './styles/global.css';
 
@@ -26,14 +27,19 @@ const MorePage = lazy(() => import('./pages/MorePage'));
 const InvitePage = lazy(() => import('./pages/InvitePage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
-export const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, gcTime: 10 * 60_000, retry: 1, refetchOnWindowFocus: false }, mutations: { retry: 0 } } });
+export const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, gcTime: 10 * 60_000, retry: 1, refetchOnWindowFocus: true }, mutations: { retry: 0 } } });
+
+function PersonalShell() {
+  const { user } = useAuth();
+  return <SpaceScopeProvider key={user?.id}><AppShell /></SpaceScopeProvider>;
+}
 
 function App() {
   return <BrowserRouter><AuthProvider><Suspense fallback={<div className="route-status" role="status">Opening Orbit…</div>}><Routes>
     <Route path="/sign-in" element={<SignInPage />} />
     <Route path="/auth/callback" element={<AuthCallbackPage />} />
     <Route path="/invite/:token" element={<ProtectedRoute><InvitePage /></ProtectedRoute>} />
-    <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
+    <Route element={<ProtectedRoute><PersonalShell /></ProtectedRoute>}>
       <Route index element={<TodayPage />} />
       <Route path="tasks/:list" element={<TasksPage />} />
       <Route path="tasks/item/:id" element={<TaskDetailPage />} />
@@ -55,3 +61,7 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><AppErrorBoundary><QueryClientProvider client={queryClient}><App /></QueryClientProvider></AppErrorBoundary></StrictMode>);
+
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => { void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => { /* Orbit remains usable if installation is unavailable. */ }); });
+}

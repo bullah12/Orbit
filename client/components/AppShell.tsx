@@ -5,6 +5,8 @@ import { useAuth } from '../auth/AuthProvider';
 import { useProfile, useSpaces } from '../data/hooks';
 import { CommandPalette } from './CommandPalette';
 import { CreateDialog } from './CreateDialog';
+import { SpaceScopePicker } from './SpaceScope';
+import { AppStatus } from './AppStatus';
 import s from '../styles/ui.module.css';
 
 const primary = [
@@ -66,7 +68,7 @@ export function AppShell() {
         <button className={s.searchButton} onClick={() => setPalette(true)}><Search size={18} /><span>Search Orbit</span><span className={s.key}>⌘ K</span></button>
         <button className={s.userButton} onClick={() => navigate('/settings')}><CircleUserRound size={19} /><span>{profile.data?.display_name ?? auth.user?.email ?? 'Account'}</span><ChevronDown size={15} /></button>
       </header>
-      <main className={s.content}><Outlet /></main>
+      <main className={s.content}><AppStatus />{(location.pathname === '/' || location.pathname.startsWith('/tasks/') || location.pathname === '/calendar') && <SpaceScopePicker />}<Outlet /></main>
     </div>
     <nav className={s.bottomNav} aria-label="Mobile navigation">{mobile.map((item) => <NavItem key={item.to} item={item} />)}</nav>
     <button className={`${s.fab} ${peopleMapOpen ? s.fabHiddenMobile : ''}`} onClick={() => setCreate(true)} aria-label="Create item"><Plus size={24} /></button>

@@ -14,7 +14,11 @@
     "test:e2e": "node scripts/playwright-runner.mjs",
     "test:e2e:ui": "node scripts/playwright-runner.mjs --ui",
     "db:reset": "./scripts/db-reset.sh",
-    "db:test": "./scripts/db-test.sh"
+    "db:test": "./scripts/db-test.sh",
+    "db:login": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-remote.ps1 login",
+    "db:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-remote.ps1 status",
+    "db:plan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-remote.ps1 plan",
+    "db:migrate": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-remote.ps1 apply"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

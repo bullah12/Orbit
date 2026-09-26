@@ -2616,3 +2616,29 @@ the same as the design deleting it.
   without coordinates remain counted and are called out instead of silently
   disappearing; coincident household pins receive small deterministic offsets
   so each remains tappable.
+
+## 2026-09-20 — single-user daily-use foundation
+
+- Keep the Vite/Supabase architecture and existing spaces/RLS for future sharing. Focus the current experience on one person's daily tasks and phone access.
+- Added a remembered per-account space selection shared by Home, Tasks and Calendar, including creation defaults. Kept explicit space IDs rather than equating all household/project spaces with Personal.
+- Separate overdue/urgent tasks, today's deadlines and upcoming tasks. Quick capture has no implicit deadline; undated tasks go to Inbox. Added migration 0023 to broaden the existing invoker-rights dashboard payload instead of adding a second Home data request.
+- Use ordinary TanStack Query freshness on browser return and clear its in-memory cache at identity changes. No realtime subscriptions or custom offline write queue.
+- Provide installation metadata, browser install UI, and a minimal public-file service worker. Offline navigation shows an honest reconnection screen; no private response caching or offline-save promise.
+- Fixed create-dialog reset after asynchronous saving, surfaced quick-add and completion errors, and invalidate Home after calendar edits.
+- The user explicitly requested skipping smoke tests and deferring them until a reported issue requires investigation. Did not add or run a replacement smoke suite or any other suite. Production compilation is the check for this pass.
+- Compilation passed. No live credentials were available; migration 0023 and the frontend are prepared locally and not deployed. Calendar OAuth/sync and contact import remain subsequent work.
+
+## 2026-09-26 — remote SQL from Windows
+
+- User selected applying SQL from this PC to the existing hosted Supabase project.
+- Found Supabase CLI 2.111.0 in Ubuntu WSL and project link histxhywpsnazvgcacsv. Reading migration history failed because the CLI has no access token.
+- Added Windows commands for interactive login, migration history, dry-run and apply, with an exact project-link check and no reset or seed operations.
+- Parsed PowerShell syntax and package JSON. No test suites ran. No SQL has been applied; user login is needed before migration inspection can continue.
+
+## 2026-09-26 — hosted SQL applied
+
+- After the user completed CLI login, fixed the wrapper's Windows path conversion by passing forward slashes to WSL wslpath.
+- Read remote migration history and previewed pending files: only 0022_people_directory.sql and 0023_personal_dashboard.sql were pending. Reviewed and applied both within the user's authorisation.
+- The push exited 0. Its optional pg-delta catalog cache emitted a missing-Docker warning; no local database setup was needed to apply remote SQL.
+- Confirmed remote migration history matches local through 0023 and a fresh dry-run reports the remote database is up to date. No smoke or other test suites ran; no reset, seed or data deletion was performed.
+- Frontend deployment remains separate and has not been performed.

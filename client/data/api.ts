@@ -128,7 +128,7 @@ export async function setTaskRecurrence(task: Task, rrule: string): Promise<void
   if (linked.error) throw new Error(linked.error.message);
 }
 
-export type TodayData = { tasks: Task[]; events: Event[]; dates: (PersonDate & { people?: Pick<Person, 'display_name'> | null })[] };
+export type TodayData = { tasks: Task[]; events: Event[]; dates: (PersonDate & { space_id?: string; people?: Pick<Person, 'display_name'> | null })[] };
 export async function getToday(range: number): Promise<TodayData> {
   const start = startOfDay(new Date());
   const end = addDays(start, range);

@@ -1,5 +1,38 @@
 # STATUS — handoff contract
 
+## Remote SQL applied — 2026-09-26
+
+The user signed in and authorised applying SQL from this PC to the existing hosted Supabase project `histxhywpsnazvgcacsv`. The preview showed exactly migrations 0022 (People directory) and 0023 (personal dashboard). Both were reviewed and applied successfully using the linked Supabase CLI. A subsequent migration-history read shows local/remote agreement through 0023, and a dry-run reports "Remote database is up to date."
+
+Fixed Windows-to-WSL path conversion in `scripts/supabase-remote.ps1` by normalising backslashes before calling wslpath. The db:status and db:plan package commands now ran successfully. No database reset, seed, smoke test or other test suite ran. The push exited successfully with a non-fatal warning: pg-delta could not cache its local catalog because Docker is not running. That warning did not prevent the remote SQL from being applied.
+
+Frontend changes remain local and are not deployed by this SQL operation. The older 2026-09-20 migration-pending note below is superseded by this entry. See `docs/sql-from-windows.md` for future commands.
+
+## Current handoff — 2026-09-20
+
+The session-15 material below is **historical Next.js status**, not the current runtime. Orbit was rebuilt in August as a static Vite/React application in `client/`, using Supabase JS and TanStack Query directly. The old custom auth refresh bug does not describe the current implementation. See `README.md`, `docs/rebuild-deviations.md`, and the August entries in the decisions log for the rebuild.
+
+This pass starts the single-user daily-use improvements:
+
+- Home has Needs attention (overdue or urgent), Due today, Upcoming tasks, an agenda with dates, Inbox access, and important dates. Urgent tasks can surface without a deadline. Sections exclude completed and deferred tasks.
+- Quick capture defaults to no deadline, allows a date and urgent flag, shows its destination and save/error feedback, preserves text on failure, and refreshes both task and dashboard caches.
+- A per-account, browser-persisted space selector applies to Home, task lists and Calendar and supplies creation defaults. Existing task links carrying a space parameter remain supported. Writable spaces are used for creation defaults.
+- Returning to the app refetches stale queries. Session identity changes and sign-out clear the query cache. Task completion failures have visible feedback; calendar edits refresh Home. Create-dialog reset no longer uses an expired event currentTarget.
+- A manifest reuses the existing app icons, requests standalone display and includes Inbox/Calendar shortcuts. Chrome's install prompt is offered when available. The service worker caches only public hashed JS/CSS and the offline notice/icons; it does not cache Supabase responses, personalised pages or support offline writes.
+- Tasks is now reachable from More as well as Home.
+
+**Verification:** `pnpm build` passed (TypeScript and production bundling). No smoke, unit, database, or browser suites were run, per the user's explicit instruction on 2026-09-20. Phone install, live saving, auth renewal and production speed remain unverified. The existing MapLibre size warning concerns its separate lazy-loaded chunk.
+
+**Not deployed:** only `.env.example` is present. No live Supabase configuration was available. Apply `supabase/migrations/0023_personal_dashboard.sql` before deploying this frontend; otherwise the previous dashboard RPC will still omit undated tasks and urgent tasks outside the date window. Existing migrations were not rewritten. A local build without production environment variables is not a production-configured artifact.
+
+**Next steps:** configure/deploy and try the daily-use flow on the user's phone; implement one read-only calendar connection, then the second provider; add contact import later. Google/Outlook connections, background sync, reminders and contact import are not implemented in this pass. Future shared spaces retain the existing RLS and membership foundations.
+
+**Workflow:** the user asked to defer smoke testing until needed. The old `pnpm start`/`pnpm smoke` instructions below and in AGENTS describe the removed Next.js runtime; neither command is currently defined. This pass did not introduce a replacement test harness.
+
+---
+
+## Historical status (Next.js, session 15)
+
 Rewritten in full: **session 15**, 2026-08-10. Branch
 `claude/orbit-acceptance-real-project-merods`. This file takes precedence over
 your assumptions about what is done.
@@ -489,3 +522,4 @@ fails with `Command "smoke" not found`. Focused Playwright coverage was added
 for the new phone navigation, People filters/views, and calendar day selection,
 but was not run because the same instructions prohibit other suites unless
 asked.
+

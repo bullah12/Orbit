@@ -7,6 +7,7 @@ import { useSpaces } from '../data/hooks';
 import { supabase } from '../lib/supabase';
 import type { Event } from '../data/types';
 import s from '../styles/ui.module.css';
+import { useComposeSpace } from './SpaceScope';
 
 export default function CalendarEventEditor({ id, date, onClose }: { id: string | null; date: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -16,6 +17,9 @@ export default function CalendarEventEditor({ id, date, onClose }: { id: string 
   const spaces = useSpaces();
   const auth = useAuth();
   const client = useQueryClient();
+  const { writable, defaultSpace } = useComposeSpace();
+  const [selectedSpace, setSelectedSpace] = useState('');
+  useEffect(() => { setSelectedSpace(defaultSpace); }, [defaultSpace]);
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -45,6 +49,7 @@ export default function CalendarEventEditor({ id, date, onClose }: { id: string 
         const saved = id ? await updateEvent(id, changes) : await createEvent({ ...changes, owner_id: auth.user!.id });
         await setEventRecurrence({ ...saved, recurrence_rules: record?.recurrence_rules ?? null }, String(data.get('rrule')));
         await client.invalidateQueries({ queryKey: ['calendar'] });
+        await client.invalidateQueries({ queryKey: ['today'] });
         onClose();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Could not save event.');
@@ -56,7 +61,7 @@ export default function CalendarEventEditor({ id, date, onClose }: { id: string 
         <div className={s.pageHeader}><h2>{id ? 'Edit event' : 'New event'}</h2><button type="button" className={s.iconButton} onClick={onClose} aria-label="Close"><X size={18} /></button></div>
         {id && !record && !error ? <p role="status">Loading event…</p> : record?.is_locked ? <p className={s.error}>Locked events cannot be edited in this release.</p> : <>
           <div className={s.field}><label htmlFor="event-title">Title</label><input id="event-title" className={s.input} name="title" defaultValue={record?.title ?? ''} required /></div>
-          <div className={s.field}><label htmlFor="event-space">Space</label><select id="event-space" className={s.select} name="space_id" defaultValue={record?.space_id ?? spaces.data?.[0]?.id} disabled={Boolean(id)}>{spaces.data?.map((space) => <option value={space.id} key={space.id}>{space.name}</option>)}</select>{id && <span className={s.muted}>Move access is managed separately so audience changes are previewed first.</span>}</div>
+          <div className={s.field}><label htmlFor="event-space">Space</label><select id="event-space" className={s.select} name="space_id" value={record?.space_id ?? selectedSpace} onChange={(event) => setSelectedSpace(event.target.value)} disabled={Boolean(id)}>{(id ? spaces.data ?? [] : writable).map((space) => <option value={space.id} key={space.id}>{space.name}</option>)}</select>{id && <span className={s.muted}>Move access is managed separately so audience changes are previewed first.</span>}</div>
           <div className={s.toolbar}><div className={s.field}><label htmlFor="event-start">Starts</label><input id="event-start" className={s.input} name="starts_at" type="datetime-local" defaultValue={(record?.starts_at ?? `${date}T09:00`).slice(0, 16)} required /></div><div className={s.field}><label htmlFor="event-end">Ends</label><input id="event-end" className={s.input} name="ends_at" type="datetime-local" defaultValue={(record?.ends_at ?? `${date}T10:00`).slice(0, 16)} required /></div></div>
           <label><input name="all_day" type="checkbox" defaultChecked={record?.all_day} /> All day</label>
           <div className={s.field}><label htmlFor="event-repeat">Repeat</label><select id="event-repeat" className={s.select} name="rrule" defaultValue={record?.recurrence_rules?.rrule ?? ''}><option value="">Does not repeat</option><option value="FREQ=DAILY">Daily</option><option value="FREQ=WEEKLY">Weekly</option><option value="FREQ=MONTHLY">Monthly</option><option value="FREQ=YEARLY">Yearly</option></select></div>

@@ -1,5 +1,6 @@
 import type { Session, User } from '@supabase/supabase-js';
-import { createContext, use, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
+import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Navigate, useLocation } from 'react-router-dom';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
@@ -14,6 +15,8 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const client = useQueryClient();
+  const identity = useRef<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,6 +29,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setLoading(false);
     });
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      if (identity.current !== (next?.user.id ?? null)) client.clear();
+      identity.current = next?.user.id ?? null;
       setSession(next);
       setLoading(false);
       if (next) void supabase.rpc('ensure_account');
@@ -34,7 +39,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, []);
+  }, [client]);
 
   const value = useMemo<AuthState>(() => ({
     session,
@@ -42,9 +47,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     loading,
     configured: isSupabaseConfigured,
     signOut: async () => {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      client.clear();
     },
-  }), [session, loading]);
+  }), [session, loading, client]);
 
   return <AuthContext value={value}>{children}</AuthContext>;
 }

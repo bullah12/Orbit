@@ -11,6 +11,7 @@ import { expandEvents } from '../lib/recurrence';
 import { useAuth } from '../auth/AuthProvider';
 import { useSpaces } from '../data/hooks';
 import s from '../styles/ui.module.css';
+import { useSpaceScope } from '../components/SpaceScope';
 
 const EventEditor = lazy(() => import('../components/CalendarEventEditor'));
 type View = 'day' | 'week' | 'month';
@@ -18,6 +19,7 @@ type View = 'day' | 'week' | 'month';
 export default function CalendarPage() {
   const auth = useAuth();
   const spaces = useSpaces();
+  const { space } = useSpaceScope();
   const [params, setParams] = useSearchParams();
   const view = (['day', 'week', 'month'].includes(params.get('view') ?? '') ? params.get('view') : 'week') as View;
   const selected = params.get('date') ? new Date(`${params.get('date')}T12:00:00`) : new Date();
@@ -25,7 +27,7 @@ export default function CalendarPage() {
   const to = view === 'day' ? addDays(from, 1) : view === 'week' ? addDays(from, 7) : addDays(from, 42);
   const freeBusySpaceIds = (spaces.data ?? []).filter((space) => space.space_members?.some((member) => member.user_id === auth.user?.id && member.role === 'free_busy')).map((space) => space.id);
   const events = useQuery({ queryKey: [...queryKeys.calendar(from.toISOString(), to.toISOString()), ...freeBusySpaceIds], queryFn: () => listEvents(from, to, freeBusySpaceIds), placeholderData: (previous) => previous });
-  const occurrences = useMemo(() => expandEvents(events.data ?? [], from, to), [events.data, from.getTime(), to.getTime()]);
+  const occurrences = useMemo(() => expandEvents((events.data ?? []).filter((event) => !space || event.space_id === space), from, to), [events.data, space, from.getTime(), to.getTime()]);
   const days = Array.from({ length: view === 'day' ? 1 : view === 'week' ? 7 : 42 }, (_, index) => addDays(from, index));
   const selectedKey = isoDate(selected);
   const selectedOccurrences = occurrences.filter((event) => isoDate(new Date(event.occurrenceStart)) === selectedKey);
